@@ -1,0 +1,25 @@
+---
+description: 
+globs: *
+alwaysApply: false
+---
+# AI写作软件项目全局配置
+project_config:
+  name: "ai-novel-assistant"
+  description: "AI驱动的小说创作管理系统"
+
+# 后端配置
+backend:
+  framework: "spring-boot"
+  version: "3.2.0"
+  java_version: "23"
+  base_package: "com.ainovel"
+
+
+# 前端配置
+frontend:
+  framework: "flutter"
+  web_first: true
+
+
+

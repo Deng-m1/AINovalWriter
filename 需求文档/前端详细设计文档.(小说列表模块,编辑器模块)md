@@ -1,0 +1,972 @@
+<think>用户希望我根据前端概要设计文档，为每个模块提供详细设计文档，可以分批给出。根据之前的概要设计文档，我需要为以下模块提供详细设计：
+
+1. 小说列表模块
+2. 小说编辑模块
+3. 小说计划预览模块
+4. AI聊天模块
+5. Codex知识库模块
+6. 编辑器模块
+7. 文件/导出模块
+
+我应该首先从最核心的几个模块开始，例如小说列表和编辑器模块，因为这些是用户最常用的功能。我将用中文回复，并提供详细的技术细节。</think># 模块详细设计文档（第一批）
+
+## 小说列表模块详细设计
+
+### 1. 模块概述
+
+小说列表模块是用户进入应用后的首页，负责展示用户所有的小说作品，提供分类、搜索、排序功能，以及新建和导入小说的入口。
+
+### 2. 数据模型
+
+```dart
+// 小说概要信息
+class NovelSummary {
+  final String id;
+  final String title;
+  final String coverImagePath;
+  final DateTime lastEditTime;
+  final int wordCount;
+  final String seriesName;
+  final double completionPercentage;
+  
+  NovelSummary({
+    required this.id,
+    required this.title,
+    this.coverImagePath = '',
+    required this.lastEditTime,
+    this.wordCount = 0,
+    this.seriesName = '',
+    this.completionPercentage = 0.0,
+  });
+  
+  // 从JSON转换方法
+  factory NovelSummary.fromJson(Map<String, dynamic> json);
+  
+  // 转换为JSON方法
+  Map<String, dynamic> toJson();
+}
+```
+
+### 3. 状态管理
+
+```dart
+// 使用Bloc模式管理状态
+class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
+  final NovelRepository repository;
+  
+  NovelListBloc({required this.repository}) : super(NovelListInitial()) {
+    on<LoadNovels>(_onLoadNovels);
+    on<SearchNovels>(_onSearchNovels);
+    on<FilterNovels>(_onFilterNovels);
+    on<SortNovels>(_onSortNovels);
+    on<GroupNovels>(_onGroupNovels);
+    on<DeleteNovel>(_onDeleteNovel);
+  }
+  
+  Future<void> _onLoadNovels(LoadNovels event, Emitter<NovelListState> emit) async {
+    emit(NovelListLoading());
+    try {
+      final novels = await repository.getNovels();
+      emit(NovelListLoaded(novels: novels));
+    } catch (e) {
+      emit(NovelListError(message: e.toString()));
+    }
+  }
+  
+  // 其他事件处理方法...
+}
+
+// 状态定义
+abstract class NovelListState {}
+
+class NovelListInitial extends NovelListState {}
+class NovelListLoading extends NovelListState {}
+class NovelListLoaded extends NovelListState {
+  final List<NovelSummary> novels;
+  final SortOption sortOption;
+  final FilterOption filterOption;
+  final GroupOption groupOption;
+  final String searchQuery;
+  
+  NovelListLoaded({
+    required this.novels,
+    this.sortOption = SortOption.lastEdited,
+    this.filterOption = const FilterOption(),
+    this.groupOption = GroupOption.none,
+    this.searchQuery = '',
+  });
+}
+class NovelListError extends NovelListState {
+  final String message;
+  NovelListError({required this.message});
+}
+
+// 事件定义
+abstract class NovelListEvent {}
+class LoadNovels extends NovelListEvent {}
+class SearchNovels extends NovelListEvent {
+  final String query;
+  SearchNovels({required this.query});
+}
+// 其他事件...
+```
+
+### 4. UI组件结构
+
+```
+NovelListScreen
+├── AppBar
+│   ├── Logo
+│   ├── TitleText
+│   └── HelpButton
+├── ContinueReadingSection
+│   ├── SectionTitle
+│   └── RecentNovelsList
+├── SearchAndFilterBar
+│   ├── SearchField
+│   ├── FilterButton
+│   ├── SortButton
+│   ├── GroupButton
+│   └── ViewToggleButton (Grid/List)
+├── NovelGrid/NovelList
+│   ├── NovelCard/NovelListItem
+│   │   ├── CoverImage
+│   │   ├── TitleText
+│   │   ├── LastEditedTimeText
+│   │   ├── WordCountBadge
+│   │   └── SeriesBadge (if applicable)
+└── BottomActionBar
+    ├── CreateNovelButton
+    └── ImportButton
+```
+
+### 5. 屏幕适配策略
+
+```dart
+// 响应式布局示例
+class NovelGridView extends StatelessWidget {
+  final List<NovelSummary> novels;
+  
+  const NovelGridView({Key? key, required this.novels}) : super(key: key);
+  
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 根据屏幕宽度决定一行显示几个卡片
+        final crossAxisCount = switch (constraints.maxWidth) {
+          < 600 => 2,  // 手机屏幕显示2列
+          < 900 => 3,  // 小平板显示3列
+          < 1200 => 4, // 大平板显示4列
+          _ => 5,      // 桌面显示5列
+        };
+        
+        return GridView.builder(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            childAspectRatio: 0.7,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: novels.length,
+          itemBuilder: (context, index) {
+            return NovelCard(novel: novels[index]);
+          },
+        );
+      },
+    );
+  }
+}
+```
+
+### 6. API交互
+
+```dart
+// 小说仓库接口
+class NovelRepository {
+  final ApiService apiService;
+  final LocalStorageService localStorageService;
+  
+  NovelRepository({
+    required this.apiService,
+    required this.localStorageService,
+  });
+  
+  // 获取所有小说
+  Future<List<NovelSummary>> getNovels() async {
+    try {
+      // 先尝试从本地加载
+      final localNovels = await localStorageService.getNovels();
+      
+      // 再从服务器获取最新数据
+      final remoteNovels = await apiService.fetchNovels();
+      
+      // 更新本地存储
+      await localStorageService.saveNovels(remoteNovels);
+      
+      return remoteNovels;
+    } catch (e) {
+      // 如果网络请求失败，返回本地数据
+      return await localStorageService.getNovels();
+    }
+  }
+  
+  // 创建新小说
+  Future<NovelSummary> createNovel(String title, {String? seriesName}) async {
+    final newNovel = await apiService.createNovel(title, seriesName: seriesName);
+    await localStorageService.addNovel(newNovel);
+    return newNovel;
+  }
+  
+  // 删除小说
+  Future<void> deleteNovel(String id) async {
+    await apiService.deleteNovel(id);
+    await localStorageService.removeNovel(id);
+  }
+  
+  // 导入小说
+  Future<NovelSummary> importNovel(File novelFile) async {
+    final importedNovel = await apiService.importNovel(novelFile);
+    await localStorageService.addNovel(importedNovel);
+    return importedNovel;
+  }
+}
+```
+
+### 7. 性能优化
+
+- **虚拟化列表**：使用`ListView.builder`和`GridView.builder`确保只渲染可见项
+- **图片优化**：
+  ```dart
+  // 封面图像懒加载和缓存
+  CachedNetworkImage(
+    imageUrl: novel.coverImagePath,
+    placeholder: (context, url) => ShimmerPlaceholder(),
+    errorWidget: (context, url, error) => DefaultCoverImage(),
+    fit: BoxFit.cover,
+  )
+  ```
+- **分页加载**：加载大量小说时实现分页
+  ```dart
+  // 分页加载实现
+  class PaginatedNovelsBloc extends Bloc<PaginatedNovelsEvent, PaginatedNovelsState> {
+    final NovelRepository repository;
+    final int pageSize;
+    
+    PaginatedNovelsBloc({
+      required this.repository,
+      this.pageSize = 20,
+    }) : super(PaginatedNovelsInitial()) {
+      on<LoadInitialNovels>(_onLoadInitial);
+      on<LoadMoreNovels>(_onLoadMore);
+    }
+    
+    Future<void> _onLoadInitial(LoadInitialNovels event, Emitter<PaginatedNovelsState> emit) async {
+      emit(PaginatedNovelsLoading(novels: const []));
+      try {
+        final novels = await repository.getNovels(limit: pageSize, offset: 0);
+        final hasMore = novels.length >= pageSize;
+        emit(PaginatedNovelsLoaded(
+          novels: novels,
+          hasReachedMax: !hasMore,
+          currentPage: 1,
+        ));
+      } catch (e) {
+        emit(PaginatedNovelsError(message: e.toString()));
+      }
+    }
+    
+    Future<void> _onLoadMore(LoadMoreNovels event, Emitter<PaginatedNovelsState> emit) async {
+      final currentState = state;
+      if (currentState is PaginatedNovelsLoaded && !currentState.hasReachedMax) {
+        try {
+          final nextPage = currentState.currentPage + 1;
+          final moreNovels = await repository.getNovels(
+            limit: pageSize,
+            offset: (nextPage - 1) * pageSize,
+          );
+          final hasMore = moreNovels.length >= pageSize;
+          
+          emit(
+            moreNovels.isEmpty
+                ? currentState.copyWith(hasReachedMax: true)
+                : PaginatedNovelsLoaded(
+                    novels: [...currentState.novels, ...moreNovels],
+                    hasReachedMax: !hasMore,
+                    currentPage: nextPage,
+                  ),
+          );
+        } catch (e) {
+          emit(PaginatedNovelsError(message: e.toString()));
+        }
+      }
+    }
+  }
+  ```
+
+### 8. 异常处理
+
+```dart
+// 网络错误处理
+class NovelListErrorView extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  
+  const NovelListErrorView({
+    Key? key,
+    required this.message,
+    required this.onRetry,
+  }) : super(key: key);
+  
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 48, color: Colors.red),
+          SizedBox(height: 16),
+          Text('加载失败: $message', textAlign: TextAlign.center),
+          SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: onRetry,
+            child: Text('重试'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+```
+
+## 编辑器模块详细设计
+
+### 1. 模块概述
+
+编辑器模块是小说创作的核心功能，提供富文本编辑、章节管理、字数统计等功能，支持AI辅助写作和实时保存。
+
+### 2. 数据模型
+
+```dart
+// 编辑器内容模型
+class EditorContent {
+  final String id;
+  final String content;
+  final DateTime lastSaved;
+  final List<Revision> revisions;
+  
+  EditorContent({
+    required this.id,
+    required this.content,
+    required this.lastSaved,
+    this.revisions = const [],
+  });
+}
+
+// 文档修订版本
+class Revision {
+  final String id;
+  final String content;
+  final DateTime timestamp;
+  final String authorId;
+  final String comment;
+  
+  Revision({
+    required this.id,
+    required this.content,
+    required this.timestamp,
+    required this.authorId,
+    this.comment = '',
+  });
+}
+
+// 编辑器设置
+class EditorSettings {
+  final double fontSize;
+  final String fontFamily;
+  final double lineSpacing;
+  final bool spellCheckEnabled;
+  final ThemeMode themeMode;
+  final bool autoSaveEnabled;
+  final Duration autoSaveInterval;
+  
+  EditorSettings({
+    this.fontSize = 16.0,
+    this.fontFamily = 'Roboto',
+    this.lineSpacing = 1.5,
+    this.spellCheckEnabled = true,
+    this.themeMode = ThemeMode.system,
+    this.autoSaveEnabled = true,
+    this.autoSaveInterval = const Duration(minutes: 2),
+  });
+}
+```
+
+### 3. 状态管理
+
+```dart
+// 编辑器状态管理
+class EditorBloc extends Bloc<EditorEvent, EditorState> {
+  final EditorRepository repository;
+  final String novelId;
+  final String chapterId;
+  Timer? _autoSaveTimer;
+  
+  EditorBloc({
+    required this.repository,
+    required this.novelId,
+    required this.chapterId,
+  }) : super(EditorInitial()) {
+    on<LoadEditorContent>(_onLoadContent);
+    on<UpdateContent>(_onUpdateContent);
+    on<SaveContent>(_onSaveContent);
+    on<ToggleEditorSettings>(_onToggleSettings);
+    on<UpdateEditorSettings>(_onUpdateSettings);
+    on<ApplyAISuggestion>(_onApplyAISuggestion);
+    on<LoadRevisionHistory>(_onLoadRevisionHistory);
+    on<RestoreRevision>(_onRestoreRevision);
+  }
+  
+  Future<void> _onLoadContent(LoadEditorContent event, Emitter<EditorState> emit) async {
+    emit(EditorLoading());
+    try {
+      final content = await repository.getEditorContent(novelId, chapterId);
+      final settings = await repository.getEditorSettings();
+      emit(EditorLoaded(
+        content: content,
+        settings: settings,
+        isDirty: false,
+        isSaving: false,
+      ));
+      
+      // 设置自动保存
+      if (settings.autoSaveEnabled) {
+        _setupAutoSave();
+      }
+    } catch (e) {
+      emit(EditorError(message: e.toString()));
+    }
+  }
+  
+  Future<void> _onUpdateContent(UpdateContent event, Emitter<EditorState> emit) async {
+    final currentState = state;
+    if (currentState is EditorLoaded) {
+      emit(currentState.copyWith(
+        content: currentState.content.copyWith(content: event.newContent),
+        isDirty: true,
+      ));
+    }
+  }
+  
+  Future<void> _onSaveContent(SaveContent event, Emitter<EditorState> emit) async {
+    final currentState = state;
+    if (currentState is EditorLoaded && currentState.isDirty) {
+      emit(currentState.copyWith(isSaving: true));
+      try {
+        final savedContent = await repository.saveEditorContent(
+          novelId,
+          chapterId,
+          currentState.content.content,
+        );
+        emit(currentState.copyWith(
+          content: savedContent,
+          isDirty: false,
+          isSaving: false,
+          lastSaveTime: DateTime.now(),
+        ));
+      } catch (e) {
+        emit(currentState.copyWith(
+          isSaving: false,
+          errorMessage: e.toString(),
+        ));
+      }
+    }
+  }
+  
+  // 设置自动保存
+  void _setupAutoSave() {
+    final currentState = state;
+    if (currentState is EditorLoaded) {
+      _autoSaveTimer?.cancel();
+      _autoSaveTimer = Timer.periodic(
+        currentState.settings.autoSaveInterval,
+        (timer) {
+          if (state is EditorLoaded && (state as EditorLoaded).isDirty) {
+            add(SaveContent());
+          }
+        },
+      );
+    }
+  }
+  
+  @override
+  Future<void> close() {
+    _autoSaveTimer?.cancel();
+    return super.close();
+  }
+  
+  // 其他事件处理方法...
+}
+```
+
+### 4. UI组件结构
+
+```
+EditorScreen
+├── AppBar
+│   ├── BackButton
+│   ├── TitleField
+│   ├── WordCountDisplay
+│   ├── SaveIndicator
+│   └── SettingsButton
+├── EditorToolbar
+│   ├── TextFormattingTools
+│   │   ├── BoldButton
+│   │   ├── ItalicButton
+│   │   ├── UnderlineButton
+│   │   └── ...
+│   ├── ParagraphFormattingTools
+│   │   ├── AlignmentButtons
+│   │   ├── ListButtons
+│   │   └── ...
+│   ├── InsertionTools
+│   │   ├── ImageButton
+│   │   ├── TableButton
+│   │   └── ...
+│   └── AISuggestionButton
+├── MainEditorArea
+│   ├── RichTextEditor
+│   │   └── DocumentView
+│   ├── LineNumbersGutter (optional)
+│   └── EditingCaretIndicator
+├── SidePanel (collapsible)
+│   ├── ChapterNavigator
+│   │   ├── ChapterList
+│   │   └── AddChapterButton
+│   ├── AISuggestionsPanel
+│   │   ├── SuggestionsList
+│   │   └── RequestSuggestionButton
+│   └── RevisionHistoryPanel
+│       ├── RevisionList
+│       └── RestoreRevisionButton
+└── StatusBar
+    ├── WordCountLabel
+    ├── CharacterCountLabel
+    ├── ReadTimeEstimateLabel
+    ├── LastSavedTimeLabel
+    └── SyncStatusIndicator
+```
+
+### 5. 核心功能实现
+
+#### 5.1 富文本编辑器
+
+```dart
+class NovelEditor extends StatefulWidget {
+  final String initialContent;
+  final EditorSettings settings;
+  final Function(String) onContentChanged;
+  
+  const NovelEditor({
+    Key? key,
+    required this.initialContent,
+    required this.settings,
+    required this.onContentChanged,
+  }) : super(key: key);
+  
+  @override
+  State<NovelEditor> createState() => _NovelEditorState();
+}
+
+class _NovelEditorState extends State<NovelEditor> {
+  late QuillController _controller;
+  
+  @override
+  void initState() {
+    super.initState();
+    
+    // 初始化编辑器控制器
+    final document = Document.fromJson(
+      jsonDecode(widget.initialContent.isNotEmpty 
+          ? widget.initialContent 
+          : '{"ops":[{"insert":"\\n"}]}')
+    );
+    _controller = QuillController(
+      document: document,
+      selection: const TextSelection.collapsed(offset: 0),
+    );
+    
+    // 监听内容变化
+    _controller.document.changes.listen((_) {
+      final json = jsonEncode(_controller.document.toDelta().toJson());
+      widget.onContentChanged(json);
+    });
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        QuillToolbar.basic(controller: _controller),
+        Expanded(
+          child: Container(
+            padding: EdgeInsets.all(16.0),
+            child: QuillEditor(
+              controller: _controller,
+              scrollController: ScrollController(),
+              scrollable: true,
+              focusNode: FocusNode(),
+              autoFocus: true,
+              readOnly: false,
+              placeholder: '开始您的创作...',
+              expands: true,
+              padding: EdgeInsets.zero,
+              customStyles: DefaultStyles(
+                paragraph: DefaultTextBlockStyle(
+                  TextStyle(
+                    fontSize: widget.settings.fontSize,
+                    fontFamily: widget.settings.fontFamily,
+                    height: widget.settings.lineSpacing,
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                  ),
+                  const VerticalSpacing(8, 0),
+                  const VerticalSpacing(0, 0),
+                  null,
+                ),
+                // 其他样式定义...
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+  
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+}
+```
+
+#### 5.2 自动保存与恢复
+
+```dart
+class AutoSaveManager {
+  final EditorRepository repository;
+  final String novelId;
+  final String chapterId;
+  final Duration saveInterval;
+  
+  Timer? _saveTimer;
+  String _lastSavedContent = '';
+  String _currentContent = '';
+  final _savingCompleter = Completer<void>();
+  bool _isSaving = false;
+  
+  AutoSaveManager({
+    required this.repository,
+    required this.novelId,
+    required this.chapterId,
+    this.saveInterval = const Duration(seconds: 30),
+  });
+  
+  // 启动自动保存
+  void startAutoSave(String initialContent) {
+    _lastSavedContent = initialContent;
+    _currentContent = initialContent;
+    
+    _saveTimer = Timer.periodic(saveInterval, (_) => _checkAndSave());
+  }
+  
+  // 更新当前内容
+  void updateContent(String newContent) {
+    _currentContent = newContent;
+  }
+  
+  // 检查并保存内容
+  Future<void> _checkAndSave() async {
+    // 内容未变化或者正在保存中，跳过
+    if (_currentContent == _lastSavedContent || _isSaving) {
+      return;
+    }
+    
+    _isSaving = true;
+    try {
+      await repository.saveEditorContent(
+        novelId, 
+        chapterId, 
+        _currentContent,
+      );
+      _lastSavedContent = _currentContent;
+      
+      if (!_savingCompleter.isCompleted) {
+        _savingCompleter.complete();
+      }
+    } catch (e) {
+      // 保存失败，记录错误
+      print('自动保存失败: $e');
+    } finally {
+      _isSaving = false;
+    }
+  }
+  
+  // 强制保存，返回保存完成的Future
+  Future<void> forceSave() async {
+    await _checkAndSave();
+    return _savingCompleter.future;
+  }
+  
+  // 停止自动保存
+  void stopAutoSave() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+  }
+  
+  // 恢复未保存的草稿
+  Future<String?> recoverDraft() async {
+    try {
+      final draft = await repository.getLocalDraft(novelId, chapterId);
+      if (draft != null && draft != _lastSavedContent) {
+        return draft;
+      }
+    } catch (e) {
+      print('恢复草稿失败: $e');
+    }
+    return null;
+  }
+  
+  void dispose() {
+    stopAutoSave();
+  }
+}
+```
+
+#### 5.3 字数统计功能
+
+```dart
+class WordCountAnalyzer {
+  static WordCountStats analyze(String content) {
+    // 尝试解析富文本内容
+    String plainText;
+    try {
+      final document = Document.fromJson(jsonDecode(content));
+      plainText = document.toPlainText();
+    } catch (e) {
+      // 如果解析失败，假设是纯文本
+      plainText = content;
+    }
+    
+    // 计算字符数（不含空格）
+    final charactersNoSpaces = plainText.replaceAll(RegExp(r'\s'), '').length;
+    
+    // 计算字符数（含空格）
+    final charactersWithSpaces = plainText.length;
+    
+    // 计算单词数（英文以空格分隔，中文每个字符算一个）
+    int wordCount = 0;
+    
+    // 处理中文字符
+    final chineseCharCount = RegExp(r'[\u4e00-\u9fa5]').allMatches(plainText).length;
+    
+    // 处理英文单词
+    final englishWords = plainText
+        .replaceAll(RegExp(r'[\u4e00-\u9fa5]'), '') // 移除中文字符
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .length;
+    
+    wordCount = chineseCharCount + englishWords;
+    
+    // 计算段落数
+    final paragraphs = plainText.split(RegExp(r'\n+')).where((p) => p.trim().isNotEmpty).length;
+    
+    // 估算阅读时间（假设平均每分钟阅读200个中文字或英文单词）
+    final readTimeMinutes = (wordCount / 200).ceil();
+    
+    return WordCountStats(
+      charactersNoSpaces: charactersNoSpaces,
+      charactersWithSpaces: charactersWithSpaces,
+      words: wordCount,
+      paragraphs: paragraphs,
+      readTimeMinutes: readTimeMinutes,
+    );
+  }
+}
+
+class WordCountStats {
+  final int charactersNoSpaces;
+  final int charactersWithSpaces;
+  final int words;
+  final int paragraphs;
+  final int readTimeMinutes;
+  
+  WordCountStats({
+    required this.charactersNoSpaces,
+    required this.charactersWithSpaces,
+    required this.words,
+    required this.paragraphs,
+    required this.readTimeMinutes,
+  });
+}
+```
+
+### 6. API交互
+
+```dart
+class EditorRepository {
+  final ApiService apiService;
+  final LocalStorageService localStorageService;
+  
+  EditorRepository({
+    required this.apiService,
+    required this.localStorageService,
+  });
+  
+  // 获取编辑器内容
+  Future<EditorContent> getEditorContent(String novelId, String chapterId) async {
+    try {
+      // 先尝试从服务器获取
+      final content = await apiService.fetchChapterContent(novelId, chapterId);
+      
+      // 保存到本地
+      await localStorageService.saveChapterContent(novelId, chapterId, content);
+      
+      return content;
+    } catch (e) {
+      // 网络失败时尝试从本地加载
+      final localContent = await localStorageService.getChapterContent(novelId, chapterId);
+      if (localContent != null) {
+        return localContent;
+      }
+      throw Exception('无法加载章节内容: $e');
+    }
+  }
+  
+  // 保存编辑器内容
+  Future<EditorContent> saveEditorContent(String novelId, String chapterId, String content) async {
+    // 先保存到本地
+    await localStorageService.saveChapterContent(
+      novelId, 
+      chapterId, 
+      EditorContent(
+        id: chapterId,
+        content: content,
+        lastSaved: DateTime.now(),
+      ),
+    );
+    
+    try {
+      // 再保存到服务器
+      final savedContent = await apiService.saveChapterContent(
+        novelId,
+        chapterId,
+        content,
+      );
+      
+      // 更新本地存储
+      await localStorageService.saveChapterContent(novelId, chapterId, savedContent);
+      
+      return savedContent;
+    } catch (e) {
+      // 记录同步失败，稍后再试
+      await localStorageService.markForSync(novelId, chapterId);
+      
+      // 返回本地版本
+      return EditorContent(
+        id: chapterId,
+        content: content,
+        lastSaved: DateTime.now(),
+      );
+    }
+  }
+  
+  // 获取编辑器设置
+  Future<EditorSettings> getEditorSettings() async {
+    try {
+      return await localStorageService.getEditorSettings();
+    } catch (e) {
+      // 返回默认设置
+      return EditorSettings();
+    }
+  }
+  
+  // 保存编辑器设置
+  Future<void> saveEditorSettings(EditorSettings settings) async {
+    await localStorageService.saveEditorSettings(settings);
+  }
+  
+  // 获取本地草稿
+  Future<String?> getLocalDraft(String novelId, String chapterId) async {
+    final draft = await localStorageService.getDraft(novelId, chapterId);
+    return draft?.content;
+  }
+  
+  // 获取修订历史
+  Future<List<Revision>> getRevisionHistory(String novelId, String chapterId) async {
+    return await apiService.fetchRevisionHistory(novelId, chapterId);
+  }
+  
+  // 恢复到特定修订版本
+  Future<EditorContent> restoreRevision(String novelId, String chapterId, String revisionId) async {
+    return await apiService.restoreRevision(novelId, chapterId, revisionId);
+  }
+}
+```
+
+### 7. 性能优化
+
+- **增量同步**：只发送变更的内容部分，减少网络传输量
+- **后台保存**：在单独的隔离区执行保存操作，避免UI阻塞
+- **延迟渲染**：大文档使用虚拟化渲染技术
+- **分块加载**：超长文档分段加载显示
+
+```dart
+// 增量同步实现示例
+class DiffSyncManager {
+  String _baseContent = '';
+  String _currentContent = '';
+  
+  // 设置基准内容
+  void setBaseContent(String content) {
+    _baseContent = content;
+    _currentContent = content;
+  }
+  
+  // 更新当前内容
+  void updateCurrentContent(String newContent) {
+    _currentContent = newContent;
+  }
+  
+  // 计算差异
+  Map<String, dynamic> calculateDiff() {
+    final dmp = diff_match_patch.DiffMatchPatch();
+    final diffs = dmp.diff_main(_baseContent, _currentContent);
+    dmp.diff_cleanupSemantic(diffs);
+    
+    final patches = dmp.patch_make(_baseContent, _currentContent, diffs);
+    final patchText = dmp.patch_toText(patches);
+    
+    return {
+      'baseChecksum': _calculateChecksum(_baseContent),
+      'patches': patchText,
+    };
+  }
+  
+  // 应用差异
+  String applyDiff(String baseContent, String patchText) {
+    final dmp = diff_match_patch.DiffMatchPatch();
+    final patches = dmp.patch_fromText(patchText);
+    final results = dmp.patch_apply(patches, baseContent);
+    return results[0] as String;
+  }
+  
+  // 计算内容校验和
+  String _calculateChecksum(String content) {
+    final bytes = utf8.encode(content);
+    final digest = sha1.convert(bytes);
+    return digest.toString();
+  }
+}
+```
