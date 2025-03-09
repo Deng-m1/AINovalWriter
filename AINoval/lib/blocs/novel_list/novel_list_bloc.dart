@@ -2,243 +2,332 @@ import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/repositories/novel_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
-// 事件定义
-abstract class NovelListEvent extends Equatable {
-  @override
-  List<Object?> get props => [];
-}
-
-class LoadNovels extends NovelListEvent {}
-
-class SearchNovels extends NovelListEvent {
-  
-  SearchNovels({required this.query});
-  final String query;
-  
-  @override
-  List<Object?> get props => [query];
-}
-
-class FilterNovels extends NovelListEvent {
-  
-  FilterNovels({required this.filterOption});
-  final FilterOption filterOption;
-  
-  @override
-  List<Object?> get props => [filterOption];
-}
-
-class SortNovels extends NovelListEvent {
-  
-  SortNovels({required this.sortOption});
-  final SortOption sortOption;
-  
-  @override
-  List<Object?> get props => [sortOption];
-}
-
-class GroupNovels extends NovelListEvent {
-  
-  GroupNovels({required this.groupOption});
-  final GroupOption groupOption;
-  
-  @override
-  List<Object?> get props => [groupOption];
-}
-
-class DeleteNovel extends NovelListEvent {
-  
-  DeleteNovel({required this.id});
-  final String id;
-  
-  @override
-  List<Object?> get props => [id];
-}
+import 'package:ainoval/blocs/novel_list/novel_list_event.dart';
 
 // 状态定义
-abstract class NovelListState extends Equatable {
-  @override
-  List<Object?> get props => [];
-}
-
-class NovelListInitial extends NovelListState {}
-
-class NovelListLoading extends NovelListState {}
-
-class NovelListLoaded extends NovelListState {
+class NovelListState extends Equatable {
   
-  NovelListLoaded({
-    required this.novels,
-    this.sortOption = SortOption.lastEdited,
-    this.filterOption = const FilterOption(),
-    this.groupOption = GroupOption.none,
+  const NovelListState({
+    this.novels = const [],
+    this.filteredNovels = const [],
+    this.status = NovelListStatus.initial,
+    this.errorMessage = '',
     this.searchQuery = '',
+    this.filterOption = FilterOption.all,
+    this.sortOption = SortOption.dateDesc,
+    this.groupOption = GroupOption.none,
   });
   final List<NovelSummary> novels;
-  final SortOption sortOption;
-  final FilterOption filterOption;
-  final GroupOption groupOption;
+  final List<NovelSummary> filteredNovels;
+  final NovelListStatus status;
+  final String errorMessage;
   final String searchQuery;
+  final FilterOption filterOption;
+  final SortOption sortOption;
+  final GroupOption groupOption;
   
   @override
-  List<Object?> get props => [novels, sortOption, filterOption, groupOption, searchQuery];
-}
-
-class NovelListError extends NovelListState {
+  List<Object?> get props => [
+    novels,
+    filteredNovels,
+    status,
+    errorMessage,
+    searchQuery,
+    filterOption,
+    sortOption,
+    groupOption,
+  ];
   
-  NovelListError({required this.message});
-  final String message;
-  
-  @override
-  List<Object?> get props => [message];
+  NovelListState copyWith({
+    List<NovelSummary>? novels,
+    List<NovelSummary>? filteredNovels,
+    NovelListStatus? status,
+    String? errorMessage,
+    String? searchQuery,
+    FilterOption? filterOption,
+    SortOption? sortOption,
+    GroupOption? groupOption,
+  }) {
+    return NovelListState(
+      novels: novels ?? this.novels,
+      filteredNovels: filteredNovels ?? this.filteredNovels,
+      status: status ?? this.status,
+      errorMessage: errorMessage ?? this.errorMessage,
+      searchQuery: searchQuery ?? this.searchQuery,
+      filterOption: filterOption ?? this.filterOption,
+      sortOption: sortOption ?? this.sortOption,
+      groupOption: groupOption ?? this.groupOption,
+    );
+  }
 }
 
-// 排序选项
-enum SortOption {
-  lastEdited,
-  title,
-  wordCount,
-  creationDate,
+// 状态枚举
+enum NovelListStatus {
+  initial,
+  loading,
+  loaded,
+  error,
 }
 
-// 分组选项
-enum GroupOption {
-  none,
-  series,
-  date,
-}
-
-// 过滤选项
-class FilterOption extends Equatable {
-  
-  const FilterOption({
-    this.showCompleted = true,
-    this.showInProgress = true,
-    this.showPlanned = true,
-  });
-  final bool showCompleted;
-  final bool showInProgress;
-  final bool showPlanned;
-  
-  @override
-  List<Object?> get props => [showCompleted, showInProgress, showPlanned];
-}
-
-// Bloc实现
+// BLoC实现
 class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
   
-  NovelListBloc({required this.repository}) : super(NovelListInitial()) {
+  NovelListBloc({required this.repository}) : super(const NovelListState()) {
     on<LoadNovels>(_onLoadNovels);
     on<SearchNovels>(_onSearchNovels);
     on<FilterNovels>(_onFilterNovels);
     on<SortNovels>(_onSortNovels);
     on<GroupNovels>(_onGroupNovels);
     on<DeleteNovel>(_onDeleteNovel);
+    on<CreateNovel>(_onCreateNovel);
+    on<UpdateNovel>(_onUpdateNovel);
   }
   final NovelRepository repository;
   
-  Future<void> _onLoadNovels(LoadNovels event, Emitter<NovelListState> emit) async {
-    emit(NovelListLoading());
+  // 处理加载小说事件
+  Future<void> _onLoadNovels(
+    LoadNovels event,
+    Emitter<NovelListState> emit,
+  ) async {
+    emit(state.copyWith(status: NovelListStatus.loading));
+    
     try {
       final novels = await repository.getNovels();
-      emit(NovelListLoaded(novels: novels));
+      final filteredNovels = _applyFiltersAndSort(
+        novels,
+        state.searchQuery,
+        state.filterOption,
+        state.sortOption,
+      );
+      
+      emit(state.copyWith(
+        novels: novels,
+        filteredNovels: filteredNovels,
+        status: NovelListStatus.loaded,
+      ));
     } catch (e) {
-      emit(NovelListError(message: e.toString()));
-    }
-  }
-  
-  Future<void> _onSearchNovels(SearchNovels event, Emitter<NovelListState> emit) async {
-    final currentState = state;
-    if (currentState is NovelListLoaded) {
-      try {
-        final searchResults = await repository.searchNovels(event.query);
-        emit(NovelListLoaded(
-          novels: searchResults,
-          searchQuery: event.query,
-          sortOption: currentState.sortOption,
-          filterOption: currentState.filterOption,
-          groupOption: currentState.groupOption,
-        ));
-      } catch (e) {
-        emit(NovelListError(message: e.toString()));
-      }
-    }
-  }
-  
-  void _onFilterNovels(FilterNovels event, Emitter<NovelListState> emit) {
-    final currentState = state;
-    if (currentState is NovelListLoaded) {
-      emit(NovelListLoaded(
-        novels: currentState.novels,
-        searchQuery: currentState.searchQuery,
-        sortOption: currentState.sortOption,
-        filterOption: event.filterOption,
-        groupOption: currentState.groupOption,
+      emit(state.copyWith(
+        status: NovelListStatus.error,
+        errorMessage: e.toString(),
       ));
     }
   }
   
-  void _onSortNovels(SortNovels event, Emitter<NovelListState> emit) {
-    final currentState = state;
-    if (currentState is NovelListLoaded) {
-      final sortedNovels = List<NovelSummary>.from(currentState.novels);
+  // 处理搜索小说事件
+  Future<void> _onSearchNovels(
+    SearchNovels event,
+    Emitter<NovelListState> emit,
+  ) async {
+    final query = event.query;
+    
+    emit(state.copyWith(
+      searchQuery: query,
+      status: NovelListStatus.loading,
+    ));
+    
+    try {
+      List<NovelSummary> filteredNovels;
       
-      switch (event.sortOption) {
-        case SortOption.lastEdited:
-          sortedNovels.sort((a, b) => b.lastEditTime.compareTo(a.lastEditTime));
-          break;
-        case SortOption.title:
-          sortedNovels.sort((a, b) => a.title.compareTo(b.title));
-          break;
-        case SortOption.wordCount:
-          sortedNovels.sort((a, b) => b.wordCount.compareTo(a.wordCount));
-          break;
-        case SortOption.creationDate:
-          // 实际应用中可能需要单独的创建时间字段
-          sortedNovels.sort((a, b) => b.lastEditTime.compareTo(a.lastEditTime));
-          break;
+      if (query.isEmpty) {
+        // 如果查询为空，应用当前的过滤和排序
+        filteredNovels = _applyFiltersAndSort(
+          state.novels,
+          '',
+          state.filterOption,
+          state.sortOption,
+        );
+      } else {
+        // 否则，从仓库获取搜索结果
+        filteredNovels = await repository.searchNovels(query);
+        // 应用当前的过滤和排序
+        filteredNovels = _applyFiltersAndSort(
+          filteredNovels,
+          query,
+          state.filterOption,
+          state.sortOption,
+        );
       }
       
-      emit(NovelListLoaded(
-        novels: sortedNovels,
-        searchQuery: currentState.searchQuery,
-        sortOption: event.sortOption,
-        filterOption: currentState.filterOption,
-        groupOption: currentState.groupOption,
+      emit(state.copyWith(
+        filteredNovels: filteredNovels,
+        status: NovelListStatus.loaded,
+      ));
+    } catch (e) {
+      emit(state.copyWith(
+        status: NovelListStatus.error,
+        errorMessage: e.toString(),
       ));
     }
   }
   
-  void _onGroupNovels(GroupNovels event, Emitter<NovelListState> emit) {
-    final currentState = state;
-    if (currentState is NovelListLoaded) {
-      emit(NovelListLoaded(
-        novels: currentState.novels,
-        searchQuery: currentState.searchQuery,
-        sortOption: currentState.sortOption,
-        filterOption: currentState.filterOption,
-        groupOption: event.groupOption,
+  // 处理过滤小说事件
+  void _onFilterNovels(
+    FilterNovels event,
+    Emitter<NovelListState> emit,
+  ) {
+    final filterOption = event.filterOption;
+    
+    emit(state.copyWith(
+      filterOption: filterOption,
+      status: NovelListStatus.loading,
+    ));
+    
+    final filteredNovels = _applyFiltersAndSort(
+      state.novels,
+      state.searchQuery,
+      filterOption,
+      state.sortOption,
+    );
+    
+    emit(state.copyWith(
+      filteredNovels: filteredNovels,
+      status: NovelListStatus.loaded,
+    ));
+  }
+  
+  // 处理排序小说事件
+  void _onSortNovels(
+    SortNovels event,
+    Emitter<NovelListState> emit,
+  ) {
+    final sortOption = event.sortOption;
+    
+    emit(state.copyWith(
+      sortOption: sortOption,
+      status: NovelListStatus.loading,
+    ));
+    
+    final filteredNovels = _applyFiltersAndSort(
+      state.novels,
+      state.searchQuery,
+      state.filterOption,
+      sortOption,
+    );
+    
+    emit(state.copyWith(
+      filteredNovels: filteredNovels,
+      status: NovelListStatus.loaded,
+    ));
+  }
+  
+  // 处理分组小说事件
+  void _onGroupNovels(
+    GroupNovels event,
+    Emitter<NovelListState> emit,
+  ) {
+    emit(state.copyWith(
+      groupOption: event.groupOption,
+    ));
+  }
+  
+  // 处理删除小说事件
+  Future<void> _onDeleteNovel(
+    DeleteNovel event,
+    Emitter<NovelListState> emit,
+  ) async {
+    try {
+      await repository.deleteNovel(event.novelId);
+      
+      // 重新加载小说列表
+      add(LoadNovels());
+    } catch (e) {
+      emit(state.copyWith(
+        status: NovelListStatus.error,
+        errorMessage: e.toString(),
       ));
     }
   }
   
-  Future<void> _onDeleteNovel(DeleteNovel event, Emitter<NovelListState> emit) async {
-    final currentState = state;
-    if (currentState is NovelListLoaded) {
-      try {
-        await repository.deleteNovel(event.id);
-        final updatedNovels = currentState.novels.where((novel) => novel.id != event.id).toList();
-        emit(NovelListLoaded(
-          novels: updatedNovels,
-          searchQuery: currentState.searchQuery,
-          sortOption: currentState.sortOption,
-          filterOption: currentState.filterOption,
-          groupOption: currentState.groupOption,
-        ));
-      } catch (e) {
-        emit(NovelListError(message: e.toString()));
-      }
+  // 处理创建小说事件
+  Future<void> _onCreateNovel(
+    CreateNovel event,
+    Emitter<NovelListState> emit,
+  ) async {
+    try {
+      await repository.createNovel(event.title);
+      
+      // 重新加载小说列表
+      add(LoadNovels());
+    } catch (e) {
+      emit(state.copyWith(
+        status: NovelListStatus.error,
+        errorMessage: e.toString(),
+      ));
     }
+  }
+  
+  // 处理更新小说事件
+  Future<void> _onUpdateNovel(
+    UpdateNovel event,
+    Emitter<NovelListState> emit,
+  ) async {
+    try {
+      await repository.updateNovel(event.novelId, event.title);
+      
+      // 重新加载小说列表
+      add(LoadNovels());
+    } catch (e) {
+      emit(state.copyWith(
+        status: NovelListStatus.error,
+        errorMessage: e.toString(),
+      ));
+    }
+  }
+  
+  // 应用过滤和排序
+  List<NovelSummary> _applyFiltersAndSort(
+    List<NovelSummary> novels,
+    String query,
+    FilterOption filterOption,
+    SortOption sortOption,
+  ) {
+    // 首先应用搜索查询
+    var result = query.isEmpty
+        ? List<NovelSummary>.from(novels)
+        : novels.where((novel) => 
+            novel.title.toLowerCase().contains(query.toLowerCase())).toList();
+    
+    // 然后应用过滤
+    switch (filterOption) {
+      case FilterOption.inProgress:
+        result = result.where((novel) => novel.completionPercentage < 1.0).toList();
+        break;
+      case FilterOption.completed:
+        result = result.where((novel) => novel.completionPercentage >= 1.0).toList();
+        break;
+      case FilterOption.recent:
+        // 获取最近7天的小说
+        final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
+        result = result.where((novel) => novel.lastEditTime.isAfter(sevenDaysAgo)).toList();
+        break;
+      case FilterOption.all:
+      default:
+        // 不需要额外过滤
+        break;
+    }
+    
+    // 最后应用排序
+    switch (sortOption) {
+      case SortOption.titleAsc:
+        result.sort((a, b) => a.title.compareTo(b.title));
+        break;
+      case SortOption.titleDesc:
+        result.sort((a, b) => b.title.compareTo(a.title));
+        break;
+      case SortOption.dateAsc:
+        result.sort((a, b) => a.lastEditTime.compareTo(b.lastEditTime));
+        break;
+      case SortOption.dateDesc:
+        result.sort((a, b) => b.lastEditTime.compareTo(a.lastEditTime));
+        break;
+      case SortOption.wordCountAsc:
+        result.sort((a, b) => a.wordCount.compareTo(b.wordCount));
+        break;
+      case SortOption.wordCountDesc:
+        result.sort((a, b) => b.wordCount.compareTo(a.wordCount));
+        break;
+    }
+    
+    return result;
   }
 } 

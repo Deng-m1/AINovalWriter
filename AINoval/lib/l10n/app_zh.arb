@@ -30,5 +30,11 @@
   "paragraphs": "段落数",
   "readTime": "预计阅读时间",
   "minutes": "分钟",
-  "close": "关闭"
+  "close": "关闭",
+  "chatWithAI": "与AI聊天",
+  "sendMessage": "发送消息",
+  "typeMessage": "输入消息...",
+  "newChat": "新对话",
+  "loadingChat": "加载对话中...",
+  "aiAssistant": "AI助手"
 } 

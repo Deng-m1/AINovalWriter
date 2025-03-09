@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 
+/// 编辑器工具栏组件
 class EditorToolbar extends StatelessWidget {
   
   const EditorToolbar({

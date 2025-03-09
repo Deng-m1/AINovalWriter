@@ -21,18 +21,6 @@ class NovelListScreen extends StatefulWidget {
 class _NovelListScreenState extends State<NovelListScreen> {
   bool _isGridView = true;
   final TextEditingController _searchController = TextEditingController();
-  // 创建一个局部的NovelRepository实例
-  late final NovelRepository _repository;
-  
-  @override
-  void initState() {
-    super.initState();
-    // 初始化NovelRepository
-    _repository = NovelRepository(
-      apiService: ApiService(),
-      localStorageService: LocalStorageService(),
-    );
-  }
   
   @override
   void dispose() {
@@ -210,7 +198,7 @@ class _NovelListScreenState extends State<NovelListScreen> {
           // 创建按钮
           FloatingActionButton.extended(
             heroTag: 'create',
-            onPressed: () => _showCreateNovelDialog(context),
+            onPressed: () => _showCreateNovelDialog(),
             label: const Text('创建小说'),
             icon: const Icon(Icons.add),
           ),
@@ -394,11 +382,11 @@ class _NovelListScreenState extends State<NovelListScreen> {
     );
   }
   
-  // 显示创建小说对话框
-  void _showCreateNovelDialog(BuildContext context) {
+  // 创建新小说对话框
+  void _showCreateNovelDialog() {
+    final TextEditingController titleController = TextEditingController();
+    final TextEditingController seriesController = TextEditingController();
     final l10n = AppLocalizations.of(context)!;
-    final titleController = TextEditingController();
-    final seriesController = TextEditingController();
     
     showDialog(
       context: context,
@@ -437,12 +425,12 @@ class _NovelListScreenState extends State<NovelListScreen> {
               
               if (title.isNotEmpty) {
                 Navigator.pop(context);
-                // 使用局部的_repository实例而不是通过context获取
-                _repository.createNovel(title, seriesName: series.isNotEmpty ? series : null)
-                  .then((_) {
-                    // 创建成功后重新加载小说列表
-                    context.read<NovelListBloc>().add(LoadNovels());
-                  });
+                
+                // 使用BlocProvider提供的NovelListBloc来创建小说
+                context.read<NovelListBloc>().add(CreateNovel(
+                  title: title,
+                  seriesName: series.isNotEmpty ? series : null,
+                ));
               }
             },
             child: Text(l10n.create),

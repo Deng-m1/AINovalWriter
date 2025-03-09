@@ -15,6 +15,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:ainoval/l10n/l10n.dart';
+// 导入聊天相关的类
+import 'package:ainoval/blocs/chat/chat_bloc.dart';
+import 'package:ainoval/repositories/chat_repository.dart';
+import 'package:ainoval/repositories/codex_repository.dart';
+import 'package:ainoval/services/context_provider.dart';
+import 'package:ainoval/services/websocket_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,16 +33,52 @@ void main() async {
     await _createResourceDirectories();
   }
   
+  // 初始化LocalStorageService
+  final localStorageService = LocalStorageService();
+  await localStorageService.init();
+  
+  // 创建ApiService
+  final apiService = ApiService();
+  
+  // 创建WebSocketService
+  final webSocketService = WebSocketService();
+  
+  // 创建NovelRepository
+  final novelRepository = NovelRepository(
+    apiService: apiService,
+    localStorageService: localStorageService,
+  );
+  
+  // 创建CodexRepository
+  final codexRepository = CodexRepository();
+  
+  // 创建ContextProvider
+  final contextProvider = ContextProvider(
+    novelRepository: novelRepository,
+    codexRepository: codexRepository,
+  );
+  
+  // 创建ChatRepository
+  final chatRepository = ChatRepository(
+    apiService: apiService,
+    localStorageService: localStorageService,
+    webSocketService: webSocketService,
+  );
+  
   runApp(
     MultiBlocProvider(
       providers: [
         BlocProvider<NovelListBloc>(
           create: (context) => NovelListBloc(
-            repository: NovelRepository(
-              apiService: ApiService(),
-              localStorageService: LocalStorageService(),
-            ),
+            repository: novelRepository,
           )..add(LoadNovels()),
+        ),
+        // 添加ChatBloc提供者
+        BlocProvider<ChatBloc>(
+          create: (context) => ChatBloc(
+            repository: chatRepository,
+            contextProvider: contextProvider,
+          ),
         ),
       ],
       child: const MyApp(),
@@ -51,7 +93,6 @@ Future<void> _createResourceDirectories() async {
     final assetsDir = Directory('${appDir.path}/assets');
     final imagesDir = Directory('${assetsDir.path}/images');
     final iconsDir = Directory('${assetsDir.path}/icons');
-    final fontsDir = Directory('${assetsDir.path}/fonts');
     
     // 创建资源目录
     if (!await assetsDir.exists()) {
@@ -66,11 +107,6 @@ Future<void> _createResourceDirectories() async {
     // 创建图标目录
     if (!await iconsDir.exists()) {
       await iconsDir.create(recursive: true);
-    }
-    
-    // 创建字体目录
-    if (!await fontsDir.exists()) {
-      await fontsDir.create(recursive: true);
     }
     
     print('资源文件夹创建成功');

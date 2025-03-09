@@ -238,15 +238,15 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
                   const Text('自动保存间隔'),
                   const SizedBox(height: 8),
                   Slider(
-                    value: _settings.autoSaveInterval.inSeconds.toDouble(),
+                    value: _settings.autoSaveIntervalMinutes.toDouble(),
                     min: 30,
                     max: 300,
                     divisions: 9,
-                    label: '${(_settings.autoSaveInterval.inSeconds / 60).toStringAsFixed(1)}分钟',
+                    label: '${(_settings.autoSaveIntervalMinutes / 60).toStringAsFixed(1)}分钟',
                     onChanged: (value) {
                       setState(() {
                         _settings = _settings.copyWith(
-                          autoSaveInterval: Duration(seconds: value.toInt()),
+                          autoSaveIntervalMinutes: value.toInt(),
                         );
                       });
                       widget.onSettingsChanged(_settings);
@@ -254,7 +254,7 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
                   ),
                   Center(
                     child: Text(
-                      '每${(_settings.autoSaveInterval.inSeconds / 60).toStringAsFixed(1)}分钟自动保存一次',
+                      '每${(_settings.autoSaveIntervalMinutes / 60).toStringAsFixed(1)}分钟自动保存一次',
                       style: const TextStyle(
                         fontStyle: FontStyle.italic,
                       ),
@@ -315,43 +315,14 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                RadioListTile<ThemeMode>(
-                  title: const Text('跟随系统'),
-                  value: ThemeMode.system,
-                  groupValue: _settings.themeMode,
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _settings = _settings.copyWith(themeMode: value);
-                      });
-                      widget.onSettingsChanged(_settings);
-                    }
-                  },
-                ),
-                RadioListTile<ThemeMode>(
-                  title: const Text('浅色模式'),
-                  value: ThemeMode.light,
-                  groupValue: _settings.themeMode,
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _settings = _settings.copyWith(themeMode: value);
-                      });
-                      widget.onSettingsChanged(_settings);
-                    }
-                  },
-                ),
-                RadioListTile<ThemeMode>(
+                SwitchListTile(
                   title: const Text('深色模式'),
-                  value: ThemeMode.dark,
-                  groupValue: _settings.themeMode,
+                  value: _settings.darkModeEnabled,
                   onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _settings = _settings.copyWith(themeMode: value);
-                      });
-                      widget.onSettingsChanged(_settings);
-                    }
+                    setState(() {
+                      _settings = _settings.copyWith(darkModeEnabled: value);
+                    });
+                    widget.onSettingsChanged(_settings);
                   },
                 ),
               ],

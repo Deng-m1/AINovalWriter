@@ -1,146 +1,15 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:ainoval/models/editor_content.dart';
 import 'package:ainoval/models/editor_settings.dart';
-import 'package:ainoval/repositories/editor_repository.dart';
+import 'package:ainoval/repositories/editor_repository.dart' hide EditorSettings;
+import 'package:ainoval/models/novel_structure.dart' as novel_models;
+import 'package:ainoval/utils/word_count_analyzer.dart';
 
-// 事件定义
-abstract class EditorEvent extends Equatable {
-  @override
-  List<Object?> get props => [];
-}
-
-class LoadEditorContent extends EditorEvent {}
-
-class UpdateContent extends EditorEvent {
-  
-  UpdateContent({required this.newContent});
-  final String newContent;
-  
-  @override
-  List<Object?> get props => [newContent];
-}
-
-class SaveContent extends EditorEvent {}
-
-class ToggleEditorSettings extends EditorEvent {}
-
-class UpdateEditorSettings extends EditorEvent {
-  
-  UpdateEditorSettings({required this.settings});
-  final EditorSettings settings;
-  
-  @override
-  List<Object?> get props => [settings];
-}
-
-class ApplyAISuggestion extends EditorEvent {
-  
-  ApplyAISuggestion({required this.suggestion});
-  final String suggestion;
-  
-  @override
-  List<Object?> get props => [suggestion];
-}
-
-class LoadRevisionHistory extends EditorEvent {}
-
-class RestoreRevision extends EditorEvent {
-  
-  RestoreRevision({required this.revisionId});
-  final String revisionId;
-  
-  @override
-  List<Object?> get props => [revisionId];
-}
-
-// 状态定义
-abstract class EditorState extends Equatable {
-  @override
-  List<Object?> get props => [];
-}
-
-class EditorInitial extends EditorState {}
-
-class EditorLoading extends EditorState {}
-
-class EditorLoaded extends EditorState {
-  
-  EditorLoaded({
-    required this.content,
-    required this.settings,
-    this.isDirty = false,
-    this.isSaving = false,
-    this.lastSaveTime,
-    this.errorMessage,
-  });
-  final EditorContent content;
-  final EditorSettings settings;
-  final bool isDirty;
-  final bool isSaving;
-  final DateTime? lastSaveTime;
-  final String? errorMessage;
-  
-  @override
-  List<Object?> get props => [
-    content, 
-    settings, 
-    isDirty, 
-    isSaving, 
-    lastSaveTime, 
-    errorMessage
-  ];
-  
-  EditorLoaded copyWith({
-    EditorContent? content,
-    EditorSettings? settings,
-    bool? isDirty,
-    bool? isSaving,
-    DateTime? lastSaveTime,
-    String? errorMessage,
-  }) {
-    return EditorLoaded(
-      content: content ?? this.content,
-      settings: settings ?? this.settings,
-      isDirty: isDirty ?? this.isDirty,
-      isSaving: isSaving ?? this.isSaving,
-      lastSaveTime: lastSaveTime ?? this.lastSaveTime,
-      errorMessage: errorMessage ?? this.errorMessage,
-    );
-  }
-}
-
-class EditorSettingsOpen extends EditorState { // 添加content属性，以便于切换回EditorLoaded状态
-  
-  EditorSettingsOpen({
-    required this.settings,
-    required this.content,
-  });
-  final EditorSettings settings;
-  final EditorContent content;
-  
-  @override
-  List<Object?> get props => [settings, content];
-}
-
-class EditorError extends EditorState {
-  
-  EditorError({required this.message});
-  final String message;
-  
-  @override
-  List<Object?> get props => [message];
-}
-
-class EditorRevisionsLoaded extends EditorState {
-  
-  EditorRevisionsLoaded({required this.revisions});
-  final List<Revision> revisions;
-  
-  @override
-  List<Object?> get props => [revisions];
-}
+part 'editor_event.dart';
+part 'editor_state.dart';
 
 // Bloc实现
 class EditorBloc extends Bloc<EditorEvent, EditorState> {
@@ -148,38 +17,46 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   EditorBloc({
     required this.repository,
     required this.novelId,
-    required this.chapterId,
   }) : super(EditorInitial()) {
     on<LoadEditorContent>(_onLoadContent);
     on<UpdateContent>(_onUpdateContent);
     on<SaveContent>(_onSaveContent);
+    on<UpdateSceneContent>(_onUpdateSceneContent);
+    on<UpdateSummary>(_onUpdateSummary);
     on<ToggleEditorSettings>(_onToggleSettings);
     on<UpdateEditorSettings>(_onUpdateSettings);
-    on<ApplyAISuggestion>(_onApplyAISuggestion);
-    on<LoadRevisionHistory>(_onLoadRevisionHistory);
-    on<RestoreRevision>(_onRestoreRevision);
+    on<SetActiveChapter>(_onSetActiveChapter);
+    on<UpdateActTitle>(_onUpdateActTitle);
+    on<UpdateChapterTitle>(_onUpdateChapterTitle);
   }
   final EditorRepository repository;
   final String novelId;
-  final String chapterId;
   Timer? _autoSaveTimer;
+  novel_models.Novel? _novel;
+  bool _isDirty = false;
+  DateTime? _lastSaveTime;
+  EditorSettings _settings = const EditorSettings();
   
   Future<void> _onLoadContent(LoadEditorContent event, Emitter<EditorState> emit) async {
     emit(EditorLoading());
+    
     try {
-      final content = await repository.getEditorContent(novelId, chapterId);
+      // 获取小说数据
+      final novel = await repository.getNovel(novelId);
+      
+      // 获取编辑器设置
       final settings = await repository.getEditorSettings();
+      
       emit(EditorLoaded(
-        content: content,
+        novel: novel,
         settings: settings,
+        activeActId: novel.acts.isNotEmpty ? novel.acts.first.id : null,
+        activeChapterId: novel.acts.isNotEmpty && novel.acts.first.chapters.isNotEmpty 
+            ? novel.acts.first.chapters.first.id 
+            : null,
         isDirty: false,
         isSaving: false,
       ));
-      
-      // 设置自动保存
-      if (settings.autoSaveEnabled) {
-        _setupAutoSave();
-      }
     } catch (e) {
       emit(EditorError(message: e.toString()));
     }
@@ -188,10 +65,20 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   Future<void> _onUpdateContent(UpdateContent event, Emitter<EditorState> emit) async {
     final currentState = state;
     if (currentState is EditorLoaded) {
-      emit(currentState.copyWith(
-        content: currentState.content.copyWith(content: event.newContent),
-        isDirty: true,
-      ));
+      // 更新当前活动场景的内容
+      if (currentState.activeActId != null && currentState.activeChapterId != null) {
+        final updatedNovel = _updateNovelContent(
+          currentState.novel,
+          currentState.activeActId!,
+          currentState.activeChapterId!,
+          event.content,
+        );
+        
+        emit(currentState.copyWith(
+          novel: updatedNovel,
+          isDirty: true,
+        ));
+      }
     }
   }
   
@@ -199,18 +86,67 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     final currentState = state;
     if (currentState is EditorLoaded && currentState.isDirty) {
       emit(currentState.copyWith(isSaving: true));
+      
       try {
-        final savedContent = await repository.saveEditorContent(
-          novelId,
-          chapterId,
-          currentState.content.content,
-        );
-        emit(currentState.copyWith(
-          content: savedContent,
-          isDirty: false,
-          isSaving: false,
-          lastSaveTime: DateTime.now(),
-        ));
+        // 保存整个小说数据
+        await repository.saveNovel(currentState.novel);
+        
+        // 如果有活动章节，保存场景内容
+        if (currentState.activeActId != null && currentState.activeChapterId != null) {
+          try {
+            // 获取当前活动场景
+            final act = currentState.novel.acts.firstWhere(
+              (act) => act.id == currentState.activeActId,
+            );
+            final chapter = act.chapters.firstWhere(
+              (chapter) => chapter.id == currentState.activeChapterId,
+            );
+            final scene = chapter.scene;
+            
+            // 计算字数
+            final wordCount = WordCountAnalyzer.countWords(scene.content);
+            
+            // 保存场景内容
+            final updatedScene = await repository.saveSceneContent(
+              novelId,
+              currentState.activeActId!,
+              currentState.activeChapterId!,
+              scene.content,
+              wordCount,
+              scene.summary,
+            );
+            
+            // 更新小说数据
+            final updatedNovel = _updateNovelScene(
+              currentState.novel,
+              currentState.activeActId!,
+              currentState.activeChapterId!,
+              updatedScene,
+            );
+            
+            emit(currentState.copyWith(
+              novel: updatedNovel,
+              isDirty: false,
+              isSaving: false,
+              lastSaveTime: DateTime.now(),
+            ));
+          } catch (e) {
+            print('保存场景内容失败: $e');
+            // 即使场景保存失败，也标记为已保存
+            emit(currentState.copyWith(
+              isDirty: false,
+              isSaving: false,
+              lastSaveTime: DateTime.now(),
+            ));
+          }
+        } else {
+          // 没有活动章节，只保存小说数据
+          emit(currentState.copyWith(
+            isDirty: false,
+            isSaving: false,
+            lastSaveTime: DateTime.now(),
+          ));
+        }
       } catch (e) {
         emit(currentState.copyWith(
           isSaving: false,
@@ -220,104 +156,419 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     }
   }
   
-  void _onToggleSettings(ToggleEditorSettings event, Emitter<EditorState> emit) {
+  Future<void> _onUpdateSceneContent(UpdateSceneContent event, Emitter<EditorState> emit) async {
+    final currentState = state;
+    if (currentState is EditorLoaded) {
+      // 更新指定场景的内容
+      final updatedNovel = _updateNovelSceneContent(
+        currentState.novel,
+        event.actId,
+        event.chapterId,
+        event.content,
+      );
+      
+      // 设置为脏状态
+      emit(currentState.copyWith(
+        novel: updatedNovel,
+        isDirty: true,
+        isSaving: true,
+      ));
+      
+      // 立即保存场景内容
+      try {
+        // 计算字数
+        final wordCount = WordCountAnalyzer.countWords(event.content);
+        
+        // 获取当前场景
+        final act = updatedNovel.acts.firstWhere((a) => a.id == event.actId);
+        final chapter = act.chapters.firstWhere((c) => c.id == event.chapterId);
+        
+        // 保存场景内容
+        final updatedScene = await repository.saveSceneContent(
+          novelId,
+          event.actId,
+          event.chapterId,
+          event.content,
+          wordCount,
+          chapter.scene.summary,
+        );
+        
+        // 更新小说数据
+        final finalNovel = _updateNovelScene(
+          updatedNovel,
+          event.actId,
+          event.chapterId,
+          updatedScene,
+        );
+        
+        // 保存成功后，更新状态为已保存
+        emit((state as EditorLoaded).copyWith(
+          novel: finalNovel,
+          isDirty: false,
+          isSaving: false,
+          lastSaveTime: DateTime.now(),
+        ));
+      } catch (e) {
+        print('保存场景内容失败: $e');
+        emit((state as EditorLoaded).copyWith(
+          isSaving: false,
+        ));
+      }
+    }
+  }
+  
+  Future<void> _onUpdateSummary(UpdateSummary event, Emitter<EditorState> emit) async {
+    final currentState = state;
+    if (currentState is EditorLoaded) {
+      // 更新指定场景的摘要
+      final updatedNovel = _updateNovelSummary(
+        currentState.novel,
+        event.actId,
+        event.chapterId,
+        event.summary,
+      );
+      
+      // 设置为脏状态
+      emit(currentState.copyWith(
+        novel: updatedNovel,
+        isDirty: true,
+        isSaving: true,
+      ));
+      
+      // 保存摘要
+      try {
+        final updatedSummary = await repository.saveSummary(
+          novelId,
+          event.actId,
+          event.chapterId,
+          event.summary,
+        );
+        
+        // 更新小说数据
+        final act = updatedNovel.acts.firstWhere((a) => a.id == event.actId);
+        final chapter = act.chapters.firstWhere((c) => c.id == event.chapterId);
+        final updatedScene = chapter.scene.copyWith(summary: updatedSummary);
+        
+        final finalNovel = _updateNovelScene(
+          updatedNovel,
+          event.actId,
+          event.chapterId,
+          updatedScene,
+        );
+        
+        // 保存成功后，更新状态为已保存
+        emit((state as EditorLoaded).copyWith(
+          novel: finalNovel,
+          isDirty: false,
+          isSaving: false,
+          lastSaveTime: DateTime.now(),
+        ));
+      } catch (e) {
+        print('保存摘要失败: $e');
+        emit((state as EditorLoaded).copyWith(
+          isSaving: false,
+        ));
+      }
+    }
+  }
+  
+  Future<void> _onToggleSettings(ToggleEditorSettings event, Emitter<EditorState> emit) async {
     final currentState = state;
     if (currentState is EditorLoaded) {
       emit(EditorSettingsOpen(
         settings: currentState.settings,
-        content: currentState.content,
+        novel: currentState.novel,
+        activeActId: currentState.activeActId,
+        activeChapterId: currentState.activeChapterId,
+        isDirty: currentState.isDirty,
       ));
     } else if (currentState is EditorSettingsOpen) {
       emit(EditorLoaded(
-        content: currentState.content,
+        novel: currentState.novel,
         settings: currentState.settings,
+        activeActId: currentState.activeActId,
+        activeChapterId: currentState.activeChapterId,
+        isDirty: currentState.isDirty,
+        isSaving: false,
       ));
     }
   }
   
   Future<void> _onUpdateSettings(UpdateEditorSettings event, Emitter<EditorState> emit) async {
-    try {
-      await repository.saveEditorSettings(event.settings);
+    final currentState = state;
+    if (currentState is EditorSettingsOpen) {
+      final updatedSettings = {...currentState.settings, ...event.settings};
       
-      final currentState = state;
-      if (currentState is EditorLoaded) {
-        // 更新设置
-        emit(currentState.copyWith(settings: event.settings));
+      try {
+        await repository.saveEditorSettings(updatedSettings);
         
-        // 重新设置自动保存
-        if (event.settings.autoSaveEnabled) {
-          _setupAutoSave();
-        } else {
-          _autoSaveTimer?.cancel();
-          _autoSaveTimer = null;
-        }
-      } else if (currentState is EditorSettingsOpen) {
-        emit(EditorSettingsOpen(
-          settings: event.settings,
-          content: currentState.content,
+        emit(currentState.copyWith(
+          settings: updatedSettings,
         ));
+      } catch (e) {
+        emit(EditorError(message: e.toString()));
       }
-    } catch (e) {
-      emit(EditorError(message: '保存设置失败: ${e.toString()}'));
     }
   }
   
-  Future<void> _onApplyAISuggestion(ApplyAISuggestion event, Emitter<EditorState> emit) async {
+  // 处理设置活动章节事件
+  Future<void> _onSetActiveChapter(SetActiveChapter event, Emitter<EditorState> emit) async {
     final currentState = state;
     if (currentState is EditorLoaded) {
-      // 简单实现：将AI建议追加到内容末尾
-      final updatedContent = '${currentState.content.content}\n${event.suggestion}';
-      
       emit(currentState.copyWith(
-        content: currentState.content.copyWith(content: updatedContent),
-        isDirty: true,
+        activeActId: event.actId,
+        activeChapterId: event.chapterId,
       ));
     }
   }
   
-  Future<void> _onLoadRevisionHistory(LoadRevisionHistory event, Emitter<EditorState> emit) async {
-    try {
-      final revisions = await repository.getRevisionHistory(novelId, chapterId);
-      emit(EditorRevisionsLoaded(revisions: revisions));
-    } catch (e) {
-      emit(EditorError(message: '加载修订历史失败: ${e.toString()}'));
-    }
-  }
-  
-  Future<void> _onRestoreRevision(RestoreRevision event, Emitter<EditorState> emit) async {
-    try {
-      final restoredContent = await repository.restoreRevision(
-        novelId,
-        chapterId,
-        event.revisionId,
-      );
-      
-      final currentState = state;
-      if (currentState is EditorLoaded) {
-        emit(currentState.copyWith(
-          content: restoredContent,
-          isDirty: true,
-        ));
-      }
-    } catch (e) {
-      emit(EditorError(message: '恢复修订版本失败: ${e.toString()}'));
-    }
-  }
-  
-  // 设置自动保存
-  void _setupAutoSave() {
+  // 处理更新Act标题事件
+  Future<void> _onUpdateActTitle(UpdateActTitle event, Emitter<EditorState> emit) async {
     final currentState = state;
     if (currentState is EditorLoaded) {
-      _autoSaveTimer?.cancel();
-      _autoSaveTimer = Timer.periodic(
-        currentState.settings.autoSaveInterval,
-        (timer) {
-          if (state is EditorLoaded && (state as EditorLoaded).isDirty) {
-            add(SaveContent());
-          }
-        },
-      );
+      final updatedNovel = _updateActTitle(currentState.novel, event.actId, event.title);
+      
+      // 设置为脏状态，触发自动保存
+      emit(currentState.copyWith(
+        novel: updatedNovel,
+        isDirty: true,
+        isSaving: true,
+      ));
+      
+      // 立即保存到本地存储
+      try {
+        await repository.saveNovel(updatedNovel);
+        
+        // 保存成功后，更新状态为已保存
+        emit((state as EditorLoaded).copyWith(
+          isDirty: false,
+          isSaving: false,
+          lastSaveTime: DateTime.now(),
+        ));
+      } catch (e) {
+        print('保存Act标题失败: $e');
+        emit((state as EditorLoaded).copyWith(
+          isSaving: false,
+        ));
+      }
     }
+  }
+  
+  // 处理更新Chapter标题事件
+  Future<void> _onUpdateChapterTitle(UpdateChapterTitle event, Emitter<EditorState> emit) async {
+    final currentState = state;
+    if (currentState is EditorLoaded) {
+      final updatedNovel = _updateChapterTitle(
+        currentState.novel, 
+        event.actId, 
+        event.chapterId, 
+        event.title
+      );
+      
+      // 设置为脏状态，触发自动保存
+      emit(currentState.copyWith(
+        novel: updatedNovel,
+        isDirty: true,
+        isSaving: true,
+      ));
+      
+      // 立即保存到本地存储
+      try {
+        await repository.saveNovel(updatedNovel);
+        
+        // 保存成功后，更新状态为已保存
+        emit((state as EditorLoaded).copyWith(
+          isDirty: false,
+          isSaving: false,
+          lastSaveTime: DateTime.now(),
+        ));
+      } catch (e) {
+        print('保存Chapter标题失败: $e');
+        emit((state as EditorLoaded).copyWith(
+          isSaving: false,
+        ));
+      }
+    }
+  }
+  
+  // 辅助方法：更新小说内容
+  novel_models.Novel _updateNovelContent(
+    novel_models.Novel novel,
+    String actId,
+    String chapterId,
+    String content,
+  ) {
+    final acts = novel.acts.map((act) {
+      if (act.id == actId) {
+        final chapters = act.chapters.map((chapter) {
+          if (chapter.id == chapterId) {
+            final updatedScene = chapter.scene.copyWith(
+              content: content,
+            );
+            return chapter.copyWith(scene: updatedScene);
+          }
+          return chapter;
+        }).toList();
+        
+        return act.copyWith(chapters: chapters);
+      }
+      return act;
+    }).toList();
+    
+    return novel.copyWith(
+      acts: acts,
+      updatedAt: DateTime.now(),
+    );
+  }
+  
+  // 辅助方法：更新小说场景
+  novel_models.Novel _updateNovelScene(
+    novel_models.Novel novel,
+    String actId,
+    String chapterId,
+    novel_models.Scene scene,
+  ) {
+    final acts = novel.acts.map((act) {
+      if (act.id == actId) {
+        final chapters = act.chapters.map((chapter) {
+          if (chapter.id == chapterId) {
+            return chapter.copyWith(scene: scene);
+          }
+          return chapter;
+        }).toList();
+        
+        return act.copyWith(chapters: chapters);
+      }
+      return act;
+    }).toList();
+    
+    return novel.copyWith(
+      acts: acts,
+      updatedAt: DateTime.now(),
+    );
+  }
+  
+  // 辅助方法：更新小说场景内容
+  novel_models.Novel _updateNovelSceneContent(
+    novel_models.Novel novel,
+    String actId,
+    String chapterId,
+    String content,
+  ) {
+    final acts = novel.acts.map((act) {
+      if (act.id == actId) {
+        final chapters = act.chapters.map((chapter) {
+          if (chapter.id == chapterId) {
+            final updatedScene = chapter.scene.copyWith(
+              content: content,
+            );
+            return chapter.copyWith(scene: updatedScene);
+          }
+          return chapter;
+        }).toList();
+        
+        return act.copyWith(chapters: chapters);
+      }
+      return act;
+    }).toList();
+    
+    return novel.copyWith(
+      acts: acts,
+      updatedAt: DateTime.now(),
+    );
+  }
+  
+  // 辅助方法：更新小说摘要
+  novel_models.Novel _updateNovelSummary(
+    novel_models.Novel novel,
+    String actId,
+    String chapterId,
+    String summaryContent,
+  ) {
+    final acts = novel.acts.map((act) {
+      if (act.id == actId) {
+        final chapters = act.chapters.map((chapter) {
+          if (chapter.id == chapterId) {
+            final updatedSummary = chapter.scene.summary.copyWith(
+              content: summaryContent,
+            );
+            final updatedScene = chapter.scene.copyWith(
+              summary: updatedSummary,
+            );
+            return chapter.copyWith(scene: updatedScene);
+          }
+          return chapter;
+        }).toList();
+        
+        return act.copyWith(chapters: chapters);
+      }
+      return act;
+    }).toList();
+    
+    return novel.copyWith(
+      acts: acts,
+      updatedAt: DateTime.now(),
+    );
+  }
+  
+  // 辅助方法：更新Act标题
+  novel_models.Novel _updateActTitle(
+    novel_models.Novel novel,
+    String actId,
+    String title,
+  ) {
+    final acts = novel.acts.map((act) {
+      if (act.id == actId) {
+        return act.copyWith(title: title);
+      }
+      return act;
+    }).toList();
+    
+    return novel.copyWith(
+      acts: acts,
+      updatedAt: DateTime.now(),
+    );
+  }
+  
+  // 辅助方法：更新Chapter标题
+  novel_models.Novel _updateChapterTitle(
+    novel_models.Novel novel,
+    String actId,
+    String chapterId,
+    String title,
+  ) {
+    final acts = novel.acts.map((act) {
+      if (act.id == actId) {
+        final chapters = act.chapters.map((chapter) {
+          if (chapter.id == chapterId) {
+            return chapter.copyWith(title: title);
+          }
+          return chapter;
+        }).toList();
+        
+        return act.copyWith(chapters: chapters);
+      }
+      return act;
+    }).toList();
+    
+    return novel.copyWith(
+      acts: acts,
+      updatedAt: DateTime.now(),
+    );
+  }
+  
+  // 启动自动保存计时器
+  void _startAutoSaveTimer() {
+    _isDirty = true;
+    
+    // 取消现有计时器
+    _autoSaveTimer?.cancel();
+    
+    // 创建新计时器，3秒后自动保存
+    _autoSaveTimer = Timer(const Duration(seconds: 3), () {
+      add(const SaveContent());
+      _autoSaveTimer = null;
+    });
   }
   
   @override
