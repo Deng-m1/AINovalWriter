@@ -4,14 +4,14 @@ import 'package:intl/intl.dart';
 import '../../../models/chat_models.dart';
 
 class ChatMessageBubble extends StatelessWidget {
-  final ChatMessage message;
-  final Function(MessageAction) onActionSelected;
   
   const ChatMessageBubble({
     Key? key,
     required this.message,
     required this.onActionSelected,
   }) : super(key: key);
+  final ChatMessage message;
+  final Function(MessageAction) onActionSelected;
   
   @override
   Widget build(BuildContext context) {
@@ -115,10 +115,10 @@ class ChatMessageBubble extends StatelessWidget {
                           h3: Theme.of(context).textTheme.titleSmall,
                           code: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             fontFamily: 'monospace',
-                            backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+                            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                           ),
                           codeblockDecoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surfaceVariant,
+                            color: Theme.of(context).colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),

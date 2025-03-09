@@ -7,12 +7,12 @@ import 'package:uuid/uuid.dart';
 import '../models/chat_models.dart';
 
 class WebSocketService {
-  final String baseUrl;
-  final Map<String, WebSocketChannel> _connections = {};
   
   WebSocketService({
     this.baseUrl = 'ws://localhost:8080/chat',
   });
+  final String baseUrl;
+  final Map<String, WebSocketChannel> _connections = {};
   
   // 创建聊天连接
   Future<WebSocketChannel> createChatConnection(String sessionId) async {
@@ -42,16 +42,16 @@ class WebSocketService {
 
 // 简化的模拟WebSocketChannel实现
 class MockWebSocketChannel extends StreamChannelMixin implements WebSocketChannel {
-  final String sessionId;
-  final StreamController<dynamic> _controller = StreamController<dynamic>();
-  final StreamController<dynamic> _sinkController = StreamController<dynamic>();
-  late final MockWebSocketSink _sink;
   
   MockWebSocketChannel({required this.sessionId}) {
     _sink = MockWebSocketSink(_sinkController);
     // 监听发送的消息，模拟响应
     _sinkController.stream.listen(_handleMessage);
   }
+  final String sessionId;
+  final StreamController<dynamic> _controller = StreamController<dynamic>();
+  final StreamController<dynamic> _sinkController = StreamController<dynamic>();
+  late final MockWebSocketSink _sink;
   
   @override
   Stream get stream => _controller.stream;
@@ -171,9 +171,9 @@ class MockWebSocketChannel extends StreamChannelMixin implements WebSocketChanne
 
 // 模拟的WebSocketSink
 class MockWebSocketSink implements WebSocketSink {
-  final StreamController<dynamic> _controller;
   
   MockWebSocketSink(this._controller);
+  final StreamController<dynamic> _controller;
   
   @override
   void add(dynamic data) {

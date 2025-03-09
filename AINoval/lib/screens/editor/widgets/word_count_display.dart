@@ -1,6 +1,6 @@
+import 'package:ainoval/utils/word_count_analyzer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
-import 'package:ainoval/utils/word_count_analyzer.dart';
 
 class WordCountDisplay extends StatefulWidget {
   

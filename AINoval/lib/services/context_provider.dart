@@ -3,13 +3,13 @@ import '../repositories/novel_repository.dart';
 import '../repositories/codex_repository.dart';
 
 class ContextProvider {
-  final NovelRepository novelRepository;
-  final CodexRepository codexRepository;
   
   ContextProvider({
     required this.novelRepository,
     required this.codexRepository,
   });
+  final NovelRepository novelRepository;
+  final CodexRepository codexRepository;
   
   // 获取会话的上下文
   Future<ChatContext> getContextForSession(ChatSession session) async {

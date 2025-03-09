@@ -1,12 +1,9 @@
 import 'package:ainoval/blocs/novel_list/novel_list_bloc.dart';
 import 'package:ainoval/models/novel_summary.dart';
-import 'package:ainoval/repositories/novel_repository.dart';
 import 'package:ainoval/screens/editor/editor_screen.dart';
 import 'package:ainoval/screens/novel_list/widgets/novel_card.dart';
 import 'package:ainoval/screens/novel_list/widgets/novel_list_error_view.dart';
 import 'package:ainoval/utils/date_formatter.dart';
-import 'package:ainoval/services/api_service.dart';
-import 'package:ainoval/services/local_storage_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';

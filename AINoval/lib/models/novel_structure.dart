@@ -2,12 +2,6 @@ import 'dart:convert';
 
 /// 小说模型
 class Novel {
-  final String id;
-  final String title;
-  final String coverImagePath;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final List<Act> acts;
   
   Novel({
     required this.id,
@@ -17,11 +11,6 @@ class Novel {
     required this.updatedAt,
     this.acts = const [],
   });
-  
-  /// 计算小说总字数
-  int get wordCount {
-    return acts.fold(0, (sum, act) => sum + act.wordCount);
-  }
   
   /// 从JSON创建Novel实例
   factory Novel.fromJson(Map<String, dynamic> json) {
@@ -35,6 +24,17 @@ class Novel {
           ?.map((actJson) => Act.fromJson(actJson))
           .toList() ?? [],
     );
+  }
+  final String id;
+  final String title;
+  final String coverImagePath;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final List<Act> acts;
+  
+  /// 计算小说总字数
+  int get wordCount {
+    return acts.fold(0, (sum, act) => sum + act.wordCount);
   }
   
   /// 转换为JSON
@@ -125,10 +125,6 @@ class Novel {
 
 /// 幕模型（如Act 1, Act 2等）
 class Act {
-  final String id;
-  final String title;
-  final int order;
-  final List<Chapter> chapters;
   
   Act({
     required this.id,
@@ -136,11 +132,6 @@ class Act {
     required this.order,
     this.chapters = const [],
   });
-  
-  /// 计算幕的总字数
-  int get wordCount {
-    return chapters.fold(0, (sum, chapter) => sum + chapter.wordCount);
-  }
   
   /// 从JSON创建Act实例
   factory Act.fromJson(Map<String, dynamic> json) {
@@ -152,6 +143,15 @@ class Act {
           ?.map((chapterJson) => Chapter.fromJson(chapterJson))
           .toList() ?? [],
     );
+  }
+  final String id;
+  final String title;
+  final int order;
+  final List<Chapter> chapters;
+  
+  /// 计算幕的总字数
+  int get wordCount {
+    return chapters.fold(0, (sum, chapter) => sum + chapter.wordCount);
   }
   
   /// 转换为JSON
@@ -205,10 +205,6 @@ class Act {
 
 /// 章节模型
 class Chapter {
-  final String id;
-  final String title;
-  final int order;
-  final Scene scene;
   
   Chapter({
     required this.id,
@@ -216,9 +212,6 @@ class Chapter {
     required this.order,
     required this.scene,
   });
-  
-  /// 获取章节字数
-  int get wordCount => scene.wordCount;
   
   /// 从JSON创建Chapter实例
   factory Chapter.fromJson(Map<String, dynamic> json) {
@@ -229,6 +222,13 @@ class Chapter {
       scene: Scene.fromJson(json['scene']),
     );
   }
+  final String id;
+  final String title;
+  final int order;
+  final Scene scene;
+  
+  /// 获取章节字数
+  int get wordCount => scene.wordCount;
   
   /// 转换为JSON
   Map<String, dynamic> toJson() {
@@ -258,11 +258,6 @@ class Chapter {
 
 /// 场景模型
 class Scene {
-  final String id;
-  final String content;
-  final int wordCount;
-  final Summary summary;
-  final DateTime lastEdited;
   
   Scene({
     required this.id,
@@ -282,6 +277,11 @@ class Scene {
       lastEdited: DateTime.parse(json['lastEdited']),
     );
   }
+  final String id;
+  final String content;
+  final int wordCount;
+  final Summary summary;
+  final DateTime lastEdited;
   
   /// 转换为JSON
   Map<String, dynamic> toJson() {
@@ -326,8 +326,6 @@ class Scene {
 
 /// 摘要模型
 class Summary {
-  final String id;
-  final String content;
   
   Summary({
     required this.id,
@@ -341,6 +339,8 @@ class Summary {
       content: json['content'],
     );
   }
+  final String id;
+  final String content;
   
   /// 转换为JSON
   Map<String, dynamic> toJson() {

@@ -1,26 +1,25 @@
 import 'dart:io';
 
-import 'package:ainoval/blocs/novel_list/novel_list_bloc.dart';
-import 'package:ainoval/repositories/novel_repository.dart';
-import 'package:ainoval/repositories/editor_repository.dart';
-import 'package:ainoval/screens/novel_list/novel_list_screen.dart';
-import 'package:ainoval/services/api_service.dart';
-import 'package:ainoval/services/local_storage_service.dart';
-import 'package:ainoval/utils/app_theme.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-import 'package:ainoval/l10n/l10n.dart';
 // 导入聊天相关的类
 import 'package:ainoval/blocs/chat/chat_bloc.dart';
+import 'package:ainoval/blocs/novel_list/novel_list_bloc.dart';
+import 'package:ainoval/l10n/l10n.dart';
 import 'package:ainoval/repositories/chat_repository.dart';
 import 'package:ainoval/repositories/codex_repository.dart';
+import 'package:ainoval/repositories/novel_repository.dart';
+import 'package:ainoval/screens/novel_list/novel_list_screen.dart';
+import 'package:ainoval/services/api_service.dart';
 import 'package:ainoval/services/context_provider.dart';
+import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/services/websocket_service.dart';
+import 'package:ainoval/utils/app_theme.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

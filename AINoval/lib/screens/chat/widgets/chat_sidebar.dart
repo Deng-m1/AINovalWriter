@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 
 /// 聊天边栏组件，用于在编辑器左侧显示聊天功能
 class ChatSidebar extends StatefulWidget {
-  final String novelId;
-  final String? chapterId;
   
   const ChatSidebar({
     Key? key,
     required this.novelId,
     this.chapterId,
   }) : super(key: key);
+  final String novelId;
+  final String? chapterId;
   
   @override
   State<ChatSidebar> createState() => _ChatSidebarState();

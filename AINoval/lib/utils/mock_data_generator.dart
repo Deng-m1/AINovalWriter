@@ -5,7 +5,7 @@ import 'package:ainoval/models/novel_structure.dart';
 /// 模拟数据生成器，用于生成符合数据结构的模拟数据
 class MockDataGenerator {
   static final Random _random = Random();
-  static final Uuid _uuid = Uuid();
+  static final Uuid _uuid = const Uuid();
   
   /// 生成模拟小说数据
   static Novel generateMockNovel(String id, String title) {

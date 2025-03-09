@@ -3,13 +3,6 @@ import 'package:intl/intl.dart';
 
 // 聊天会话模型
 class ChatSession {
-  final String id;
-  final String title;
-  final DateTime createdAt;
-  final DateTime lastUpdatedAt;
-  final List<ChatMessage> messages;
-  final String novelId;
-  final String? chapterId;
   
   ChatSession({
     required this.id,
@@ -20,6 +13,28 @@ class ChatSession {
     required this.novelId,
     this.chapterId,
   });
+  
+  // 从JSON转换方法
+  factory ChatSession.fromJson(Map<String, dynamic> json) {
+    return ChatSession(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      lastUpdatedAt: DateTime.parse(json['lastUpdatedAt'] as String),
+      messages: (json['messages'] as List)
+          .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      novelId: json['novelId'] as String,
+      chapterId: json['chapterId'] as String?,
+    );
+  }
+  final String id;
+  final String title;
+  final DateTime createdAt;
+  final DateTime lastUpdatedAt;
+  final List<ChatMessage> messages;
+  final String novelId;
+  final String? chapterId;
   
   // 复制方法，用于创建会话的副本
   ChatSession copyWith({
@@ -42,21 +57,6 @@ class ChatSession {
     );
   }
   
-  // 从JSON转换方法
-  factory ChatSession.fromJson(Map<String, dynamic> json) {
-    return ChatSession(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      lastUpdatedAt: DateTime.parse(json['lastUpdatedAt'] as String),
-      messages: (json['messages'] as List)
-          .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      novelId: json['novelId'] as String,
-      chapterId: json['chapterId'] as String?,
-    );
-  }
-  
   // 转换为JSON方法
   Map<String, dynamic> toJson() {
     return {
@@ -73,12 +73,6 @@ class ChatSession {
 
 // 聊天消息模型
 class ChatMessage {
-  final String id;
-  final MessageRole role;
-  final String content;
-  final DateTime timestamp;
-  final MessageStatus status;
-  final List<MessageAction>? actions;
   
   ChatMessage({
     required this.id,
@@ -88,25 +82,6 @@ class ChatMessage {
     this.status = MessageStatus.sent,
     this.actions,
   });
-  
-  // 复制方法
-  ChatMessage copyWith({
-    String? id,
-    MessageRole? role,
-    String? content,
-    DateTime? timestamp,
-    MessageStatus? status,
-    List<MessageAction>? actions,
-  }) {
-    return ChatMessage(
-      id: id ?? this.id,
-      role: role ?? this.role,
-      content: content ?? this.content,
-      timestamp: timestamp ?? this.timestamp,
-      status: status ?? this.status,
-      actions: actions ?? this.actions,
-    );
-  }
   
   // 从JSON转换方法
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -126,6 +101,31 @@ class ChatMessage {
               .map((e) => MessageAction.fromJson(e as Map<String, dynamic>))
               .toList()
           : null,
+    );
+  }
+  final String id;
+  final MessageRole role;
+  final String content;
+  final DateTime timestamp;
+  final MessageStatus status;
+  final List<MessageAction>? actions;
+  
+  // 复制方法
+  ChatMessage copyWith({
+    String? id,
+    MessageRole? role,
+    String? content,
+    DateTime? timestamp,
+    MessageStatus? status,
+    List<MessageAction>? actions,
+  }) {
+    return ChatMessage(
+      id: id ?? this.id,
+      role: role ?? this.role,
+      content: content ?? this.content,
+      timestamp: timestamp ?? this.timestamp,
+      status: status ?? this.status,
+      actions: actions ?? this.actions,
     );
   }
   
@@ -165,10 +165,6 @@ enum MessageStatus {
 
 // 消息关联操作
 class MessageAction {
-  final String id;
-  final String label;
-  final ActionType type;
-  final Map<String, dynamic>? data;
   
   MessageAction({
     required this.id,
@@ -188,6 +184,10 @@ class MessageAction {
       data: json['data'] as Map<String, dynamic>?,
     );
   }
+  final String id;
+  final String label;
+  final ActionType type;
+  final Map<String, dynamic>? data;
   
   // 转换为JSON方法
   Map<String, dynamic> toJson() {
@@ -214,10 +214,6 @@ enum ActionType {
 
 // 聊天上下文模型
 class ChatContext {
-  final String novelId;
-  final String? chapterId;
-  final String? selectedText;
-  final List<ContextItem> relevantItems;
   
   ChatContext({
     required this.novelId,
@@ -225,6 +221,24 @@ class ChatContext {
     this.selectedText,
     this.relevantItems = const [],
   });
+  
+  // 从JSON转换方法
+  factory ChatContext.fromJson(Map<String, dynamic> json) {
+    return ChatContext(
+      novelId: json['novelId'] as String,
+      chapterId: json['chapterId'] as String?,
+      selectedText: json['selectedText'] as String?,
+      relevantItems: json['relevantItems'] != null
+          ? (json['relevantItems'] as List)
+              .map((e) => ContextItem.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : [],
+    );
+  }
+  final String novelId;
+  final String? chapterId;
+  final String? selectedText;
+  final List<ContextItem> relevantItems;
   
   // 复制方法
   ChatContext copyWith({
@@ -241,20 +255,6 @@ class ChatContext {
     );
   }
   
-  // 从JSON转换方法
-  factory ChatContext.fromJson(Map<String, dynamic> json) {
-    return ChatContext(
-      novelId: json['novelId'] as String,
-      chapterId: json['chapterId'] as String?,
-      selectedText: json['selectedText'] as String?,
-      relevantItems: json['relevantItems'] != null
-          ? (json['relevantItems'] as List)
-              .map((e) => ContextItem.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : [],
-    );
-  }
-  
   // 转换为JSON方法
   Map<String, dynamic> toJson() {
     return {
@@ -268,11 +268,6 @@ class ChatContext {
 
 // 上下文项目
 class ContextItem {
-  final String id;
-  final ContextItemType type;
-  final String title;
-  final String content;
-  final double relevanceScore;
   
   ContextItem({
     required this.id,
@@ -294,6 +289,11 @@ class ContextItem {
       relevanceScore: json['relevanceScore'] as double,
     );
   }
+  final String id;
+  final ContextItemType type;
+  final String title;
+  final String content;
+  final double relevanceScore;
   
   // 转换为JSON方法
   Map<String, dynamic> toJson() {
@@ -320,8 +320,6 @@ enum ContextItemType {
 
 // AI回复模型
 class AIChatResponse {
-  final String content;
-  final List<MessageAction> actions;
   
   AIChatResponse({
     required this.content,
@@ -339,6 +337,8 @@ class AIChatResponse {
           : [],
     );
   }
+  final String content;
+  final List<MessageAction> actions;
   
   // 转换为JSON方法
   Map<String, dynamic> toJson() {

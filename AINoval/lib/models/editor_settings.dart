@@ -3,13 +3,6 @@ import 'package:flutter/material.dart';
 
 /// 编辑器设置模型
 class EditorSettings extends Equatable {
-  final double fontSize;
-  final String fontFamily;
-  final double lineSpacing;
-  final bool spellCheckEnabled;
-  final bool autoSaveEnabled;
-  final int autoSaveIntervalMinutes;
-  final bool darkModeEnabled;
   
   const EditorSettings({
     this.fontSize = 16.0,
@@ -20,17 +13,6 @@ class EditorSettings extends Equatable {
     this.autoSaveIntervalMinutes = 2,
     this.darkModeEnabled = false,
   });
-  
-  @override
-  List<Object?> get props => [
-    fontSize,
-    fontFamily,
-    lineSpacing,
-    spellCheckEnabled,
-    autoSaveEnabled,
-    autoSaveIntervalMinutes,
-    darkModeEnabled,
-  ];
   
   /// 从Map创建EditorSettings实例
   factory EditorSettings.fromMap(Map<String, dynamic> map) {
@@ -44,6 +26,24 @@ class EditorSettings extends Equatable {
       darkModeEnabled: map['darkModeEnabled'] ?? false,
     );
   }
+  final double fontSize;
+  final String fontFamily;
+  final double lineSpacing;
+  final bool spellCheckEnabled;
+  final bool autoSaveEnabled;
+  final int autoSaveIntervalMinutes;
+  final bool darkModeEnabled;
+  
+  @override
+  List<Object?> get props => [
+    fontSize,
+    fontFamily,
+    lineSpacing,
+    spellCheckEnabled,
+    autoSaveEnabled,
+    autoSaveIntervalMinutes,
+    darkModeEnabled,
+  ];
   
   /// 转换为Map
   Map<String, dynamic> toMap() {

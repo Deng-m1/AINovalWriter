@@ -5,15 +5,15 @@ import '../services/local_storage_service.dart';
 import '../services/websocket_service.dart';
 
 class ChatRepository {
-  final ApiService apiService;
-  final LocalStorageService localStorageService;
-  final WebSocketService webSocketService;
   
   ChatRepository({
     required this.apiService,
     required this.localStorageService,
     required this.webSocketService,
   });
+  final ApiService apiService;
+  final LocalStorageService localStorageService;
+  final WebSocketService webSocketService;
   
   // 获取聊天会话列表
   Future<List<ChatSession>> getChatSessions(String novelId) async {

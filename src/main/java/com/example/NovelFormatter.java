@@ -1,6 +1,5 @@
 package com.example;
 
-import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -20,9 +19,9 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTStyle;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STStyleType;
 
 public class NovelFormatter {
-    // 固定的输入输出文件路径，使用File.separator确保跨平台兼容性
-    private static final String INPUT_FILE = "src" + File.separator + "main" + File.separator + "resources" + File.separator + "input" + File.separator + "novel.docx";
-    private static final String OUTPUT_FILE = "src" + File.separator + "main" + File.separator + "resources" + File.separator + "output" + File.separator + "novel_formatted.docx";
+    // 固定的输入输出文件路径
+    private static final String INPUT_FILE = "src\\main\\resources\\input\\novel.docx";
+    private static final String OUTPUT_FILE = "src\\main\\resources\\output\\novel_formatted.docx";
     
     // 标题匹配模式：匹配"第X章"格式，其中X可以是任意数字
     private static final Pattern CHAPTER_PATTERN = Pattern.compile("第[0-9一二三四五六七八九十百千]+章.*");

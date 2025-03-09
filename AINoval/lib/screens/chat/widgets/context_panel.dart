@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import '../../../models/chat_models.dart';
 
 class ContextPanel extends StatelessWidget {
-  final ChatContext context;
-  final VoidCallback onClose;
   
   const ContextPanel({
     Key? key,
     required this.context,
     required this.onClose,
   }) : super(key: key);
+  final ChatContext context;
+  final VoidCallback onClose;
   
   @override
   Widget build(BuildContext context) {
@@ -29,7 +29,7 @@ class ContextPanel extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceVariant,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
               border: Border(
                 bottom: BorderSide(
                   color: Theme.of(context).colorScheme.outlineVariant,

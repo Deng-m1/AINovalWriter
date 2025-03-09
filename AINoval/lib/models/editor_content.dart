@@ -118,10 +118,6 @@ class Revision extends Equatable {
 }
 
 class SceneContent extends Equatable {
-  final String content;
-  final String summary;
-  final String title;
-  final String subtitle;
 
   const SceneContent({
     required this.content,
@@ -139,6 +135,10 @@ class SceneContent extends Equatable {
       subtitle: json['subtitle'] ?? '',
     );
   }
+  final String content;
+  final String summary;
+  final String title;
+  final String subtitle;
 
   @override
   List<Object?> get props => [content, summary, title, subtitle];

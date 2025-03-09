@@ -19,8 +19,6 @@ import 'package:ainoval/screens/chat/chat_screen.dart';
 import 'package:ainoval/blocs/chat/chat_bloc.dart';
 import 'package:ainoval/screens/chat/widgets/chat_sidebar.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
-import 'package:ainoval/screens/editor/widgets/editor_sidebar.dart';
-import 'package:ainoval/screens/editor/widgets/editor_content_area.dart';
 
 class EditorScreen extends StatefulWidget {
   
@@ -106,98 +104,30 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
   
   @override
   Widget build(BuildContext context) {
-    return BlocConsumer<EditorBloc, EditorState>(
-      listener: (context, state) {
-        // 处理状态变化
-        if (state.status == EditorStatus.error) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(state.errorMessage)),
-          );
-        } else if (state.status == EditorStatus.saved) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('内容已保存')),
-          );
-        }
-      },
-      builder: (context, state) {
-        if (state.status == EditorStatus.loading) {
-          return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
-        
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(state.novelTitle),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.save),
-                onPressed: () {
-                  context.read<EditorBloc>().add(SaveContent());
-                },
-                tooltip: '保存',
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings),
-                onPressed: () {
-                  _showSettingsDialog(context);
-                },
-                tooltip: '设置',
-              ),
-              IconButton(
-                icon: const Icon(Icons.chat),
-                onPressed: () {
-                  _navigateToChatScreen(context);
-                },
-                tooltip: 'AI助手',
-              ),
-            ],
-          ),
-          drawer: EditorSidebar(
-            novel: state.novel,
-            currentChapterId: state.currentChapterId,
-            onChapterSelected: (chapterId) {
-              context.read<EditorBloc>().add(LoadChapter(chapterId: chapterId));
-            },
-            onAddChapter: () {
-              _showAddChapterDialog(context);
-            },
-          ),
-          body: Column(
-            children: [
-              EditorToolbar(
-                onBoldPressed: () => _applyFormatting(context, 'bold'),
-                onItalicPressed: () => _applyFormatting(context, 'italic'),
-                onUnderlinePressed: () => _applyFormatting(context, 'underline'),
-                onAlignLeftPressed: () => _applyFormatting(context, 'alignLeft'),
-                onAlignCenterPressed: () => _applyFormatting(context, 'alignCenter'),
-                onAlignRightPressed: () => _applyFormatting(context, 'alignRight'),
-                onUndoPressed: () {
-                  context.read<EditorBloc>().add(UndoEdit());
-                },
-                onRedoPressed: () {
-                  context.read<EditorBloc>().add(RedoEdit());
-                },
-              ),
-              Expanded(
-                child: EditorContentArea(
-                  controller: _controller,
-                  focusNode: _focusNode,
-                  isReadOnly: state.status == EditorStatus.loading,
-                  onChanged: (text) {
-                    if (!_isInitializing) {
-                      context.read<EditorBloc>().add(UpdateContent(content: text));
-                    }
-                  },
-                ),
-              ),
-              _buildStatusBar(context, state),
-            ],
-          ),
-        );
-      },
+    final l10n = AppLocalizations.of(context)!;
+    
+    return BlocProvider.value(
+      value: _editorBloc, // 使用已创建的EditorBloc实例
+      child: BlocConsumer<EditorBloc, EditorState>(
+        listener: (context, state) {
+          if (state is EditorError) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.message)),
+            );
+          }
+        },
+        builder: (context, state) {
+          if (state is EditorLoading) {
+            return _buildLoadingScreen(l10n);
+          } else if (state is EditorLoaded) {
+            return _buildEditorScreen(context, state, l10n);
+          } else if (state is EditorSettingsOpen) {
+            return _buildSettingsScreen(context, state, l10n);
+          } else {
+            return _buildLoadingScreen(l10n);
+          }
+        },
+      ),
     );
   }
   

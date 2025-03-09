@@ -13,14 +13,14 @@ import 'widgets/typing_indicator.dart';
 import 'widgets/context_panel.dart';
 
 class ChatScreen extends StatefulWidget {
-  final String novelId;
-  final String? chapterId;
   
   const ChatScreen({
     Key? key,
     required this.novelId,
     this.chapterId,
   }) : super(key: key);
+  final String novelId;
+  final String? chapterId;
   
   @override
   State<ChatScreen> createState() => _ChatScreenState();

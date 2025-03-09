@@ -10,9 +10,9 @@ abstract class ChatEvent extends Equatable {
 
 // 加载聊天会话列表
 class LoadChatSessions extends ChatEvent {
-  final String novelId;
 
   const LoadChatSessions({required this.novelId});
+  final String novelId;
 
   @override
   List<Object?> get props => [novelId];
@@ -20,15 +20,15 @@ class LoadChatSessions extends ChatEvent {
 
 // 创建新的聊天会话
 class CreateChatSession extends ChatEvent {
-  final String title;
-  final String novelId;
-  final String? chapterId;
 
   const CreateChatSession({
     required this.title,
     required this.novelId,
     this.chapterId,
   });
+  final String title;
+  final String novelId;
+  final String? chapterId;
 
   @override
   List<Object?> get props => [title, novelId, chapterId];
@@ -36,9 +36,9 @@ class CreateChatSession extends ChatEvent {
 
 // 选择聊天会话
 class SelectChatSession extends ChatEvent {
-  final String sessionId;
 
   const SelectChatSession({required this.sessionId});
+  final String sessionId;
 
   @override
   List<Object?> get props => [sessionId];
@@ -46,9 +46,9 @@ class SelectChatSession extends ChatEvent {
 
 // 发送消息
 class SendMessage extends ChatEvent {
-  final String content;
 
   const SendMessage({required this.content});
+  final String content;
 
   @override
   List<Object?> get props => [content];
@@ -61,9 +61,9 @@ class LoadMoreMessages extends ChatEvent {
 
 // 更新聊天标题
 class UpdateChatTitle extends ChatEvent {
-  final String newTitle;
 
   const UpdateChatTitle({required this.newTitle});
+  final String newTitle;
 
   @override
   List<Object?> get props => [newTitle];
@@ -71,9 +71,9 @@ class UpdateChatTitle extends ChatEvent {
 
 // 执行操作
 class ExecuteAction extends ChatEvent {
-  final MessageAction action;
 
   const ExecuteAction({required this.action});
+  final MessageAction action;
 
   @override
   List<Object?> get props => [action];
@@ -81,9 +81,9 @@ class ExecuteAction extends ChatEvent {
 
 // 删除聊天会话
 class DeleteChatSession extends ChatEvent {
-  final String sessionId;
 
   const DeleteChatSession({required this.sessionId});
+  final String sessionId;
 
   @override
   List<Object?> get props => [sessionId];
@@ -96,9 +96,9 @@ class CancelOngoingRequest extends ChatEvent {
 
 // 更新聊天上下文
 class UpdateChatContext extends ChatEvent {
-  final ChatContext context;
 
   const UpdateChatContext({required this.context});
+  final ChatContext context;
 
   @override
   List<Object?> get props => [context];

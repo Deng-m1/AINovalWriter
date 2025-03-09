@@ -16,9 +16,9 @@ class ChatSessionsLoading extends ChatState {}
 
 // 会话列表加载完成
 class ChatSessionsLoaded extends ChatState {
-  final List<ChatSession> sessions;
 
   const ChatSessionsLoaded({required this.sessions});
+  final List<ChatSession> sessions;
 
   @override
   List<Object?> get props => [sessions];
@@ -29,10 +29,6 @@ class ChatSessionLoading extends ChatState {}
 
 // 会话激活状态
 class ChatSessionActive extends ChatState {
-  final ChatSession session;
-  final ChatContext context;
-  final bool isGenerating;
-  final String? error;
 
   const ChatSessionActive({
     required this.session,
@@ -40,6 +36,10 @@ class ChatSessionActive extends ChatState {
     this.isGenerating = false,
     this.error,
   });
+  final ChatSession session;
+  final ChatContext context;
+  final bool isGenerating;
+  final String? error;
 
   @override
   List<Object?> get props => [session, context, isGenerating, error];
@@ -62,9 +62,9 @@ class ChatSessionActive extends ChatState {
 
 // 错误状态
 class ChatError extends ChatState {
-  final String message;
 
   const ChatError({required this.message});
+  final String message;
 
   @override
   List<Object?> get props => [message];

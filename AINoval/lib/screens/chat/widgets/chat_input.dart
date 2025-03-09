@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 
 class ChatInput extends StatelessWidget {
-  final TextEditingController controller;
-  final VoidCallback onSend;
-  final bool isGenerating;
-  final VoidCallback? onCancel;
   
   const ChatInput({
     Key? key,
@@ -13,6 +9,10 @@ class ChatInput extends StatelessWidget {
     this.isGenerating = false,
     this.onCancel,
   }) : super(key: key);
+  final TextEditingController controller;
+  final VoidCallback onSend;
+  final bool isGenerating;
+  final VoidCallback? onCancel;
   
   @override
   Widget build(BuildContext context) {
@@ -40,7 +40,7 @@ class ChatInput extends StatelessWidget {
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 enabled: !isGenerating,
               ),

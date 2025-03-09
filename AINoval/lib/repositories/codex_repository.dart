@@ -167,13 +167,6 @@ class CodexRepository {
 
 // Codex条目
 class CodexEntry {
-  final String id;
-  final String title;
-  final String type;
-  final String content;
-  final List<String> tags;
-  final DateTime createdAt;
-  final DateTime updatedAt;
   
   CodexEntry({
     required this.id,
@@ -184,15 +177,17 @@ class CodexEntry {
     required this.createdAt,
     required this.updatedAt,
   });
-}
-
-// 搜索结果
-class SearchResult {
   final String id;
   final String title;
   final String type;
   final String content;
-  final double score;
+  final List<String> tags;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+}
+
+// 搜索结果
+class SearchResult {
   
   SearchResult({
     required this.id,
@@ -201,4 +196,9 @@ class SearchResult {
     required this.content,
     required this.score,
   });
+  final String id;
+  final String title;
+  final String type;
+  final String content;
+  final double score;
 } 

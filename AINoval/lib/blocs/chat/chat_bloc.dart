@@ -7,8 +7,6 @@ import 'chat_event.dart';
 import 'chat_state.dart';
 
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
-  final ChatRepository repository;
-  final ContextProvider contextProvider;
   
   ChatBloc({
     required this.repository, 
@@ -25,6 +23,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<CancelOngoingRequest>(_onCancelRequest);
     on<UpdateChatContext>(_onUpdateChatContext);
   }
+  final ChatRepository repository;
+  final ContextProvider contextProvider;
   
   Future<void> _onLoadChatSessions(LoadChatSessions event, Emitter<ChatState> emit) async {
     emit(ChatSessionsLoading());

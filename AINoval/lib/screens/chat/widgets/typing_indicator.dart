@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
 import 'dart:math' show sin;
+
+import 'package:flutter/material.dart';
 
 class TypingIndicator extends StatefulWidget {
   const TypingIndicator({Key? key}) : super(key: key);

@@ -3,11 +3,6 @@ import 'package:flutter_quill/flutter_quill.dart';
 
 /// 字数统计信息
 class WordCountStats {
-  final int charactersNoSpaces;
-  final int charactersWithSpaces;
-  final int words;
-  final int paragraphs;
-  final int readTimeMinutes;
   
   const WordCountStats({
     required this.charactersNoSpaces,
@@ -16,6 +11,11 @@ class WordCountStats {
     required this.paragraphs,
     required this.readTimeMinutes,
   });
+  final int charactersNoSpaces;
+  final int charactersWithSpaces;
+  final int words;
+  final int paragraphs;
+  final int readTimeMinutes;
 }
 
 /// 字数统计工具类
