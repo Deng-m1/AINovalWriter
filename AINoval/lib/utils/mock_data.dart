@@ -6,7 +6,7 @@ import 'package:uuid/uuid.dart';
 
 class MockData {
   static final Random _random = Random();
-  static final Uuid _uuid = const Uuid();
+  static const Uuid _uuid = Uuid();
   
   // 生成随机小说列表
   static List<NovelSummary> getNovels() {

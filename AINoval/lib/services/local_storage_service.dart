@@ -13,9 +13,7 @@ class LocalStorageService {
   
   // 初始化
   Future<void> init() async {
-    if (_prefs == null) {
-      _prefs = await SharedPreferences.getInstance();
-    }
+    _prefs ??= await SharedPreferences.getInstance();
   }
   
   // 确保已初始化
@@ -136,14 +134,20 @@ class LocalStorageService {
   }
   
   // 获取编辑器内容
-  Future<EditorContent?> getEditorContent(String novelId, String chapterId) async {
+  Future<EditorContent?> getEditorContent(String novelId, String chapterId, String sceneId) async {
     return getChapterContent(novelId, chapterId);
   }
   
   // 保存编辑器内容
   Future<void> saveEditorContent(EditorContent content) async {
     final parts = content.id.split('-');
-    if (parts.length == 2) {
+    if (parts.length == 3) {
+      final novelId = parts[0];
+      final chapterId = parts[1];
+      final sceneId = parts[2];
+      await saveChapterContent(novelId, chapterId, content);
+    } else if (parts.length == 2) {
+      // 兼容旧格式
       final novelId = parts[0];
       final chapterId = parts[1];
       await saveChapterContent(novelId, chapterId, content);
@@ -152,20 +156,44 @@ class LocalStorageService {
   
   // 获取编辑器设置
   Future<Map<String, dynamic>> getEditorSettings() async {
-    final prefs = await _ensureInitialized();
-    final settingsJson = prefs.getString(_editorSettingsKey);
-    
-    if (settingsJson == null) {
-      return {}; // 返回空设置
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final settingsJson = prefs.getString('editor_settings');
+      
+      if (settingsJson != null) {
+        return jsonDecode(settingsJson) as Map<String, dynamic>;
+      }
+      
+      // 返回默认设置
+      return {
+        'fontSize': 16.0,
+        'lineHeight': 1.5,
+        'fontFamily': 'Roboto',
+        'theme': 'light',
+        'autoSave': true,
+      };
+    } catch (e) {
+      print('获取编辑器设置失败: $e');
+      // 返回默认设置
+      return {
+        'fontSize': 16.0,
+        'lineHeight': 1.5,
+        'fontFamily': 'Roboto',
+        'theme': 'light',
+        'autoSave': true,
+      };
     }
-    
-    return jsonDecode(settingsJson);
   }
   
   // 保存编辑器设置
   Future<void> saveEditorSettings(Map<String, dynamic> settings) async {
-    final prefs = await _ensureInitialized();
-    await prefs.setString(_editorSettingsKey, jsonEncode(settings));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('editor_settings', jsonEncode(settings));
+    } catch (e) {
+      print('保存编辑器设置失败: $e');
+      throw Exception('保存编辑器设置失败: $e');
+    }
   }
   
   // 生成内容存储键
@@ -174,7 +202,12 @@ class LocalStorageService {
   }
   
   /// 获取场景内容
-  Future<novel_models.Scene?> getSceneContent(String novelId, String actId, String chapterId) async {
+  Future<novel_models.Scene?> getSceneContent(
+    String novelId, 
+    String actId, 
+    String chapterId,
+    String sceneId
+  ) async {
     try {
       final novel = await getNovel(novelId);
       if (novel == null) return null;
@@ -182,7 +215,15 @@ class LocalStorageService {
       final act = novel.acts.firstWhere((a) => a.id == actId);
       final chapter = act.chapters.firstWhere((c) => c.id == chapterId);
       
-      return chapter.scene;
+      if (chapter.scenes.isEmpty) return null;
+      
+      // 查找特定场景
+      try {
+        return chapter.scenes.firstWhere((s) => s.id == sceneId);
+      } catch (e) {
+        // 如果找不到特定场景，返回第一个场景
+        return chapter.scenes.first;
+      }
     } catch (e) {
       return null;
     }
@@ -193,6 +234,7 @@ class LocalStorageService {
     String novelId, 
     String actId, 
     String chapterId, 
+    String sceneId,
     novel_models.Scene scene
   ) async {
     try {
@@ -203,7 +245,20 @@ class LocalStorageService {
         if (act.id == actId) {
           final chapters = act.chapters.map((chapter) {
             if (chapter.id == chapterId) {
-              return chapter.copyWith(scene: scene);
+              // 查找特定场景
+              final sceneIndex = chapter.scenes.indexWhere((s) => s.id == sceneId);
+              List<novel_models.Scene> updatedScenes;
+              
+              if (sceneIndex >= 0) {
+                // 更新现有场景
+                updatedScenes = List.from(chapter.scenes);
+                updatedScenes[sceneIndex] = scene;
+              } else {
+                // 添加新场景
+                updatedScenes = List.from(chapter.scenes)..add(scene);
+              }
+              
+              return chapter.copyWith(scenes: updatedScenes);
             }
             return chapter;
           }).toList();
@@ -229,6 +284,7 @@ class LocalStorageService {
     String novelId, 
     String actId, 
     String chapterId, 
+    String sceneId,
     novel_models.Summary summary
   ) async {
     try {
@@ -239,8 +295,20 @@ class LocalStorageService {
         if (act.id == actId) {
           final chapters = act.chapters.map((chapter) {
             if (chapter.id == chapterId) {
-              final updatedScene = chapter.scene.copyWith(summary: summary);
-              return chapter.copyWith(scene: updatedScene);
+              // 查找特定场景
+              final sceneIndex = chapter.scenes.indexWhere((s) => s.id == sceneId);
+              List<novel_models.Scene> updatedScenes;
+              
+              if (sceneIndex >= 0) {
+                // 更新现有场景
+                updatedScenes = List.from(chapter.scenes);
+                updatedScenes[sceneIndex] = updatedScenes[sceneIndex].copyWith(summary: summary);
+              } else {
+                // 如果场景不存在，不做任何操作
+                updatedScenes = chapter.scenes;
+              }
+              
+              return chapter.copyWith(scenes: updatedScenes);
             }
             return chapter;
           }).toList();
@@ -258,6 +326,23 @@ class LocalStorageService {
       await saveNovel(updatedNovel);
     } catch (e) {
       print('保存摘要内容失败: $e');
+    }
+  }
+  
+  // 标记需要同步的内容（按类型）
+  Future<void> markForSyncByType(String id, String type) async {
+    try {
+      final prefs = await _ensureInitialized();
+      final syncKey = 'syncList_$type';
+      final syncList = prefs.getStringList(syncKey) ?? [];
+      
+      if (!syncList.contains(id)) {
+        syncList.add(id);
+        await prefs.setStringList(syncKey, syncList);
+        print('已标记 $type: $id 需要同步');
+      }
+    } catch (e) {
+      print('标记同步失败: $e');
     }
   }
   

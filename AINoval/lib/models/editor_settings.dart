@@ -1,5 +1,4 @@
 import 'package:equatable/equatable.dart';
-import 'package:flutter/material.dart';
 
 /// 编辑器设置模型
 class EditorSettings extends Equatable {

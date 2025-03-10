@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 /// 小说模型
 class Novel {
   
@@ -117,9 +115,19 @@ class Novel {
   }
   
   /// 获取指定Scene
-  Scene? getScene(String actId, String chapterId) {
+  Scene? getScene(String actId, String chapterId, {String? sceneId}) {
     final chapter = getChapter(actId, chapterId);
-    return chapter?.scene;
+    if (chapter == null) return null;
+    
+    if (sceneId != null) {
+      // 如果提供了sceneId，则获取特定Scene
+      return chapter.getScene(sceneId);
+    } else if (chapter.scenes.isNotEmpty) {
+      // 否则返回第一个Scene
+      return chapter.scenes.first;
+    }
+    
+    return null;
   }
 }
 
@@ -181,11 +189,14 @@ class Act {
   
   /// 添加一个新的Chapter
   Act addChapter(String title) {
+    // 创建一个默认的Scene
+    final defaultScene = Scene.createEmpty();
+    
     final newChapter = Chapter(
       id: 'chapter_${DateTime.now().millisecondsSinceEpoch}',
       title: title,
       order: chapters.length + 1,
-      scene: Scene.createEmpty(),
+      scenes: [defaultScene], // 包含一个默认的Scene
     );
     
     return copyWith(
@@ -210,25 +221,43 @@ class Chapter {
     required this.id,
     required this.title,
     required this.order,
-    required this.scene,
+    required this.scenes,
   });
   
   /// 从JSON创建Chapter实例
   factory Chapter.fromJson(Map<String, dynamic> json) {
+    // 兼容旧版本数据，如果是单个scene，则转换为scenes列表
+    List<Scene> parseScenes() {
+      if (json.containsKey('scene')) {
+        // 旧版本数据，单个scene
+        return [Scene.fromJson(json['scene'])];
+      } else if (json.containsKey('scenes') && json['scenes'] is List) {
+        // 新版本数据，scenes列表
+        return (json['scenes'] as List)
+            .map((sceneJson) => Scene.fromJson(sceneJson))
+            .toList();
+      } else {
+        // 默认返回空列表
+        return [];
+      }
+    }
+    
     return Chapter(
       id: json['id'],
       title: json['title'],
       order: json['order'],
-      scene: Scene.fromJson(json['scene']),
+      scenes: parseScenes(),
     );
   }
   final String id;
   final String title;
   final int order;
-  final Scene scene;
+  final List<Scene> scenes;
   
   /// 获取章节字数
-  int get wordCount => scene.wordCount;
+  int get wordCount {
+    return scenes.fold(0, (sum, scene) => sum + scene.wordCount);
+  }
   
   /// 转换为JSON
   Map<String, dynamic> toJson() {
@@ -236,7 +265,7 @@ class Chapter {
       'id': id,
       'title': title,
       'order': order,
-      'scene': scene.toJson(),
+      'scenes': scenes.map((scene) => scene.toJson()).toList(),
     };
   }
   
@@ -245,14 +274,43 @@ class Chapter {
     String? id,
     String? title,
     int? order,
-    Scene? scene,
+    List<Scene>? scenes,
   }) {
     return Chapter(
       id: id ?? this.id,
       title: title ?? this.title,
       order: order ?? this.order,
-      scene: scene ?? this.scene,
+      scenes: scenes ?? this.scenes,
     );
+  }
+  
+  /// 添加一个新的Scene
+  Chapter addScene() {
+    final newScene = Scene.createEmpty();
+    return copyWith(
+      scenes: [...scenes, newScene],
+    );
+  }
+  
+  /// 获取指定Scene
+  Scene? getScene(String sceneId) {
+    try {
+      return scenes.firstWhere((scene) => scene.id == sceneId);
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  /// 更新指定Scene
+  Chapter updateScene(String sceneId, Scene updatedScene) {
+    final updatedScenes = scenes.map((scene) {
+      if (scene.id == sceneId) {
+        return updatedScene;
+      }
+      return scene;
+    }).toList();
+    
+    return copyWith(scenes: updatedScenes);
   }
 }
 

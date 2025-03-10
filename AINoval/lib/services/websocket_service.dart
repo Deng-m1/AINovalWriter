@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:web_socket_channel/status.dart' as status;
+
 import 'package:stream_channel/stream_channel.dart';
 import 'package:uuid/uuid.dart';
+import 'package:web_socket_channel/status.dart' as status;
+import 'package:web_socket_channel/web_socket_channel.dart';
+
 import '../models/chat_models.dart';
 
 class WebSocketService {

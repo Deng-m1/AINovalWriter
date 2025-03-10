@@ -1,4 +1,3 @@
-import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 
 // 聊天会话模型

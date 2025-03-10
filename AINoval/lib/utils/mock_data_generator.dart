@@ -1,11 +1,12 @@
 import 'dart:math';
-import 'package:uuid/uuid.dart';
+
 import 'package:ainoval/models/novel_structure.dart';
+import 'package:uuid/uuid.dart';
 
 /// 模拟数据生成器，用于生成符合数据结构的模拟数据
 class MockDataGenerator {
   static final Random _random = Random();
-  static final Uuid _uuid = const Uuid();
+  static const Uuid _uuid = Uuid();
   
   /// 生成模拟小说数据
   static Novel generateMockNovel(String id, String title) {
@@ -44,14 +45,14 @@ class MockDataGenerator {
       id: 'chapter_${_uuid.v4()}',
       title: 'Chapter 1',
       order: 1,
-      scene: scene1,
+      scenes: [scene1],
     );
     
     final chapter2 = Chapter(
       id: 'chapter_${_uuid.v4()}',
       title: 'Chapter 2',
       order: 2,
-      scene: scene2,
+      scenes: [scene2],
     );
     
     // 创建Act
@@ -80,7 +81,7 @@ class MockDataGenerator {
       id: 'chapter_${_uuid.v4()}',
       title: 'Chapter 3',
       order: 1,
-      scene: scene3,
+      scenes: [scene3],
     );
     
     final act2 = Act(

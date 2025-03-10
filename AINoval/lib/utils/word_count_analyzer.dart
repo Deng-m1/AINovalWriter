@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter_quill/flutter_quill.dart';
 
 /// 字数统计信息
 class WordCountStats {

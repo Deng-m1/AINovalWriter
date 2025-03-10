@@ -95,4 +95,106 @@ lib/
 
 如有问题或建议，请通过以下方式联系我们：
 - 电子邮件: contact@ainoval.com
-- GitHub问题: [https://github.com/yourusername/ainoval/issues](https://github.com/yourusername/ainoval/issues) 
+- GitHub问题: [https://github.com/yourusername/ainoval/issues](https://github.com/yourusername/ainoval/issues)
+
+## 项目结构
+
+项目采用了清晰的分层架构：
+
+- **BLoC模式**：用于状态管理
+- **Repository模式**：用于数据访问
+- **服务层**：提供API和本地存储服务
+
+## 环境配置
+
+项目支持两种环境：
+
+1. **开发环境**：使用模拟数据，适合本地开发和测试
+2. **生产环境**：连接真实API，适合生产部署
+
+环境配置在 `lib/config/app_config.dart` 文件中定义：
+
+```dart
+/// 应用环境枚举
+enum Environment {
+  development,
+  production,
+}
+
+/// 应用配置类
+class AppConfig {
+  /// 当前环境
+  static Environment _environment = kDebugMode ? Environment.development : Environment.production;
+  
+  /// 是否应该使用模拟数据
+  static bool get shouldUseMockData => _forceMockData || _environment == Environment.development;
+  
+  /// API基础URL
+  static String get apiBaseUrl {
+    switch (_environment) {
+      case Environment.development:
+        return 'http://localhost:8080/api';
+      case Environment.production:
+        return 'https://api.ainoval.com/api';
+    }
+  }
+}
+```
+
+## 模拟数据
+
+模拟数据集中在 `lib/services/mock_data_service.dart` 文件中，提供了以下功能：
+
+- 小说数据模拟
+- 场景内容模拟
+- 聊天会话模拟
+- 修订历史模拟
+
+使用模拟数据的好处：
+
+1. 无需依赖后端服务即可开发前端
+2. 快速测试各种场景和边缘情况
+3. 提供一致的测试数据
+
+## 开发指南
+
+### 运行项目
+
+```bash
+# 获取依赖
+flutter pub get
+
+# 运行项目
+flutter run
+```
+
+### 切换环境
+
+在代码中手动切换环境：
+
+```dart
+// 切换到开发环境（使用模拟数据）
+AppConfig.setEnvironment(Environment.development);
+
+// 切换到生产环境（使用真实API）
+AppConfig.setEnvironment(Environment.production);
+
+// 强制使用模拟数据（无论环境如何）
+AppConfig.setUseMockData(true);
+```
+
+### 添加新的模拟数据
+
+1. 在 `MockDataService` 类中添加新的方法
+2. 确保方法返回与真实API相同的数据结构
+3. 在相应的服务中使用模拟数据
+
+## 最佳实践
+
+1. **环境区分**：始终使用 `AppConfig.shouldUseMockData` 来判断是否使用模拟数据
+2. **错误处理**：在API请求失败时回退到模拟数据
+3. **数据一致性**：确保模拟数据与真实API返回的数据结构一致
+4. **本地缓存**：使用 `LocalStorageService` 缓存数据，减少API请求
+5. **数据流向**：遵循 Repository -> Service -> Model 的数据流向
+6. **异常处理**：在每个层级都进行适当的异常处理，确保应用稳定性
+7. **模块化设计**：保持各个模块的独立性，便于维护和扩展 

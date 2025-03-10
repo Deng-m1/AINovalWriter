@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
+
 import '../../blocs/chat/chat_bloc.dart';
 import '../../blocs/chat/chat_event.dart';
 import '../../blocs/chat/chat_state.dart';
 import '../../models/chat_models.dart';
-import 'widgets/chat_message_bubble.dart';
 import 'widgets/chat_input.dart';
-import 'widgets/typing_indicator.dart';
+import 'widgets/chat_message_bubble.dart';
 import 'widgets/context_panel.dart';
+import 'widgets/typing_indicator.dart';
 
 class ChatScreen extends StatefulWidget {
   

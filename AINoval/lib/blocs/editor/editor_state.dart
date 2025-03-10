@@ -18,6 +18,7 @@ class EditorLoaded extends EditorState {
     required this.settings,
     this.activeActId,
     this.activeChapterId,
+    this.activeSceneId,
     this.isDirty = false,
     this.isSaving = false,
     this.lastSaveTime,
@@ -27,6 +28,7 @@ class EditorLoaded extends EditorState {
   final Map<String, dynamic> settings;
   final String? activeActId;
   final String? activeChapterId;
+  final String? activeSceneId;
   final bool isDirty;
   final bool isSaving;
   final DateTime? lastSaveTime;
@@ -38,6 +40,7 @@ class EditorLoaded extends EditorState {
     settings,
     activeActId,
     activeChapterId,
+    activeSceneId,
     isDirty,
     isSaving,
     lastSaveTime,
@@ -49,6 +52,7 @@ class EditorLoaded extends EditorState {
     Map<String, dynamic>? settings,
     String? activeActId,
     String? activeChapterId,
+    String? activeSceneId,
     bool? isDirty,
     bool? isSaving,
     DateTime? lastSaveTime,
@@ -59,6 +63,7 @@ class EditorLoaded extends EditorState {
       settings: settings ?? this.settings,
       activeActId: activeActId ?? this.activeActId,
       activeChapterId: activeChapterId ?? this.activeChapterId,
+      activeSceneId: activeSceneId ?? this.activeSceneId,
       isDirty: isDirty ?? this.isDirty,
       isSaving: isSaving ?? this.isSaving,
       lastSaveTime: lastSaveTime ?? this.lastSaveTime,
@@ -74,12 +79,14 @@ class EditorSettingsOpen extends EditorState {
     required this.settings,
     this.activeActId,
     this.activeChapterId,
+    this.activeSceneId,
     this.isDirty = false,
   });
   final novel_models.Novel novel;
   final Map<String, dynamic> settings;
   final String? activeActId;
   final String? activeChapterId;
+  final String? activeSceneId;
   final bool isDirty;
   
   @override
@@ -88,6 +95,7 @@ class EditorSettingsOpen extends EditorState {
     settings,
     activeActId,
     activeChapterId,
+    activeSceneId,
     isDirty,
   ];
   
@@ -96,6 +104,7 @@ class EditorSettingsOpen extends EditorState {
     Map<String, dynamic>? settings,
     String? activeActId,
     String? activeChapterId,
+    String? activeSceneId,
     bool? isDirty,
   }) {
     return EditorSettingsOpen(
@@ -103,6 +112,7 @@ class EditorSettingsOpen extends EditorState {
       settings: settings ?? this.settings,
       activeActId: activeActId ?? this.activeActId,
       activeChapterId: activeChapterId ?? this.activeChapterId,
+      activeSceneId: activeSceneId ?? this.activeSceneId,
       isDirty: isDirty ?? this.isDirty,
     );
   }
