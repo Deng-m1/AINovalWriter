@@ -1,8 +1,10 @@
 package com.ainovel.server.repository;
 
-import com.ainovel.server.domain.model.Novel;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 import org.springframework.stereotype.Repository;
+
+import com.ainovel.server.domain.model.Novel;
+
 import reactor.core.publisher.Flux;
 
 /**
