@@ -87,7 +87,7 @@
 - 用户可以编辑小说基本信息
 
 **技术验证**：
-- Spring Boot 3.2.0 + WebFlux + JDK 21虚拟线程的基础性能
+- Spring Boot 3.2.0 + WebFlux + JDK 23虚拟线程的基础性能
 - 响应式MongoDB操作的可行性
 
 **任务**：
