@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:ainoval/models/novel_structure.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {

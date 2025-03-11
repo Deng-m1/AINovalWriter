@@ -48,7 +48,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       final novel = await repository.getNovel(novelId);
       
       if (novel == null) {
-        emit(EditorError(message: '无法加载小说数据'));
+        emit(const EditorError(message: '无法加载小说数据'));
         return;
       }
       
@@ -878,7 +878,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       // 查找对应的Act
       final actIndex = originalNovel.acts.indexWhere((act) => act.id == event.actId);
       if (actIndex == -1) {
-        emit(EditorError(message: '找不到指定的Act'));
+        emit(const EditorError(message: '找不到指定的Act'));
         return;
       }
       
@@ -964,7 +964,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       final act = novel.getAct(event.actId);
       if (act == null) {
         print('找不到指定的Act: ${event.actId}');
-        emit(EditorError(message: '找不到指定的Act'));
+        emit(const EditorError(message: '找不到指定的Act'));
         return;
       }
       print('找到Act: id=${act.id}, title=${act.title}, chapters数量=${act.chapters.length}');
@@ -972,7 +972,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       final chapter = act.getChapter(event.chapterId);
       if (chapter == null) {
         print('找不到指定的Chapter: ${event.chapterId}');
-        emit(EditorError(message: '找不到指定的Chapter'));
+        emit(const EditorError(message: '找不到指定的Chapter'));
         return;
       }
       print('找到Chapter: id=${chapter.id}, title=${chapter.title}, scenes数量=${chapter.scenes.length}');

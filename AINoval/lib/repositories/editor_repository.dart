@@ -117,9 +117,7 @@ class EditorRepository {
       }
       
       // 如果场景不存在，创建一个新的场景
-      if (scene == null) {
-        scene = Scene.createEmpty();
-      }
+      scene ??= Scene.createEmpty();
       
       // 更新场景内容
       final updatedScene = scene.copyWith(

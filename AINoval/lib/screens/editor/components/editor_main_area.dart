@@ -1,9 +1,9 @@
-import 'package:flutter/material.dart';
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/screens/editor/components/act_section.dart';
 import 'package:ainoval/screens/editor/components/chapter_section.dart';
 import 'package:ainoval/screens/editor/components/scene_editor.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 
 class EditorMainArea extends StatelessWidget {

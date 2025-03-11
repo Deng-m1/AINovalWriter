@@ -1,0 +1,53 @@
+server:
+  port: 8080
+  shutdown: graceful
+  netty:
+    connection-timeout: 5s
+
+spring:
+  application:
+    name: ai-novel-server
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/ainovel
+      auto-index-creation: true
+  webflux:
+    base-path: /api
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+logging:
+  level:
+    root: INFO
+    com.ainovel: DEBUG
+    org.springframework.data.mongodb: INFO
+    org.springframework.web: INFO
+    reactor.netty: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+# 自定义配置
+ainovel:
+  security:
+    jwt:
+      secret-key: ${JWT_SECRET:changeme_in_production_environment}
+      expiration-time: 86400000  # 24小时，单位毫秒
+      refresh-token-expiration: 604800000  # 7天，单位毫秒
+  performance:
+    virtual-threads:
+      enabled: true
+    monitoring:
+      enabled: true 

@@ -133,11 +133,15 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
               
               // 检查是否是新添加的Chapter
               bool isNewChapter = false;
+              String? newChapterId;
               if (state.activeActId != null && state.activeChapterId != null) {
                 final act = state.novel.getAct(state.activeActId!);
                 if (act != null && act.chapters.isNotEmpty) {
                   final chapter = act.chapters.last;
                   isNewChapter = chapter.id == state.activeChapterId && chapter.scenes.length <= 1;
+                  if (isNewChapter) {
+                    newChapterId = chapter.id;
+                  }
                 }
               }
               
@@ -146,12 +150,40 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
                 // 延迟执行，确保UI已经构建完成
                 Future.delayed(const Duration(milliseconds: 300), () {
                   if (mounted && _scrollController.hasClients) {
-                    // 滚动到底部，以显示新添加的元素
-                    _scrollController.animateTo(
-                      _scrollController.position.maxScrollExtent,
-                      duration: const Duration(milliseconds: 500),
-                      curve: Curves.easeInOut,
-                    );
+                    if (isNewChapter && newChapterId != null) {
+                      // 查找新章节的位置
+                      final chapterElement = _findChapterElement(newChapterId);
+                      if (chapterElement != null) {
+                        // 滚动到新章节的中央位置
+                        final chapterPosition = _calculateChapterPosition(chapterElement);
+                        _scrollController.animateTo(
+                          chapterPosition,
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.easeInOut,
+                        );
+                        
+                        // 请求焦点到新章节的编辑区
+                        Future.delayed(const Duration(milliseconds: 100), () {
+                          if (state.activeActId != null && newChapterId != null) {
+                            _requestFocusToNewChapter(state.activeActId!, newChapterId);
+                          }
+                        });
+                      } else {
+                        // 如果找不到章节元素，则滚动到底部
+                        _scrollController.animateTo(
+                          _scrollController.position.maxScrollExtent,
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.easeInOut,
+                        );
+                      }
+                    } else {
+                      // 对于新Act，滚动到底部
+                      _scrollController.animateTo(
+                        _scrollController.position.maxScrollExtent,
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeInOut,
+                      );
+                    }
                   }
                 });
               }
@@ -681,5 +713,91 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
       print('解析内容失败，使用纯文本格式: $e');
       return Document()..insert(0, content);
     }
+  }
+  
+  // 查找章节元素
+  RenderObject? _findChapterElement(String chapterId) {
+    try {
+      // 使用GlobalKey查找章节元素
+      final context = GlobalObjectKey('chapter_$chapterId').currentContext;
+      return context?.findRenderObject();
+    } catch (e) {
+      print('查找章节元素失败: $e');
+      return null;
+    }
+  }
+  
+  // 计算章节位置，使其在视图中央
+  double _calculateChapterPosition(RenderObject chapterElement) {
+    try {
+      // 获取章节在视图中的位置
+      final RenderBox renderBox = chapterElement as RenderBox;
+      final position = renderBox.localToGlobal(Offset.zero);
+      
+      // 计算章节的中心位置
+      final chapterCenter = position.dy + (renderBox.size.height / 2);
+      
+      // 计算视图的中心位置
+      final viewportHeight = _scrollController.position.viewportDimension;
+      final viewportCenter = viewportHeight / 2;
+      
+      // 计算需要滚动的位置，使章节中心与视图中心对齐
+      return _scrollController.offset + (chapterCenter - viewportCenter);
+    } catch (e) {
+      print('计算章节位置失败: $e');
+      return _scrollController.position.maxScrollExtent;
+    }
+  }
+  
+  // 请求焦点到新章节的编辑区
+  void _requestFocusToNewChapter(String actId, String chapterId) {
+    try {
+      // 查找场景ID
+      final sceneId = '${actId}_${chapterId}';
+      if (_sceneControllers.containsKey(sceneId)) {
+        // 查找编辑器焦点节点
+        final context = GlobalObjectKey('editor_$sceneId').currentContext;
+        if (context != null) {
+          // 查找FocusNode
+          final FocusNode? focusNode = _findFocusNodeInContext(context);
+          if (focusNode != null && focusNode.canRequestFocus) {
+            // 请求焦点
+            focusNode.requestFocus();
+            print('成功请求焦点到新章节: $sceneId');
+          } else {
+            print('无法找到焦点节点或焦点节点不可请求焦点');
+          }
+        } else {
+          print('无法找到编辑器上下文');
+        }
+      } else {
+        print('无法找到场景控制器: $sceneId');
+      }
+    } catch (e) {
+      print('请求焦点到新章节失败: $e');
+    }
+  }
+  
+  // 在上下文中查找FocusNode
+  FocusNode? _findFocusNodeInContext(BuildContext context) {
+    FocusNode? result;
+    
+    void visitor(Element element) {
+      if (result != null) return;
+      
+      if (element.widget is QuillEditor) {
+        final QuillEditor editor = element.widget as QuillEditor;
+        result = editor.focusNode;
+        return;
+      }
+      
+      element.visitChildren(visitor);
+    }
+    
+    if (context is Element) {
+      context.visitChildren(visitor);
+    }
+    
+    return result;
   }
 } 

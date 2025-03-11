@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
+import 'package:flutter/material.dart';
 
 class ChapterSection extends StatefulWidget {
 
@@ -25,6 +26,8 @@ class ChapterSection extends StatefulWidget {
 class _ChapterSectionState extends State<ChapterSection> {
   late TextEditingController _chapterTitleController;
   Timer? _chapterTitleDebounceTimer;
+  // 为章节创建一个GlobalKey
+  late final GlobalKey _chapterKey = GlobalObjectKey('chapter_${widget.chapterId}');
 
   @override
   void initState() {
@@ -50,6 +53,7 @@ class _ChapterSectionState extends State<ChapterSection> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      key: _chapterKey, // 使用GlobalKey
       onTap: () {
         // 点击Chapter时设置为活动Chapter
         print('Chapter被点击: actId=${widget.actId}, chapterId=${widget.chapterId}');

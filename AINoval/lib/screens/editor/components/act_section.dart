@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
+import 'package:flutter/material.dart';
 
 class ActSection extends StatefulWidget {
 

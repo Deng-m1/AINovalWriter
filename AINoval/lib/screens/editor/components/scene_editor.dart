@@ -37,10 +37,19 @@ class _SceneEditorState extends State<SceneEditor> {
   final FocusNode _focusNode = FocusNode();
   Timer? _debounceTimer;
   bool _isFocused = false;
+  // 为编辑器创建一个GlobalKey
+  late final GlobalKey _editorKey;
 
   @override
   void initState() {
     super.initState();
+    // 初始化GlobalKey
+    final String sceneId = widget.sceneId ?? 
+        (widget.actId != null && widget.chapterId != null 
+            ? '${widget.actId}_${widget.chapterId}' 
+            : widget.title.replaceAll(' ', '_').toLowerCase());
+    _editorKey = GlobalObjectKey('editor_$sceneId');
+    
     // 监听焦点变化
     _focusNode.addListener(_onFocusChange);
     
@@ -143,6 +152,7 @@ class _SceneEditorState extends State<SceneEditor> {
 
   Widget _buildEditor(String sceneId) {
     return GestureDetector(
+      key: _editorKey, // 使用GlobalKey
       onTap: () {
         // 如果有actId和chapterId，设置为活动章节
         if (widget.actId != null && widget.chapterId != null) {
