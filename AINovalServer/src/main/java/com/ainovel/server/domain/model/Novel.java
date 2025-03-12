@@ -1,15 +1,18 @@
 package com.ainovel.server.domain.model;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.index.TextIndexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * 小说领域模型
@@ -24,23 +27,29 @@ public class Novel {
     @Id
     private String id;
     
+    @TextIndexed
     private String title;
     
+    @TextIndexed
     private String description;
     
     private Author author;
     
-    private List<String> genre;
+    @Builder.Default
+    private List<String> genre = new ArrayList<>();
     
-    private List<String> tags;
+    @Builder.Default
+    private List<String> tags = new ArrayList<>();
     
     private String coverImage;
     
     private String status;
     
-    private Structure structure;
+    @Builder.Default
+    private Structure structure = new Structure();
     
-    private Metadata metadata;
+    @Builder.Default
+    private Metadata metadata = new Metadata();
     
     private LocalDateTime createdAt;
     
@@ -54,6 +63,7 @@ public class Novel {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class Author {
+        @Indexed
         private String id;
         private String username;
     }
@@ -98,7 +108,7 @@ public class Novel {
         private String title;
         private String description;
         private int order;
-        private String sceneRef;
+        private String sceneId;  // 直接引用Scene的ID
     }
     
     /**
@@ -113,5 +123,7 @@ public class Novel {
         private int readTime;
         private LocalDateTime lastEditedAt;
         private int version;
+        @Builder.Default
+        private List<String> contributors = new ArrayList<>();
     }
 } 
