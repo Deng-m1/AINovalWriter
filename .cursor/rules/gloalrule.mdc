@@ -1,5 +1,10 @@
 ---
 description: 
+globs: 
+alwaysApply: false
+---
+---
+description: 
 globs: *
 alwaysApply: false
 ---
@@ -23,5 +28,5 @@ frontend:
 
 
 # 数据结构
-  rule：数据结构，noval和act是一对多关系  act和chapter是一对多关系，chapter和sense是一对一关系，sense和摘要是一对一关系
+  rule：数据结构，noval和act是一对多关系  act和chapter是一对多关系，chapter和sense是一对多关系，sense和摘要是一对一关系
 

@@ -1,15 +1,19 @@
 package com.ainovel.server.domain.model;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * 场景领域模型
@@ -19,13 +23,18 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "scenes")
+@CompoundIndexes({
+    @CompoundIndex(name = "novel_chapter_idx", def = "{'novelId': 1, 'chapterId': 1}")
+})
 public class Scene {
     
     @Id
     private String id;
     
+    @Indexed
     private String novelId;
     
+    @Indexed
     private String chapterId;
     
     private String title;
@@ -36,15 +45,18 @@ public class Scene {
     
     private VectorEmbedding vectorEmbedding;
     
-    private List<String> characters;
+    @Builder.Default
+    private List<String> characterIds = new ArrayList<>();
     
-    private List<String> locations;
+    @Builder.Default
+    private List<String> locations = new ArrayList<>();
     
     private String timeframe;
     
     private int version;
     
-    private List<HistoryEntry> history;
+    @Builder.Default
+    private List<HistoryEntry> history = new ArrayList<>();
     
     private LocalDateTime createdAt;
     
@@ -58,7 +70,7 @@ public class Scene {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class VectorEmbedding {
-        private List<Float> vector;
+        private float[] vector;
         private String model;
     }
     
@@ -73,5 +85,6 @@ public class Scene {
         private String content;
         private LocalDateTime updatedAt;
         private String updatedBy;
+        private String reason;
     }
 } 
