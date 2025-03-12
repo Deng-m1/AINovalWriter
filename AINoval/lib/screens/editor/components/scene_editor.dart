@@ -1,7 +1,8 @@
 import 'dart:async';
+
+import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
-import 'package:ainoval/blocs/editor/editor_bloc.dart';
 
 class SceneEditor extends StatefulWidget {
 
@@ -376,7 +377,6 @@ class _SummaryActionButton extends StatelessWidget {
   const _SummaryActionButton({
     required this.icon,
     required this.label,
-    this.onPressed,
   });
   final IconData icon;
   final String label;
@@ -401,7 +401,6 @@ class _ActionButton extends StatelessWidget {
   const _ActionButton({
     required this.icon,
     required this.label,
-    this.onPressed,
   });
   final IconData icon;
   final String label;

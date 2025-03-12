@@ -753,7 +753,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
   void _requestFocusToNewChapter(String actId, String chapterId) {
     try {
       // 查找场景ID
-      final sceneId = '${actId}_${chapterId}';
+      final sceneId = '${actId}_$chapterId';
       if (_sceneControllers.containsKey(sceneId)) {
         // 查找编辑器焦点节点
         final context = GlobalObjectKey('editor_$sceneId').currentContext;
