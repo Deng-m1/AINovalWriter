@@ -1,0 +1,60 @@
+server:
+  port: 8088
+  shutdown: graceful
+  netty:
+    connection-timeout: 5s
+
+spring:
+  application:
+    name: ai-novel-server
+  data:
+    mongodb:
+      uri: mongodb://mongo:123456@localhost:27017/ainoval_test?authSource=admin&authMechanism=SCRAM-SHA-1
+      auto-index-creation: true
+      password: 123456
+      username: mongo
+      database: ainovel_test
+      authentication-database: admin
+  webflux:
+    base-path: /api
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+logging:
+  level:
+    root: INFO
+    com.ainovel: DEBUG
+    org.springframework.data.mongodb: INFO
+    org.springframework.web: INFO
+    org.springframework.security: DEBUG
+    reactor.netty: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+# 自定义配置
+ainovel:
+  security:
+    jwt:
+      secret-key: test_secret_key_for_performance_testing
+      expiration-time: 86400000  # 24小时，单位毫秒
+      refresh-token-expiration: 604800000  # 7天，单位毫秒
+  performance:
+    virtual-threads:
+      enabled: true
+    monitoring:
+      enabled: true
+    testing:
+      security-disabled: true  # 禁用安全验证，方便测试 
