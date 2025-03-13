@@ -1,15 +1,26 @@
 package com.ainovel.server.performance.simulation;
 
-import static io.gatling.javaapi.core.CoreDsl.*;
-import static io.gatling.javaapi.http.HttpDsl.*;
-
 import java.time.Duration;
 import java.util.Random;
 import java.util.UUID;
 import java.util.function.Supplier;
 
-import io.gatling.javaapi.core.*;
-import io.gatling.javaapi.http.*;
+import io.gatling.javaapi.core.ChainBuilder;
+import io.gatling.javaapi.core.Choice;
+import static io.gatling.javaapi.core.CoreDsl.StringBody;
+import static io.gatling.javaapi.core.CoreDsl.constantUsersPerSec;
+import static io.gatling.javaapi.core.CoreDsl.exec;
+import static io.gatling.javaapi.core.CoreDsl.global;
+import static io.gatling.javaapi.core.CoreDsl.jsonPath;
+import static io.gatling.javaapi.core.CoreDsl.nothingFor;
+import static io.gatling.javaapi.core.CoreDsl.rampUsers;
+import static io.gatling.javaapi.core.CoreDsl.randomSwitch;
+import static io.gatling.javaapi.core.CoreDsl.scenario;
+import io.gatling.javaapi.core.ScenarioBuilder;
+import io.gatling.javaapi.core.Simulation;
+import static io.gatling.javaapi.http.HttpDsl.http;
+import static io.gatling.javaapi.http.HttpDsl.status;
+import io.gatling.javaapi.http.HttpProtocolBuilder;
 
 /**
  * 小说服务性能测试模拟类
@@ -54,8 +65,7 @@ public class NovelServiceSimulation extends Simulation {
     };
     
     // 创建小说场景
-    private final ScenarioBuilder createNovelScenario = scenario("创建小说")
-            .exec(session -> session.set("novelRequest", randomNovelRequest.get()))
+    private final ChainBuilder createNovelChain = exec(session -> session.set("novelRequest", randomNovelRequest.get()))
             .exec(http("创建小说请求")
                     .post("/novels")
                     .body(StringBody("#{novelRequest}"))
@@ -63,16 +73,14 @@ public class NovelServiceSimulation extends Simulation {
                     .check(jsonPath("$.id").saveAs("novelId")));
     
     // 获取小说详情场景
-    private final ScenarioBuilder getNovelScenario = scenario("获取小说详情")
-            .exec(createNovelScenario)
+    private final ChainBuilder getNovelChain = exec(createNovelChain)
             .exec(http("获取小说详情请求")
                     .get("/novels/#{novelId}")
                     .check(status().is(200))
                     .check(jsonPath("$.title").exists()));
     
     // 更新小说场景
-    private final ScenarioBuilder updateNovelScenario = scenario("更新小说")
-            .exec(createNovelScenario)
+    private final ChainBuilder updateNovelChain = exec(createNovelChain)
             .exec(session -> {
                 String updatedTitle = "更新的小说 " + UUID.randomUUID().toString().substring(0, 8);
                 String updatedRequest = String.format("""
@@ -97,47 +105,43 @@ public class NovelServiceSimulation extends Simulation {
                     .check(jsonPath("$.title").exists()));
     
     // 搜索小说场景
-    private final ScenarioBuilder searchNovelScenario = scenario("搜索小说")
-            .exec(http("搜索小说请求")
+    private final ChainBuilder searchNovelChain = exec(http("搜索小说请求")
                     .get("/novels/search?title=小说")
                     .check(status().is(200)));
     
     // 获取作者小说场景
-    private final ScenarioBuilder getAuthorNovelsScenario = scenario("获取作者小说")
-            .exec(http("获取作者小说请求")
+    private final ChainBuilder getAuthorNovelsChain = exec(http("获取作者小说请求")
                     .get("/novels/author/user123")
                     .check(status().is(200)));
     
     // 删除小说场景
-    private final ScenarioBuilder deleteNovelScenario = scenario("删除小说")
-            .exec(createNovelScenario)
+    private final ChainBuilder deleteNovelChain = exec(createNovelChain)
             .exec(http("删除小说请求")
                     .delete("/novels/#{novelId}")
                     .check(status().is(204)));
     
     // 混合场景
-    private final ScenarioBuilder mixedScenario = scenario("混合小说请求")
-            .randomSwitch()
+    private final ChainBuilder mixedChain = randomSwitch()
                 .on(
-                    Choice.withWeight(30, exec(createNovelScenario)),
-                    Choice.withWeight(25, exec(getNovelScenario)),
-                    Choice.withWeight(20, exec(updateNovelScenario)),
-                    Choice.withWeight(10, exec(searchNovelScenario)),
-                    Choice.withWeight(10, exec(getAuthorNovelsScenario)),
-                    Choice.withWeight(5, exec(deleteNovelScenario))
+                    Choice.withWeight(30, exec(createNovelChain)),
+                    Choice.withWeight(25, exec(getNovelChain)),
+                    Choice.withWeight(20, exec(updateNovelChain)),
+                    Choice.withWeight(10, exec(searchNovelChain)),
+                    Choice.withWeight(10, exec(getAuthorNovelsChain)),
+                    Choice.withWeight(5, exec(deleteNovelChain))
                 );
     
     // 低负载测试
     private final ScenarioBuilder lowLoadTest = scenario("低负载测试")
-            .exec(mixedScenario);
+            .exec(mixedChain);
     
     // 中负载测试
     private final ScenarioBuilder mediumLoadTest = scenario("中负载测试")
-            .exec(mixedScenario);
+            .exec(mixedChain);
     
     // 高负载测试
     private final ScenarioBuilder highLoadTest = scenario("高负载测试")
-            .exec(mixedScenario);
+            .exec(mixedChain);
     
     {
         setUp(
@@ -159,7 +163,7 @@ public class NovelServiceSimulation extends Simulation {
             ).protocols(httpProtocol)
         ).assertions(
             global().responseTime().percentile3().lt(500),
-            global().successfulRequests().percent().gt(95)
+            global().successfulRequests().percent().gt(95.0)
         );
     }
 } 

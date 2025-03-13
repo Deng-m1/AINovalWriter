@@ -12,6 +12,7 @@
     <artifactId>ai-novel-server</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>AI Novel Assistant Server</name>
+    <packaging>jar</packaging>
     <description>AI驱动的小说创作管理系统后端服务</description>
     
     <properties>
@@ -135,18 +136,27 @@
                     </excludes>
                 </configuration>
             </plugin>
-            <plugin>
+<!--            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
                     <source>${java.version}</source>
                     <target>${java.version}</target>
                     <compilerArgs>
-                        <arg>--enable-preview</arg>
+                        <arg>&#45;&#45;enable-preview</arg>
                     </compilerArgs>
                 </configuration>
-            </plugin>
+            </plugin>-->
             <!-- Gatling Maven Plugin -->
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.12.0</version>
+                <configuration>
+                    <parameters>true</parameters>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>io.gatling</groupId>
                 <artifactId>gatling-maven-plugin</artifactId>

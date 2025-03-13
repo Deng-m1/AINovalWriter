@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8088
   shutdown: graceful
   netty:
     connection-timeout: 5s
@@ -9,8 +9,12 @@ spring:
     name: ai-novel-server
   data:
     mongodb:
-      uri: mongodb://localhost:27017/ainovel
+      uri: mongodb://mongo:123456@localhost:27017/ainoval?authSource=admin&authMechanism=SCRAM-SHA-1
       auto-index-creation: true
+      password: 123456
+      username: mongo
+      database: ainovel
+      authentication-database: admin
   webflux:
     base-path: /api
   lifecycle:
@@ -31,11 +35,12 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: when_authorized
-  metrics:
-    export:
-      prometheus:
+      show-details: when-authorized
+  prometheus:
+    metrics:
+      export:
         enabled: true
+  metrics:
     tags:
       application: ${spring.application.name}
 
@@ -50,4 +55,10 @@ ainovel:
     virtual-threads:
       enabled: true
     monitoring:
-      enabled: true 
+      enabled: true
+
+# 代理配置
+proxy:
+  enabled: true
+  host: localhost
+  port: 6888 

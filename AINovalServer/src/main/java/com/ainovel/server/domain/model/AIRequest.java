@@ -19,6 +19,11 @@ import lombok.NoArgsConstructor;
 public class AIRequest {
     
     /**
+     * 用户ID
+     */
+    private String userId;
+    
+    /**
      * 请求的模型名称
      */
     private String model;
@@ -85,5 +90,105 @@ public class AIRequest {
          * 消息内容
          */
         private String content;
+        
+        // 手动添加getter和setter方法，以防Lombok注解未正确处理
+        
+        public String getRole() {
+            return role;
+        }
+        
+        public void setRole(String role) {
+            this.role = role;
+        }
+        
+        public String getContent() {
+            return content;
+        }
+        
+        public void setContent(String content) {
+            this.content = content;
+        }
+    }
+    
+    // 手动添加getter和setter方法，以防Lombok注解未正确处理
+    
+    public String getUserId() {
+        return userId;
+    }
+    
+    public void setUserId(String userId) {
+        this.userId = userId;
+    }
+    
+    public String getModel() {
+        return model;
+    }
+    
+    public void setModel(String model) {
+        this.model = model;
+    }
+    
+    public String getPrompt() {
+        return prompt;
+    }
+    
+    public void setPrompt(String prompt) {
+        this.prompt = prompt;
+    }
+    
+    public Integer getMaxTokens() {
+        return maxTokens;
+    }
+    
+    public void setMaxTokens(Integer maxTokens) {
+        this.maxTokens = maxTokens;
+    }
+    
+    public Double getTemperature() {
+        return temperature;
+    }
+    
+    public void setTemperature(Double temperature) {
+        this.temperature = temperature;
+    }
+    
+    public Boolean getEnableContext() {
+        return enableContext;
+    }
+    
+    public void setEnableContext(Boolean enableContext) {
+        this.enableContext = enableContext;
+    }
+    
+    public String getNovelId() {
+        return novelId;
+    }
+    
+    public void setNovelId(String novelId) {
+        this.novelId = novelId;
+    }
+    
+    public String getSceneId() {
+        return sceneId;
+    }
+    
+    public void setSceneId(String sceneId) {
+        this.sceneId = sceneId;
+    }
+    
+    public Map<String, Object> getParameters() {
+        return parameters;
+    }
+    
+    public void setParameters(Map<String, Object> parameters) {
+        this.parameters = parameters;
+    }
+    
+    public List<Message> getMessages() {
+        return messages;
+    }
+    
+    public void setMessages(List<Message> messages) {
+        this.messages = messages;
     }
 } 

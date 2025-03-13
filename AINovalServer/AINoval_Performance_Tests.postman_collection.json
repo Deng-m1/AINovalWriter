@@ -1,0 +1,886 @@
+{
+  "info": {
+    "_postman_id": "a8e5f3b2-6d7c-4f5e-9a8d-1c2e3f4a5b6c",
+    "name": "AINoval性能测试集合",
+    "description": "AI小说助手系统性能测试接口集合",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "认证",
+      "description": "用户认证相关接口",
+      "item": [
+        {
+          "name": "登录获取Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.token) {",
+                  "    pm.environment.set('authToken', jsonData.token);",
+                  "    pm.environment.set('refreshToken', jsonData.refreshToken);",
+                  "    console.log('Token已保存到环境变量');",
+                  "}",
+                  "",
+                  "// 从响应头中获取CSRF令牌",
+                  "var csrfToken = pm.response.headers.get('X-CSRF-TOKEN');",
+                  "if (csrfToken) {",
+                  "    pm.environment.set('csrfToken', csrfToken);",
+                  "    console.log('CSRF令牌已保存到环境变量');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "登录并获取JWT令牌"
+          },
+          "response": []
+        },
+        {
+          "name": "获取CSRF令牌",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// 从响应头中获取CSRF令牌",
+                  "var csrfToken = pm.response.headers.get('X-CSRF-TOKEN');",
+                  "if (csrfToken) {",
+                  "    pm.environment.set('csrfToken', csrfToken);",
+                  "    console.log('CSRF令牌已保存到环境变量');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/csrf",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "csrf"]
+            },
+            "description": "获取CSRF令牌"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "数据生成与管理",
+      "description": "用于生成测试数据和管理数据库内容的接口",
+      "item": [
+        {
+          "name": "生成测试数据",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/performance-test/generate-data?count=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["performance-test", "generate-data"],
+              "query": [
+                {
+                  "key": "count",
+                  "value": "10",
+                  "description": "要生成的小说数量"
+                }
+              ]
+            },
+            "description": "生成指定数量的小说测试数据，包括小说、场景和角色"
+          },
+          "response": []
+        },
+        {
+          "name": "清除测试数据",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/performance-test/clear-data",
+              "host": ["{{baseUrl}}"],
+              "path": ["performance-test", "clear-data"]
+            },
+            "description": "清除所有测试数据"
+          },
+          "response": []
+        },
+        {
+          "name": "获取数据库统计信息",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/performance-test/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["performance-test", "stats"]
+            },
+            "description": "获取数据库中小说和场景的数量统计"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "性能测试",
+      "description": "用于测试系统性能的接口",
+      "item": [
+        {
+          "name": "小说查询性能测试",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/performance-test/novel-query-test?concurrentUsers=50&requestsPerUser=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["performance-test", "novel-query-test"],
+              "query": [
+                {
+                  "key": "concurrentUsers",
+                  "value": "50",
+                  "description": "并发用户数"
+                },
+                {
+                  "key": "requestsPerUser",
+                  "value": "10",
+                  "description": "每个用户的请求数"
+                }
+              ]
+            },
+            "description": "测试小说查询接口的性能，模拟多用户并发查询"
+          },
+          "response": []
+        },
+        {
+          "name": "场景查询性能测试",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/performance-test/scene-query-test?concurrentUsers=50&requestsPerUser=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["performance-test", "scene-query-test"],
+              "query": [
+                {
+                  "key": "concurrentUsers",
+                  "value": "50",
+                  "description": "并发用户数"
+                },
+                {
+                  "key": "requestsPerUser",
+                  "value": "10",
+                  "description": "每个用户的请求数"
+                }
+              ]
+            },
+            "description": "测试场景查询接口的性能，模拟多用户并发查询"
+          },
+          "response": []
+        },
+        {
+          "name": "小说创建性能测试",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/performance-test/novel-create-test?concurrentUsers=20&requestsPerUser=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["performance-test", "novel-create-test"],
+              "query": [
+                {
+                  "key": "concurrentUsers",
+                  "value": "20",
+                  "description": "并发用户数"
+                },
+                {
+                  "key": "requestsPerUser",
+                  "value": "5",
+                  "description": "每个用户的请求数"
+                }
+              ]
+            },
+            "description": "测试小说创建接口的性能，模拟多用户并发创建小说"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "系统监控",
+      "description": "用于监控系统状态的接口",
+      "item": [
+        {
+          "name": "获取服务器状态",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/performance-test/server-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["performance-test", "server-status"]
+            },
+            "description": "获取服务器的状态信息，包括内存使用、处理器数量等"
+          },
+          "response": []
+        },
+        {
+          "name": "实时监控服务器状态",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/performance-test/monitor",
+              "host": ["{{baseUrl}}"],
+              "path": ["performance-test", "monitor"]
+            },
+            "description": "实时监控服务器状态，使用Server-Sent Events流式返回数据"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "小说管理接口",
+      "description": "小说基本CRUD操作接口",
+      "item": [
+        {
+          "name": "创建小说",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"测试小说标题\",\n  \"description\": \"这是一部测试小说的描述\",\n  \"author\": {\n    \"id\": \"user123\",\n    \"username\": \"测试作者\"\n  },\n  \"genre\": [\"科幻\", \"悬疑\"],\n  \"tags\": [\"热门\", \"推荐\"],\n  \"status\": \"进行中\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/novels",
+              "host": ["{{baseUrl}}"],
+              "path": ["novels"]
+            },
+            "description": "创建一部新小说"
+          },
+          "response": []
+        },
+        {
+          "name": "获取小说详情",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/novels/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["novels", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{novelId}}",
+                  "description": "小说ID"
+                }
+              ]
+            },
+            "description": "根据ID获取小说详情"
+          },
+          "response": []
+        },
+        {
+          "name": "更新小说",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"更新后的小说标题\",\n  \"description\": \"这是更新后的小说描述\",\n  \"genre\": [\"科幻\", \"冒险\"],\n  \"tags\": [\"热门\", \"精品\"],\n  \"status\": \"已完成\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/novels/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["novels", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{novelId}}",
+                  "description": "小说ID"
+                }
+              ]
+            },
+            "description": "更新小说信息"
+          },
+          "response": []
+        },
+        {
+          "name": "删除小说",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/novels/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["novels", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{novelId}}",
+                  "description": "小说ID"
+                }
+              ]
+            },
+            "description": "删除指定ID的小说"
+          },
+          "response": []
+        },
+        {
+          "name": "获取作者的所有小说",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/novels/author/:authorId",
+              "host": ["{{baseUrl}}"],
+              "path": ["novels", "author", ":authorId"],
+              "variable": [
+                {
+                  "key": "authorId",
+                  "value": "{{authorId}}",
+                  "description": "作者ID"
+                }
+              ]
+            },
+            "description": "获取指定作者的所有小说"
+          },
+          "response": []
+        },
+        {
+          "name": "搜索小说",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/novels/search?title=测试",
+              "host": ["{{baseUrl}}"],
+              "path": ["novels", "search"],
+              "query": [
+                {
+                  "key": "title",
+                  "value": "测试",
+                  "description": "标题关键词"
+                }
+              ]
+            },
+            "description": "根据标题关键词搜索小说"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "场景管理接口",
+      "description": "场景基本CRUD操作接口",
+      "item": [
+        {
+          "name": "创建场景",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"novelId\": \"{{novelId}}\",\n  \"chapterId\": \"{{chapterId}}\",\n  \"title\": \"测试场景\",\n  \"content\": \"这是一个测试场景的内容...\",\n  \"summary\": \"场景摘要\",\n  \"characterIds\": [],\n  \"locations\": [\"山洞\", \"森林\"],\n  \"timeframe\": \"第一天\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/scenes",
+              "host": ["{{baseUrl}}"],
+              "path": ["scenes"]
+            },
+            "description": "创建一个新场景"
+          },
+          "response": []
+        },
+        {
+          "name": "获取场景详情",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/scenes/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["scenes", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{sceneId}}",
+                  "description": "场景ID"
+                }
+              ]
+            },
+            "description": "根据ID获取场景详情"
+          },
+          "response": []
+        },
+        {
+          "name": "更新场景",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"更新后的场景标题\",\n  \"content\": \"这是更新后的场景内容...\",\n  \"summary\": \"更新后的场景摘要\",\n  \"locations\": [\"山洞\", \"森林\", \"河流\"],\n  \"timeframe\": \"第二天\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/scenes/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["scenes", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{sceneId}}",
+                  "description": "场景ID"
+                }
+              ]
+            },
+            "description": "更新场景信息"
+          },
+          "response": []
+        },
+        {
+          "name": "删除场景",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/scenes/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["scenes", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{sceneId}}",
+                  "description": "场景ID"
+                }
+              ]
+            },
+            "description": "删除指定ID的场景"
+          },
+          "response": []
+        },
+        {
+          "name": "获取小说的所有场景",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/scenes/novel/:novelId",
+              "host": ["{{baseUrl}}"],
+              "path": ["scenes", "novel", ":novelId"],
+              "variable": [
+                {
+                  "key": "novelId",
+                  "value": "{{novelId}}",
+                  "description": "小说ID"
+                }
+              ]
+            },
+            "description": "获取指定小说的所有场景"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AI交互接口",
+      "description": "AI辅助写作相关接口",
+      "item": [
+        {
+          "name": "生成内容",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"请继续写这个场景，主角正在探索一个神秘的洞穴...\",\n  \"model\": \"gpt-4\",\n  \"maxTokens\": 1000,\n  \"temperature\": 0.7,\n  \"context\": {\n    \"sceneId\": \"{{sceneId}}\",\n    \"novelId\": \"{{novelId}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "generate"]
+            },
+            "description": "使用AI生成内容"
+          },
+          "response": []
+        },
+        {
+          "name": "流式生成内容",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"请继续写这个场景，主角正在探索一个神秘的洞穴...\",\n  \"model\": \"gpt-4\",\n  \"maxTokens\": 1000,\n  \"temperature\": 0.7,\n  \"context\": {\n    \"sceneId\": \"{{sceneId}}\",\n    \"novelId\": \"{{novelId}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/generate-stream",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "generate-stream"]
+            },
+            "description": "使用AI流式生成内容"
+          },
+          "response": []
+        },
+        {
+          "name": "获取创作建议",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"novelId\": \"{{novelId}}\",\n  \"sceneId\": \"{{sceneId}}\",\n  \"type\": \"plot\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/suggestions",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "suggestions"]
+            },
+            "description": "获取AI创作建议"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:18088/api",
+      "type": "string"
+    },
+    {
+      "key": "novelId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sceneId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "chapterId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "authorId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "csrfToken",
+      "value": "",
+      "type": "string"
+    }
+  ]
+} 

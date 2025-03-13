@@ -47,23 +47,23 @@ public class MockAIServiceImpl implements AIService {
     @Override
     @Timed(value = "ai.generate.content", description = "Time taken to generate AI content")
     public Mono<AIResponse> generateContent(AIRequest request) {
-        log.debug("生成AI内容: {}", request.getPrompt());
+        log.debug("生成AI内容");
         
         // 模拟处理延迟
-        int processingTimeMs = calculateProcessingTime(request);
+        int processingTimeMs = 1000;
         
         return Mono.delay(Duration.ofMillis(processingTimeMs))
-                .map(ignored -> createMockResponse(request))
-                .doOnSuccess(response -> log.debug("AI内容生成完成，使用了{}个令牌", response.getTokenUsage().getTotalTokens()));
+                .map(ignored -> createMockResponse())
+                .doOnSuccess(response -> log.debug("AI内容生成完成"));
     }
     
     @Override
     @Timed(value = "ai.generate.content.stream", description = "Time taken to generate AI content stream")
     public Flux<String> generateContentStream(AIRequest request) {
-        log.debug("流式生成AI内容: {}", request.getPrompt());
+        log.debug("流式生成AI内容");
         
         // 生成模拟内容
-        String content = generateMockContent(request);
+        String content = generateMockContent();
         String[] words = content.split(" ");
         
         // 模拟流式响应，每次返回一个单词
@@ -77,39 +77,46 @@ public class MockAIServiceImpl implements AIService {
         return Flux.fromIterable(AVAILABLE_MODELS);
     }
     
+    @Override
+    public Mono<Double> estimateCost(AIRequest request) {
+        // 模拟成本估算
+        return Mono.just(0.01); // 固定返回一个很小的值
+    }
+    
+    @Override
+    public Mono<Boolean> validateApiKey(String userId, String provider, String modelName, String apiKey) {
+        // 模拟API密钥验证，始终返回成功
+        return Mono.just(true);
+    }
+    
     /**
      * 创建模拟响应
      */
-    private AIResponse createMockResponse(AIRequest request) {
-        String content = generateMockContent(request);
+    private AIResponse createMockResponse() {
+        AIResponse response = new AIResponse();
+        response.setId(UUID.randomUUID().toString());
+        response.setModel("mock-model");
+        response.setContent(generateMockContent());
         
-        // 计算令牌使用情况
-        int promptTokens = calculateTokens(request.getPrompt());
-        int completionTokens = calculateTokens(content);
+        AIResponse.TokenUsage tokenUsage = new AIResponse.TokenUsage();
+        tokenUsage.setPromptTokens(100);
+        tokenUsage.setCompletionTokens(200);
         
-        AIResponse.TokenUsage tokenUsage = AIResponse.TokenUsage.builder()
-                .promptTokens(promptTokens)
-                .completionTokens(completionTokens)
-                .build();
+        response.setTokenUsage(tokenUsage);
+        response.setCreatedAt(LocalDateTime.now());
+        response.setFinishReason("stop");
         
-        return AIResponse.builder()
-                .id(UUID.randomUUID().toString())
-                .model(request.getModel())
-                .content(content)
-                .tokenUsage(tokenUsage)
-                .createdAt(LocalDateTime.now())
-                .finishReason("stop")
-                .build();
+        return response;
     }
     
     /**
      * 生成模拟内容
      */
-    private String generateMockContent(AIRequest request) {
+    private String generateMockContent() {
         Random random = ThreadLocalRandom.current();
         
-        // 根据提示长度生成相应长度的响应
-        int sentenceCount = 3 + random.nextInt(7); // 3-10句话
+        // 生成3-10句话
+        int sentenceCount = 3 + random.nextInt(7);
         StringBuilder content = new StringBuilder();
         
         for (int i = 0; i < sentenceCount; i++) {
@@ -117,41 +124,5 @@ public class MockAIServiceImpl implements AIService {
         }
         
         return content.toString().trim();
-    }
-    
-    /**
-     * 计算处理时间（毫秒）
-     */
-    private int calculateProcessingTime(AIRequest request) {
-        Random random = ThreadLocalRandom.current();
-        
-        // 基础处理时间
-        int baseTime = 500;
-        
-        // 根据模型调整处理时间
-        if ("gpt-4".equals(request.getModel()) || "claude-3-opus".equals(request.getModel())) {
-            baseTime = 1000; // 更高级的模型处理更慢
-        }
-        
-        // 根据提示长度和最大令牌数调整处理时间
-        int promptFactor = calculateTokens(request.getPrompt()) / 10;
-        int maxTokensFactor = request.getMaxTokens() / 100;
-        
-        // 添加随机波动
-        int randomFactor = random.nextInt(300);
-        
-        return baseTime + promptFactor + maxTokensFactor + randomFactor;
-    }
-    
-    /**
-     * 简单计算文本的令牌数（粗略估计）
-     */
-    private int calculateTokens(String text) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-        
-        // 粗略估计：每4个字符约为1个令牌
-        return text.length() / 4 + 1;
     }
 }

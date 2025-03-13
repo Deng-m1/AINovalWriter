@@ -1,16 +1,26 @@
 package com.ainovel.server.performance.simulation;
 
-import static io.gatling.javaapi.core.CoreDsl.*;
-import static io.gatling.javaapi.http.HttpDsl.*;
-
 import java.time.Duration;
-import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 import java.util.function.Supplier;
 
-import io.gatling.javaapi.core.*;
-import io.gatling.javaapi.http.*;
+import io.gatling.javaapi.core.ChainBuilder;
+import io.gatling.javaapi.core.Choice;
+import static io.gatling.javaapi.core.CoreDsl.StringBody;
+import static io.gatling.javaapi.core.CoreDsl.constantUsersPerSec;
+import static io.gatling.javaapi.core.CoreDsl.exec;
+import static io.gatling.javaapi.core.CoreDsl.global;
+import static io.gatling.javaapi.core.CoreDsl.jsonPath;
+import static io.gatling.javaapi.core.CoreDsl.nothingFor;
+import static io.gatling.javaapi.core.CoreDsl.rampUsers;
+import static io.gatling.javaapi.core.CoreDsl.randomSwitch;
+import static io.gatling.javaapi.core.CoreDsl.scenario;
+import io.gatling.javaapi.core.ScenarioBuilder;
+import io.gatling.javaapi.core.Simulation;
+import static io.gatling.javaapi.http.HttpDsl.http;
+import static io.gatling.javaapi.http.HttpDsl.status;
+import io.gatling.javaapi.http.HttpProtocolBuilder;
 
 /**
  * AI服务性能测试模拟类
@@ -79,15 +89,13 @@ public class AIServiceSimulation extends Simulation {
     };
     
     // 获取模型列表场景
-    private final ScenarioBuilder getModelsScenario = scenario("获取AI模型列表")
-            .exec(http("获取可用模型")
+    private final ChainBuilder getModelsChain = exec(http("获取可用模型")
                     .get("/ai/models")
                     .check(status().is(200))
                     .check(jsonPath("$").exists()));
     
     // 生成内容场景
-    private final ScenarioBuilder generateContentScenario = scenario("生成AI内容")
-            .exec(session -> session.set("request", randomAIRequest.get()))
+    private final ChainBuilder generateContentChain = exec(session -> session.set("request", randomAIRequest.get()))
             .exec(http("生成内容请求")
                     .post("/ai/generate")
                     .body(StringBody("#{request}"))
@@ -96,33 +104,31 @@ public class AIServiceSimulation extends Simulation {
                     .check(jsonPath("$.tokenUsage").exists()));
     
     // 流式生成内容场景
-    private final ScenarioBuilder streamContentScenario = scenario("流式生成AI内容")
-            .exec(session -> session.set("request", randomAIRequest.get()))
+    private final ChainBuilder streamContentChain = exec(session -> session.set("request", randomAIRequest.get()))
             .exec(http("流式生成内容请求")
                     .post("/ai/generate/stream")
                     .body(StringBody("#{request}"))
                     .check(status().is(200)));
     
     // 混合场景
-    private final ScenarioBuilder mixedScenario = scenario("混合AI请求")
-            .randomSwitch()
+    private final ChainBuilder mixedChain = randomSwitch()
                 .on(
-                    Choice.withWeight(10, exec(getModelsScenario)),
-                    Choice.withWeight(60, exec(generateContentScenario)),
-                    Choice.withWeight(30, exec(streamContentScenario))
+                    Choice.withWeight(10, exec(getModelsChain)),
+                    Choice.withWeight(60, exec(generateContentChain)),
+                    Choice.withWeight(30, exec(streamContentChain))
                 );
     
     // 低负载测试
     private final ScenarioBuilder lowLoadTest = scenario("低负载测试")
-            .exec(mixedScenario);
+            .exec(mixedChain);
     
     // 中负载测试
     private final ScenarioBuilder mediumLoadTest = scenario("中负载测试")
-            .exec(mixedScenario);
+            .exec(mixedChain);
     
     // 高负载测试
     private final ScenarioBuilder highLoadTest = scenario("高负载测试")
-            .exec(mixedScenario);
+            .exec(mixedChain);
     
     {
         setUp(
@@ -144,7 +150,7 @@ public class AIServiceSimulation extends Simulation {
             ).protocols(httpProtocol)
         ).assertions(
             global().responseTime().percentile3().lt(1000),
-            global().successfulRequests().percent().gt(95)
+            global().successfulRequests().percent().gt(95.0)
         );
     }
 } 
