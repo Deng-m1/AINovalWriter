@@ -1,20 +1,25 @@
 server:
-  port: 8088
+  port: 18080
   shutdown: graceful
   netty:
     connection-timeout: 5s
+  error:
+    include-message: always
+    include-binding-errors: always
+    include-stacktrace: on-param
+    include-exception: true
 
 spring:
   application:
     name: ai-novel-server
   data:
     mongodb:
-      uri: localhost:27017/ainoval
+      uri: mongodb://localhost:27017/ainoval?
       auto-index-creation: true
       database: ainovel
       authentication-database: admin
   webflux:
-    base-path: /api
+    base-path: /
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
@@ -22,10 +27,14 @@ logging:
   level:
     root: INFO
     com.ainovel: DEBUG
-    org.springframework.data.mongodb: INFO
-    org.springframework.web: INFO
+    # 添加MongoDB查询日志配置
+    org.springframework.data.mongodb: DEBUG
+    org.springframework.data.mongodb.core.ReactiveMongoTemplate: DEBUG
+    org.springframework.data.mongodb.core.MongoTemplate: DEBUG
+    org.springframework.data.mongodb.repository.query: DEBUG
+    org.springframework.web: DEBUG
     org.springframework.security: DEBUG
-    reactor.netty: INFO
+    reactor.netty: DEBUG
 
 management:
   endpoints:
@@ -35,10 +44,12 @@ management:
   endpoint:
     health:
       show-details: always
-  metrics:
-    export:
-      prometheus:
+  # 更新过时的配置
+  prometheus:
+    metrics:
+      export:
         enabled: true
+  metrics:
     tags:
       application: ${spring.application.name}
 
@@ -55,4 +66,15 @@ ainovel:
     monitoring:
       enabled: true
     testing:
-      security-disabled: true  # 禁用安全验证，方便测试 
+      security-disabled: true  # 禁用安全验证，方便测试
+  # 添加MongoDB查询日志配置
+  mongodb:
+    logging:
+      enabled: true
+      query-level: DEBUG
+      result-count: true
+
+# 禁用JWT验证，方便测试
+security:
+  jwt:
+    disabled: true
