@@ -1,4 +1,3 @@
-import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/services/mock_data_service.dart';
 
