@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
-import 'package:ainoval/repositories/editor_repository.dart' hide EditorSettings;
+import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
+import 'package:ainoval/services/api_service/repositories/impl/editor_repository_impl.dart';
 import 'package:ainoval/utils/word_count_analyzer.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:ainoval/utils/logger.dart';
 
 part 'editor_event.dart';
 part 'editor_state.dart';
@@ -14,9 +16,10 @@ part 'editor_state.dart';
 class EditorBloc extends Bloc<EditorEvent, EditorState> {
   
   EditorBloc({
-    required this.repository,
+    required EditorRepositoryImpl repository,
     required this.novelId,
-  }) : super(EditorInitial()) {
+  }) : repository = repository,
+      super(EditorInitial()) {
     on<LoadEditorContent>(_onLoadContent);
     on<UpdateContent>(_onUpdateContent);
     on<SaveContent>(_onSaveContent);
@@ -32,7 +35,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     on<AddNewChapter>(_onAddNewChapter);
     on<AddNewScene>(_onAddNewScene);
   }
-  final EditorRepository repository;
+  final EditorRepositoryImpl repository;
   final String novelId;
   Timer? _autoSaveTimer;
   novel_models.Novel? _novel;
@@ -128,7 +131,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
             
             // 获取当前活动场景
             if (chapter.scenes.isEmpty) {
-              print('章节没有场景，无法保存');
+              AppLogger.i('Blocs/editor/editor_bloc', '章节没有场景，无法保存');
               return;
             }
             
@@ -167,7 +170,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
               lastSaveTime: DateTime.now(),
             ));
           } catch (e) {
-            print('保存场景内容失败: $e');
+            AppLogger.e('Blocs/editor/editor_bloc', '保存场景内容失败', e);
             // 即使场景保存失败，也标记为已保存
             emit(currentState.copyWith(
               isDirty: false,
@@ -239,7 +242,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           _isDirty = false;
           _lastSaveTime = DateTime.now();
         } catch (e) {
-          print('保存场景内容失败: $e');
+          AppLogger.e('Blocs/editor/editor_bloc', '保存场景内容失败', e);
         }
         return;
       }
@@ -288,7 +291,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           lastSaveTime: DateTime.now(),
         ));
       } catch (e) {
-        print('保存场景内容失败: $e');
+        AppLogger.e('Blocs/editor/editor_bloc', '保存场景内容失败', e);
         emit((state as EditorLoaded).copyWith(
           isSaving: false,
         ));
@@ -359,7 +362,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           _isDirty = false;
           _lastSaveTime = DateTime.now();
         } catch (e) {
-          print('保存摘要失败: $e');
+          AppLogger.e('Blocs/editor/editor_bloc', '保存摘要失败', e);
         }
         return;
       }
@@ -427,7 +430,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           lastSaveTime: DateTime.now(),
         ));
       } catch (e) {
-        print('保存摘要失败: $e');
+        AppLogger.e('Blocs/editor/editor_bloc', '保存摘要失败', e);
         emit((state as EditorLoaded).copyWith(
           isSaving: false,
         ));
@@ -476,7 +479,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   
   // 处理设置活动章节事件
   Future<void> _onSetActiveChapter(SetActiveChapter event, Emitter<EditorState> emit) async {
-    print('设置活动章节: actId=${event.actId}, chapterId=${event.chapterId}');
+    AppLogger.i('Blocs/editor/editor_bloc', '设置活动章节: actId=${event.actId}, chapterId=${event.chapterId}');
     final currentState = state;
     if (currentState is EditorLoaded) {
       emit(currentState.copyWith(
@@ -488,7 +491,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   
   // 处理设置活动场景事件
   Future<void> _onSetActiveScene(SetActiveScene event, Emitter<EditorState> emit) async {
-    print('设置活动场景: actId=${event.actId}, chapterId=${event.chapterId}, sceneId=${event.sceneId}');
+    AppLogger.i('Blocs/editor/editor_bloc', '设置活动场景: actId=${event.actId}, chapterId=${event.chapterId}, sceneId=${event.sceneId}');
     final currentState = state;
     if (currentState is EditorLoaded) {
       emit(currentState.copyWith(
@@ -527,9 +530,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           lastSaveTime: DateTime.now(),
         ));
         
-        print('Act标题保存成功: ${event.title}');
+        AppLogger.i('Blocs/editor/editor_bloc', 'Act标题保存成功: ${event.title}');
       } catch (e) {
-        print('保存Act标题失败: $e');
+        AppLogger.e('Blocs/editor/editor_bloc', '保存Act标题失败', e);
         
         // 保存失败，恢复原始数据
         emit((state as EditorLoaded).copyWith(
@@ -574,9 +577,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           lastSaveTime: DateTime.now(),
         ));
         
-        print('Chapter标题保存成功: ${event.title}');
+        AppLogger.i('Blocs/editor/editor_bloc', 'Chapter标题保存成功: ${event.title}');
       } catch (e) {
-        print('保存Chapter标题失败: $e');
+        AppLogger.e('Blocs/editor/editor_bloc', '保存Chapter标题失败', e);
         
         // 保存失败，恢复原始数据
         emit((state as EditorLoaded).copyWith(
@@ -854,9 +857,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           activeChapterId: null,
         ));
         
-        print('新Act添加成功: ${event.title}, ID: ${newAct.id}');
+        AppLogger.i('Blocs/editor/editor_bloc', '新Act添加成功: ${event.title}, ID: ${newAct.id}');
       } catch (e) {
-        print('添加新Act失败: $e');
+        AppLogger.e('Blocs/editor/editor_bloc', '添加新Act失败', e);
         
         // 保存失败，恢复原始数据
         emit((state as EditorLoaded).copyWith(
@@ -911,7 +914,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         
         // 保存场景内容
         if (newChapter.scenes.isEmpty) {
-          print('新章节没有场景，无需保存场景内容');
+          AppLogger.i('Blocs/editor/editor_bloc', '新章节没有场景，无需保存场景内容');
         } else {
           final scene = newChapter.scenes.first;
           final wordCount = WordCountAnalyzer.countWords(scene.content);
@@ -937,9 +940,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           activeChapterId: newChapter.id,
         ));
         
-        print('新Chapter添加成功: ${event.title}, ID: ${newChapter.id}');
+        AppLogger.i('Blocs/editor/editor_bloc', '新Chapter添加成功: ${event.title}, ID: ${newChapter.id}');
       } catch (e) {
-        print('添加新Chapter失败: $e');
+        AppLogger.e('Blocs/editor/editor_bloc', '添加新Chapter失败', e);
         
         // 保存失败，恢复原始数据
         emit((state as EditorLoaded).copyWith(
@@ -953,120 +956,135 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   
   // 处理添加新Scene事件
   Future<void> _onAddNewScene(AddNewScene event, Emitter<EditorState> emit) async {
-    print('开始处理添加新Scene事件: actId=${event.actId}, chapterId=${event.chapterId}');
+    AppLogger.i('Blocs/editor/editor_bloc', '开始处理添加新Scene事件: actId=${event.actId}, chapterId=${event.chapterId}');
     final currentState = state;
     if (currentState is EditorLoaded) {
       // 获取当前小说
       final novel = currentState.novel;
-      print('当前小说: id=${novel.id}, title=${novel.title}, acts数量=${novel.acts.length}');
+      AppLogger.i('Blocs/editor/editor_bloc', '当前小说: id=${novel.id}, title=${novel.title}, acts数量=${novel.acts.length}');
       
       // 查找对应的Act和Chapter
       final act = novel.getAct(event.actId);
       if (act == null) {
-        print('找不到指定的Act: ${event.actId}');
+        AppLogger.i('Blocs/editor/editor_bloc', '找不到指定的Act: ${event.actId}');
         emit(const EditorError(message: '找不到指定的Act'));
         return;
       }
-      print('找到Act: id=${act.id}, title=${act.title}, chapters数量=${act.chapters.length}');
       
       final chapter = act.getChapter(event.chapterId);
       if (chapter == null) {
-        print('找不到指定的Chapter: ${event.chapterId}');
+        AppLogger.i('Blocs/editor/editor_bloc', '找不到指定的Chapter: ${event.chapterId}');
         emit(const EditorError(message: '找不到指定的Chapter'));
         return;
       }
-      print('找到Chapter: id=${chapter.id}, title=${chapter.title}, scenes数量=${chapter.scenes.length}');
       
-      // 向Chapter添加新Scene
-      final updatedChapter = chapter.addScene();
-      final newScene = updatedChapter.scenes.last; // 获取新添加的Scene
-      print('创建新Scene: id=${newScene.id}');
+      // 设置为保存状态，UI可以显示加载指示器
+      emit(currentState.copyWith(isSaving: true));
       
-      // 更新Act的Chapters
-      final updatedChapters = List<novel_models.Chapter>.from(act.chapters);
-      final chapterIndex = updatedChapters.indexWhere((c) => c.id == event.chapterId);
-      updatedChapters[chapterIndex] = updatedChapter;
-      final updatedAct = act.copyWith(chapters: updatedChapters);
-      
-      // 更新Novel的Acts
-      final updatedActs = List<novel_models.Act>.from(novel.acts);
-      final actIndex = updatedActs.indexWhere((a) => a.id == event.actId);
-      updatedActs[actIndex] = updatedAct;
-      final updatedNovel = novel.copyWith(
-        acts: updatedActs,
-        updatedAt: DateTime.now(),
-      );
-      
-      // 设置为脏状态，开始保存
-      print('更新状态为脏状态，开始保存');
-      emit(currentState.copyWith(
-        novel: updatedNovel,
-        isDirty: true,
-        isSaving: true,
-      ));
-      
-      // 立即保存到本地存储
       try {
-        // 保存整个小说数据
-        print('保存整个小说数据');
-        await repository.saveNovel(updatedNovel);
+        // 1. 创建新场景实体
+        AppLogger.i('Blocs/editor/editor_bloc', '创建新场景实体');
+        final sceneId = event.sceneId;
+        const defaultContent = '{"ops":[{"insert":"\\n"}]}';
+        const defaultSummaryContent = '';
         
-        // 保存场景内容
-        final wordCount = WordCountAnalyzer.countWords(newScene.content);
-        print('保存场景内容: wordCount=$wordCount');
-        
-        novel_models.Scene updatedScene;
-        try {
-          updatedScene = await repository.saveSceneContent(
-            event.novelId,
-            event.actId,
-            event.chapterId,
-            event.sceneId,
-            newScene.content,
-            wordCount.toString(),
-            chapter.scenes.first.summary,
-          );
-          print('场景内容保存成功: sceneId=${updatedScene.id}');
-        } catch (e) {
-          print('保存场景内容失败，使用新创建的场景: $e');
-          // 如果保存失败，使用新创建的场景
-          updatedScene = newScene;
-        }
-        
-        // 更新小说数据，包含保存后的场景
-        final finalNovel = _updateNovelScene(
-          updatedNovel,
-          event.actId,
-          event.chapterId,
-          updatedScene,
+        // 创建场景摘要
+        final summary = novel_models.Summary(
+          id: 'summary_$sceneId',
+          content: defaultSummaryContent
         );
         
-        // 保存成功后，更新状态为已保存
-        print('保存成功，更新状态为已保存');
-        emit((state as EditorLoaded).copyWith(
-          novel: finalNovel,
-          isDirty: false,
-          isSaving: false,
-          lastSaveTime: DateTime.now(),
-          // 设置新创建的Scene为活动Scene
-          activeActId: event.actId,
-          activeChapterId: event.chapterId,
-          activeSceneId: event.sceneId,
-        ));
+        // 创建新场景
+        final newScene = novel_models.Scene(
+          id: sceneId,
+          content: defaultContent,
+          summary: summary,
+          wordCount: 0,
+          lastEdited: DateTime.now()
+        );
         
-        print('新Scene添加成功, ID: ${newScene.id}');
+        // 2. 更新本地小说模型，使用不可变方式
+        // 创建新的场景列表
+        final updatedScenes = List<novel_models.Scene>.from(chapter.scenes);
+        updatedScenes.add(newScene);
+        
+        // 更新章节
+        final updatedChapter = chapter.copyWith(scenes: updatedScenes);
+        
+        // 更新章节列表
+        final updatedChapters = List<novel_models.Chapter>.from(act.chapters);
+        final chapterIndex = updatedChapters.indexWhere((c) => c.id == event.chapterId);
+        updatedChapters[chapterIndex] = updatedChapter;
+        
+        // 更新Act
+        final updatedAct = act.copyWith(chapters: updatedChapters);
+        
+        // 更新Acts列表
+        final updatedActs = List<novel_models.Act>.from(novel.acts);
+        final actIndex = updatedActs.indexWhere((a) => a.id == event.actId);
+        updatedActs[actIndex] = updatedAct;
+        
+        // 更新小说
+        final updatedNovel = novel.copyWith(
+          acts: updatedActs,
+          updatedAt: DateTime.now(),
+        );
+        
+        // 3. 直接使用repository保存到本地和远程
+        final saveResult = await repository.saveNovel(updatedNovel);
+        
+        if (saveResult) {
+          // 保存场景内容
+          try {
+            await repository.saveSceneContent(
+              event.novelId,
+              event.actId,
+              event.chapterId,
+              sceneId,
+              defaultContent,
+              '0', // 初始字数为0
+              summary,
+            );
+            
+            // 更新UI状态
+            emit((state as EditorLoaded).copyWith(
+              novel: updatedNovel,
+              isDirty: false,
+              isSaving: false,
+              lastSaveTime: DateTime.now(),
+              // 设置新创建的Scene为活动Scene
+              activeActId: event.actId,
+              activeChapterId: event.chapterId,
+              activeSceneId: sceneId,
+            ));
+            
+            AppLogger.i('Blocs/editor/editor_bloc', '新Scene添加成功并已保存, ID: $sceneId');
+          } catch (e) {
+            // 保存场景内容失败
+            AppLogger.e('Blocs/editor/editor_bloc', '保存场景内容失败', e);
+            emit((state as EditorLoaded).copyWith(
+              novel: updatedNovel, // 仍然更新模型，因为小说结构已保存
+              isDirty: false,
+              isSaving: false,
+              lastSaveTime: DateTime.now(),
+              errorMessage: '场景结构已保存，但内容保存失败: ${e.toString()}',
+            ));
+          }
+        } else {
+          // 保存小说失败
+          emit((state as EditorLoaded).copyWith(
+            isSaving: false,
+            errorMessage: '保存小说结构失败',
+          ));
+        }
       } catch (e) {
-        print('添加新Scene失败: $e');
-        
-        // 保存失败，恢复原始数据
+        // 创建场景失败
+        AppLogger.e('Blocs/editor/editor_bloc', '添加新Scene失败', e);
         emit((state as EditorLoaded).copyWith(
-          novel: novel,
           isSaving: false,
-          errorMessage: '添加新Scene失败，请重试',
+          errorMessage: '添加新场景失败: ${e.toString()}',
         ));
       }
-    } else {
-      print('当前状态不是EditorLoaded: ${state.runtimeType}');
     }
   }
   

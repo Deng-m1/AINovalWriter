@@ -1,7 +1,8 @@
+import 'package:ainoval/services/api_service/repositories/chat_repository.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/chat_models.dart';
-import '../../repositories/chat_repository.dart';
+
 import '../../services/context_provider.dart';
 import 'chat_event.dart';
 import 'chat_state.dart';
