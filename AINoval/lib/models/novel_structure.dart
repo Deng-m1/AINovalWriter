@@ -8,6 +8,7 @@ class Novel {
     required this.createdAt,
     required this.updatedAt,
     this.acts = const [],
+    this.lastEditedChapterId,
   });
   
   /// 从JSON创建Novel实例
@@ -21,6 +22,7 @@ class Novel {
       acts: (json['acts'] as List?)
           ?.map((actJson) => Act.fromJson(actJson))
           .toList() ?? [],
+      lastEditedChapterId: json['lastEditedChapterId'],
     );
   }
   final String id;
@@ -29,6 +31,7 @@ class Novel {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<Act> acts;
+  final String? lastEditedChapterId; // 上次编辑的章节ID
   
   /// 计算小说总字数
   int get wordCount {
@@ -44,6 +47,7 @@ class Novel {
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'acts': acts.map((act) => act.toJson()).toList(),
+      'lastEditedChapterId': lastEditedChapterId,
     };
   }
   
@@ -55,6 +59,7 @@ class Novel {
     DateTime? createdAt,
     DateTime? updatedAt,
     List<Act>? acts,
+    String? lastEditedChapterId,
   }) {
     return Novel(
       id: id ?? this.id,
@@ -63,6 +68,7 @@ class Novel {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       acts: acts ?? this.acts,
+      lastEditedChapterId: lastEditedChapterId ?? this.lastEditedChapterId,
     );
   }
   
@@ -114,6 +120,19 @@ class Novel {
     }
   }
   
+  /// 根据章节ID直接获取章节，不需要知道Act ID
+  Chapter? getChapterById(String chapterId) {
+    for (final act in acts) {
+      try {
+        final chapter = act.chapters.firstWhere((chapter) => chapter.id == chapterId);
+        return chapter;
+      } catch (e) {
+        // 继续查找下一个act
+      }
+    }
+    return null;
+  }
+  
   /// 获取指定Scene
   Scene? getScene(String actId, String chapterId, {String? sceneId}) {
     final chapter = getChapter(actId, chapterId);
@@ -128,6 +147,40 @@ class Novel {
     }
     
     return null;
+  }
+  
+  /// 获取上下文章节（前后n章）
+  List<Chapter> getContextChapters(String chapterId, int n) {
+    // 提取所有章节
+    List<Chapter> allChapters = [];
+    for (final act in acts) {
+      allChapters.addAll(act.chapters);
+    }
+    
+    // 按order排序
+    allChapters.sort((a, b) => a.order.compareTo(b.order));
+    
+    // 找到当前章节的索引
+    int currentIndex = allChapters.indexWhere((chapter) => chapter.id == chapterId);
+    if (currentIndex == -1) {
+      // 如果找不到当前章节，返回前n章
+      return allChapters.take(n).toList();
+    }
+    
+    // 计算前后n章的范围
+    int startIndex = (currentIndex - n) < 0 ? 0 : (currentIndex - n);
+    int endIndex = (currentIndex + n) >= allChapters.length ? allChapters.length - 1 : (currentIndex + n);
+    
+    // 提取前后n章
+    return allChapters.sublist(startIndex, endIndex + 1);
+  }
+  
+  /// 更新最后编辑的章节ID
+  Novel updateLastEditedChapter(String chapterId) {
+    return copyWith(
+      lastEditedChapterId: chapterId,
+      updatedAt: DateTime.now(),
+    );
   }
 }
 

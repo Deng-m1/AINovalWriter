@@ -43,9 +43,9 @@ class EditorRepository {
       if (AppConfig.shouldUseMockData) {
         return _mockService.getNovel(novelId);
       }
+      
+      throw Exception('获取小说失败: $e');
     }
-    
-    return null;
   }
   
   /// 保存小说数据
@@ -86,9 +86,9 @@ class EditorRepository {
       if (AppConfig.shouldUseMockData) {
         return _mockService.getSceneContent(novelId, actId, chapterId, sceneId);
       }
+      
+      throw Exception('获取场景内容失败: $e');
     }
-    
-    return null;
   }
   
   /// 保存场景内容
@@ -106,10 +106,7 @@ class EditorRepository {
       Scene? scene;
       try {
         // 尝试获取特定Scene
-        final chapter = await getChapter(novelId, actId, chapterId);
-        if (chapter != null && chapter.scenes.isNotEmpty) {
-          scene = chapter.scenes.firstWhere((s) => s.id == sceneId, orElse: () => Scene.createEmpty());
-        }
+        scene = await getSceneContent(novelId, actId, chapterId, sceneId);
       } catch (e) {
         print('获取场景失败，将创建新场景: $e');
         // 如果获取失败，创建一个新的场景
@@ -173,6 +170,9 @@ class EditorRepository {
         _mockService.updateSummary(novelId, actId, chapterId, sceneId, updatedSummary);
       }
       
+      // 保存到本地存储
+      await localStorageService.saveSummary(novelId, actId, chapterId, sceneId, updatedSummary);
+      
       return updatedSummary;
     } catch (e) {
       print('保存摘要失败: $e');
@@ -201,14 +201,14 @@ class EditorRepository {
       if (AppConfig.shouldUseMockData) {
         return _mockService.getEditorContent(novelId, chapterId, sceneId);
       }
+      
+      // 如果所有尝试都失败，返回空内容
+      return EditorContent(
+        id: '$novelId-$chapterId-$sceneId',
+        content: '{"ops":[{"insert":"\\n"}]}',
+        lastSaved: DateTime.now(),
+      );
     }
-    
-    // 如果所有尝试都失败，返回空内容
-    return EditorContent(
-      id: '$novelId-$chapterId-$sceneId',
-      content: '{"ops":[{"insert":"\\n"}]}',
-      lastSaved: DateTime.now(),
-    );
   }
   
   /// 保存编辑器内容
@@ -224,7 +224,13 @@ class EditorRepository {
       await localStorageService.saveEditorContent(updatedContent);
       
       // 再保存到API
-      await apiService.saveEditorContent(updatedContent);
+      if (!AppConfig.shouldUseMockData) {
+        await apiService.saveEditorContent(updatedContent);
+      }
+      
+      // 标记需要同步
+      await localStorageService.markForSync(novelId, chapterId);
+      
       return true;
     } catch (e) {
       print('保存编辑器内容失败: $e');
@@ -271,40 +277,70 @@ class EditorRepository {
         return false;
       }
       
-      // 更新场景内容
-      // 注意：Scene类没有直接的title属性，我们只能更新其他属性
-      final updatedScene = scene.copyWith(
-        content: scene.content,
-        lastEdited: DateTime.now(),
-      );
+      // 获取小说
+      final novel = await getNovel(novelId);
+      if (novel == null) {
+        return false;
+      }
       
-      // 保存更新后的场景
-      await apiService.updateSceneContent(novelId, actId, chapterId, sceneId, updatedScene);
+      // 更新小说结构中的场景标题
+      final updatedNovel = _updateSceneTitle(novel, actId, chapterId, sceneId, title);
       
-      // 同时更新本地存储
-      await localStorageService.saveSceneContent(novelId, actId, chapterId, sceneId, updatedScene);
+      // 保存更新后的小说
+      final success = await saveNovel(updatedNovel);
       
-      return true;
+      return success;
     } catch (e) {
       print('保存场景标题失败: $e');
       return false;
     }
   }
   
+  /// 更新小说结构中的场景标题
+  Novel _updateSceneTitle(Novel novel, String actId, String chapterId, String sceneId, String title) {
+    final updatedActs = novel.acts.map((act) {
+      if (act.id == actId) {
+        final updatedChapters = act.chapters.map((chapter) {
+          if (chapter.id == chapterId) {
+            final updatedScenes = chapter.scenes.map((scene) {
+              if (scene.id == sceneId) {
+                // 更新场景标题
+                // 注意：Scene类没有直接的title属性，这里只是示例
+                // 实际应用中需要根据具体模型结构调整
+                return scene;
+              }
+              return scene;
+            }).toList();
+            
+            return chapter.copyWith(scenes: updatedScenes);
+          }
+          return chapter;
+        }).toList();
+        
+        return act.copyWith(chapters: updatedChapters);
+      }
+      return act;
+    }).toList();
+    
+    return novel.copyWith(
+      acts: updatedActs,
+      updatedAt: DateTime.now(),
+    );
+  }
+  
   /// 获取修订历史
   Future<List<Revision>> getRevisionHistory(String novelId, String chapterId) async {
     try {
       // 尝试从API获取
-      final revisions = await apiService.getRevisionHistory(novelId, chapterId);
-      return revisions;
-    } catch (e) {
-      print('获取修订历史失败: $e');
-      
-      // 如果配置为使用模拟数据，则返回模拟数据
-      if (AppConfig.shouldUseMockData) {
-        return _mockService.getRevisionHistory(novelId, chapterId);
+      if (!AppConfig.shouldUseMockData) {
+        final revisions = await apiService.getRevisionHistory(novelId, chapterId);
+        return revisions;
       }
       
+      // 如果配置为使用模拟数据，则返回模拟数据
+      return _mockService.getRevisionHistory(novelId, chapterId);
+    } catch (e) {
+      print('获取修订历史失败: $e');
       return [];
     }
   }
@@ -313,7 +349,6 @@ class EditorRepository {
   Future<bool> createRevision(String novelId, String chapterId, String content, String comment) async {
     try {
       // 创建修订版本对象
-      // 使用editor_content.dart中的Revision类
       final revision = Revision(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         content: content,
@@ -322,21 +357,15 @@ class EditorRepository {
         comment: comment,
       );
       
-      // 获取当前修订历史
-      final revisions = await getRevisionHistory(novelId, chapterId);
-      
-      // 添加新的修订版本
-      // 注意：这里只是模拟添加，实际上需要通过API保存
-      
-      // 这里我们只在开发环境中模拟保存成功
-      if (AppConfig.shouldUseMockData) {
+      // 保存到API
+      if (!AppConfig.shouldUseMockData) {
+        // 调用API服务创建修订版本
+        await apiService.createRevision(novelId, chapterId, revision);
         return true;
       }
       
-      // 在生产环境中，需要实现实际的保存逻辑
-      // 例如：await apiService.updateRevisionHistory(novelId, chapterId, revisions);
-      
-      return false;
+      // 在模拟环境中，直接返回成功
+      return true;
     } catch (e) {
       print('创建修订版本失败: $e');
       return false;
@@ -346,7 +375,13 @@ class EditorRepository {
   /// 应用修订版本
   Future<bool> applyRevision(String novelId, String chapterId, String revisionId) async {
     try {
-      // 获取修订历史
+      // 如果不使用模拟数据，直接调用API应用修订版本
+      if (!AppConfig.shouldUseMockData) {
+        await apiService.applyRevision(novelId, chapterId, revisionId);
+        return true;
+      }
+      
+      // 在模拟环境中，获取修订历史并应用
       final revisions = await getRevisionHistory(novelId, chapterId);
       final revision = revisions.firstWhere((r) => r.id == revisionId);
       

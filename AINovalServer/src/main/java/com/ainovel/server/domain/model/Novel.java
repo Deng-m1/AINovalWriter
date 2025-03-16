@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.index.TextIndexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -51,6 +50,9 @@ public class Novel {
     @Builder.Default
     private Metadata metadata = new Metadata();
     
+    // 记录上次编辑的章节ID
+    private String lastEditedChapterId;
+    
     private LocalDateTime createdAt;
     
     private LocalDateTime updatedAt;
@@ -63,7 +65,6 @@ public class Novel {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class Author {
-        @Indexed
         private String id;
         private String username;
     }
@@ -108,7 +109,9 @@ public class Novel {
         private String title;
         private String description;
         private int order;
-        private String sceneId;  // 直接引用Scene的ID
+        // 修改为scenes列表，实现一对多关系
+        @Builder.Default
+        private List<String> sceneIds = new ArrayList<>();
     }
     
     /**

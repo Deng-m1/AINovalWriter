@@ -41,6 +41,8 @@ dependencies:
   # 国际化
   flutter_localizations:
     sdk: flutter
+  connectivity_plus: ^6.1.3
+  chrono: ^0.1.0
 
 dev_dependencies:
   flutter_test:

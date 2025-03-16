@@ -1,11 +1,18 @@
 package com.ainovel.server.web.controller;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Profile;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,7 +32,10 @@ import reactor.core.scheduler.Schedulers;
 @Slf4j
 @RestController
 @RequestMapping("/test")
+@Profile({ "test", "performance-test" })
 public class TestController extends ReactiveBaseController {
+
+    private static final Logger logger = LoggerFactory.getLogger(TestController.class);
 
     private final Executor virtualThreadExecutor;
     private final Executor traditionalThreadExecutor;
@@ -143,5 +153,39 @@ public class TestController extends ReactiveBaseController {
         })
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnSuccess(result -> log.debug("完成内存占用测试，线程数: {}", threadCount));
+    }
+
+    /**
+     * 测试端点，返回当前时间和服务器状态
+     * @return 服务器状态信息
+     */
+    @GetMapping("/ping")
+    public Mono<ResponseEntity<Map<String, Object>>> ping() {
+        logger.info("收到测试请求: /api/v1/test/ping");
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "success");
+        response.put("message", "API服务器正常运行");
+        response.put("timestamp", LocalDateTime.now().toString());
+        response.put("environment", "test");
+        
+        return Mono.just(ResponseEntity.ok(response));
+    }
+    
+    /**
+     * 测试认证端点，用于验证安全配置
+     * @return 认证状态信息
+     */
+    @GetMapping("/auth-test")
+    public Mono<ResponseEntity<Map<String, Object>>> authTest() {
+        logger.info("收到认证测试请求: /api/v1/test/auth-test");
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "success");
+        response.put("message", "认证测试成功，请求已到达受保护的控制器");
+        response.put("timestamp", LocalDateTime.now().toString());
+        response.put("authenticated", true);
+        
+        return Mono.just(ResponseEntity.ok(response));
     }
 }

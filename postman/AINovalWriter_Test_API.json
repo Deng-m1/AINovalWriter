@@ -1,0 +1,320 @@
+{
+  "info": {
+    "_postman_id": "b1c2d3e4-f5g6-h7i8-j9k0-l1m2n3o4p5q6",
+    "name": "AINovalWriter Test API",
+    "description": "AINovalWriter测试环境API接口集合，用于前后端联调",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "安全测试",
+      "description": "用于测试安全配置和请求是否能够到达控制器层的API",
+      "item": [
+        {
+          "name": "公开端点测试",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/security-test/public",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "security-test",
+                "public"
+              ]
+            },
+            "description": "测试公开端点是否可访问"
+          },
+          "response": []
+        },
+        {
+          "name": "受保护端点测试",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}",
+                "type": "text",
+                "description": "JWT令牌（在测试环境中可选）"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/security-test/protected",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "security-test",
+                "protected"
+              ]
+            },
+            "description": "测试受保护端点是否可访问"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "认证API测试",
+      "description": "测试认证相关API",
+      "item": [
+        {
+          "name": "登录测试",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"test_user\",\n    \"password\": \"test_password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "测试登录API"
+          },
+          "response": []
+        },
+        {
+          "name": "注册测试",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"new_test_user\",\n    \"password\": \"test_password\",\n    \"email\": \"test@example.com\",\n    \"displayName\": \"Test User\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "测试注册API"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "MongoDB测试",
+      "description": "测试MongoDB查询日志和计数功能",
+      "item": [
+        {
+          "name": "根据用户名查找用户",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mongo-test/users/username/test_user",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "mongo-test",
+                "users",
+                "username",
+                "test_user"
+              ]
+            },
+            "description": "测试根据用户名查找用户，并记录查询日志"
+          },
+          "response": []
+        },
+        {
+          "name": "根据邮箱查找用户",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mongo-test/users/email/test@example.com",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "mongo-test",
+                "users",
+                "email",
+                "test@example.com"
+              ]
+            },
+            "description": "测试根据邮箱查找用户，并记录查询日志"
+          },
+          "response": []
+        },
+        {
+          "name": "检查用户名是否存在",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mongo-test/users/exists/username/test_user",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "mongo-test",
+                "users",
+                "exists",
+                "username",
+                "test_user"
+              ]
+            },
+            "description": "测试检查用户名是否存在，并记录查询日志"
+          },
+          "response": []
+        },
+        {
+          "name": "检查邮箱是否存在",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mongo-test/users/exists/email/test@example.com",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "mongo-test",
+                "users",
+                "exists",
+                "email",
+                "test@example.com"
+              ]
+            },
+            "description": "测试检查邮箱是否存在，并记录查询日志"
+          },
+          "response": []
+        },
+        {
+          "name": "创建测试用户",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"test_user\",\n    \"password\": \"test_password\",\n    \"email\": \"test@example.com\",\n    \"displayName\": \"测试用户\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mongo-test/users/create",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "mongo-test",
+                "users",
+                "create"
+              ]
+            },
+            "description": "创建测试用户，用于测试查询功能"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// 自动保存登录后的JWT令牌",
+          "if (pm.response.code === 200 && pm.request.url.toString().includes('/login')) {",
+          "    var jsonData = pm.response.json();",
+          "    if (jsonData.token) {",
+          "        pm.environment.set('jwt_token', jsonData.token);",
+          "        pm.environment.set('refresh_token', jsonData.refreshToken);",
+          "        console.log('JWT令牌已保存到环境变量');",
+          "    }",
+          "}",
+          "",
+          "// 自动保存注册后的JWT令牌",
+          "if (pm.response.code === 201 && pm.request.url.toString().includes('/register')) {",
+          "    var jsonData = pm.response.json();",
+          "    if (jsonData.token) {",
+          "        pm.environment.set('jwt_token', jsonData.token);",
+          "        pm.environment.set('refresh_token', jsonData.refreshToken);",
+          "        console.log('JWT令牌已保存到环境变量');",
+          "    }",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string",
+      "description": "API基础URL"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string",
+      "description": "JWT认证令牌"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string",
+      "description": "JWT刷新令牌"
+    }
+  ]
+} 

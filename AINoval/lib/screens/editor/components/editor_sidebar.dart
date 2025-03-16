@@ -1,5 +1,4 @@
 import 'package:ainoval/models/novel_summary.dart';
-import 'package:ainoval/screens/chat/widgets/chat_sidebar.dart';
 import 'package:flutter/material.dart';
 
 class EditorSidebar extends StatefulWidget {
@@ -8,9 +7,11 @@ class EditorSidebar extends StatefulWidget {
     super.key,
     required this.novel,
     required this.tabController,
+    this.onOpenAIChat,
   });
   final NovelSummary novel;
   final TabController tabController;
+  final VoidCallback? onOpenAIChat;
 
   @override
   State<EditorSidebar> createState() => _EditorSidebarState();
@@ -64,10 +65,8 @@ class _EditorSidebarState extends State<EditorSidebar> {
                 // Snippets 标签页
                 const _SnippetsTab(),
                 
-                // Chats 标签页
-                ChatSidebar(
-                  novelId: widget.novel.id,
-                ),
+                // Chats 标签页 - 替换为提示使用右侧聊天功能的界面
+                _ChatRedirectTab(onOpenAIChat: widget.onOpenAIChat),
               ],
             ),
           ),
@@ -169,6 +168,46 @@ class _SnippetsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Center(
       child: Text('Snippets功能将在未来版本中推出'),
+    );
+  }
+}
+
+// 新增的聊天重定向标签页
+class _ChatRedirectTab extends StatelessWidget {
+  const _ChatRedirectTab({
+    this.onOpenAIChat,
+  });
+  
+  final VoidCallback? onOpenAIChat;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.chat_outlined, size: 48, color: Colors.grey),
+          const SizedBox(height: 16),
+          const Text(
+            '使用右侧AI聊天',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '我们已经将聊天功能移至右侧，点击顶部的Chat按钮或下方的按钮打开AI聊天',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: onOpenAIChat,
+            icon: const Icon(Icons.chat),
+            label: const Text('打开AI聊天'),
+          ),
+        ],
+      ),
     );
   }
 } 

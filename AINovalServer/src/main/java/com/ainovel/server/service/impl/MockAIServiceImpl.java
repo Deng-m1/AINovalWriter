@@ -2,16 +2,19 @@ package com.ainovel.server.service.impl;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.springframework.stereotype.Service;
 
-import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
+import com.ainovel.server.domain.model.BaseAIRequest;
 import com.ainovel.server.service.AIService;
+import com.ainovel.server.service.ai.AIModelProvider;
 
 import io.micrometer.core.annotation.Timed;
 import lombok.extern.slf4j.Slf4j;
@@ -44,9 +47,12 @@ public class MockAIServiceImpl implements AIService {
             "Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam.",
             "At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis.");
     
+    // 是否使用LangChain4j标志
+    private boolean useLangChain4j = false;
+    
     @Override
     @Timed(value = "ai.generate.content", description = "Time taken to generate AI content")
-    public Mono<AIResponse> generateContent(AIRequest request) {
+    public Mono<AIResponse> generateContent(BaseAIRequest request) {
         log.debug("生成AI内容");
         
         // 模拟处理延迟
@@ -59,7 +65,7 @@ public class MockAIServiceImpl implements AIService {
     
     @Override
     @Timed(value = "ai.generate.content.stream", description = "Time taken to generate AI content stream")
-    public Flux<String> generateContentStream(AIRequest request) {
+    public Flux<String> generateContentStream(BaseAIRequest request) {
         log.debug("流式生成AI内容");
         
         // 生成模拟内容
@@ -78,7 +84,7 @@ public class MockAIServiceImpl implements AIService {
     }
     
     @Override
-    public Mono<Double> estimateCost(AIRequest request) {
+    public Mono<Double> estimateCost(BaseAIRequest request) {
         // 模拟成本估算
         return Mono.just(0.01); // 固定返回一个很小的值
     }
@@ -87,6 +93,102 @@ public class MockAIServiceImpl implements AIService {
     public Mono<Boolean> validateApiKey(String userId, String provider, String modelName, String apiKey) {
         // 模拟API密钥验证，始终返回成功
         return Mono.just(true);
+    }
+    
+    @Override
+    public String getProviderForModel(String modelName) {
+        // 简单实现，根据模型名称前缀判断提供商
+        if (modelName.startsWith("gpt")) {
+            return "openai";
+        } else if (modelName.startsWith("claude")) {
+            return "anthropic";
+        } else if (modelName.startsWith("gemini")) {
+            return "gemini";
+        } else if (modelName.startsWith("llama")) {
+            return "siliconflow";
+        }
+        return "unknown";
+    }
+    
+    @Override
+    public Flux<String> getModelsForProvider(String provider) {
+        // 简单实现，根据提供商名称返回对应的模型
+        List<String> models;
+        switch (provider.toLowerCase()) {
+            case "openai":
+                models = List.of("gpt-3.5-turbo", "gpt-4");
+                break;
+            case "anthropic":
+                models = List.of("claude-3-opus", "claude-3-sonnet");
+                break;
+            case "gemini":
+                models = List.of("gemini-pro", "gemini-ultra");
+                break;
+            case "siliconflow":
+                models = List.of("llama-3-70b");
+                break;
+            default:
+                models = List.of();
+        }
+        return Flux.fromIterable(models);
+    }
+    
+    @Override
+    public Flux<String> getAvailableProviders() {
+        return Flux.fromIterable(List.of("openai", "anthropic", "gemini", "siliconflow"));
+    }
+    
+    @Override
+    public Map<String, List<String>> getModelGroups() {
+        Map<String, List<String>> groups = new HashMap<>();
+        groups.put("openai", List.of("gpt-3.5-turbo", "gpt-4"));
+        groups.put("anthropic", List.of("claude-3-opus", "claude-3-sonnet"));
+        groups.put("gemini", List.of("gemini-pro", "gemini-ultra"));
+        groups.put("siliconflow", List.of("llama-3-70b"));
+        return groups;
+    }
+    
+    @Override
+    public Mono<Void> clearUserProviderCache(String userId) {
+        // 模拟实现，不做任何操作
+        return Mono.empty();
+    }
+    
+    @Override
+    public Mono<Void> clearAllProviderCache() {
+        // 模拟实现，不做任何操作
+        return Mono.empty();
+    }
+    
+    @Override
+    public Mono<Void> setModelProviderProxy(String userId, String modelName, String proxyHost, int proxyPort) {
+        // 模拟实现，不做任何操作
+        return Mono.empty();
+    }
+    
+    @Override
+    public Mono<Void> disableModelProviderProxy(String userId, String modelName) {
+        // 模拟实现，不做任何操作
+        return Mono.empty();
+    }
+    
+    @Override
+    public Mono<Boolean> isModelProviderProxyEnabled(String userId, String modelName) {
+        // 模拟实现，始终返回false
+        return Mono.just(false);
+    }
+    
+    @Override
+    public AIModelProvider createAIModelProvider(String provider, String modelName, String apiKey, String apiEndpoint) {
+        log.debug("创建模拟AI模型提供商: provider={}, model={}", provider, modelName);
+        // 返回null，因为这是一个模拟实现
+        return null;
+    }
+    
+    @Override
+    public void setUseLangChain4j(boolean useLangChain4j) {
+        this.useLangChain4j = useLangChain4j;
+        log.debug("设置使用LangChain4j: {}", useLangChain4j);
     }
     
     /**

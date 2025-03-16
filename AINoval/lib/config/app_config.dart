@@ -28,7 +28,7 @@ class AppConfig {
   }
   
   /// 是否应该使用模拟数据
-  static bool get shouldUseMockData => _forceMockData || _environment == Environment.development;
+  static bool get shouldUseMockData => _forceMockData;
   
   /// 强制使用/不使用模拟数据
   static void setUseMockData(bool useMock) {
@@ -39,11 +39,44 @@ class AppConfig {
   static String get apiBaseUrl {
     switch (_environment) {
       case Environment.development:
-        return 'http://localhost:8080/api';
+        return 'http://localhost:18080/api/v1';
       case Environment.production:
-        return 'https://api.ainoval.com/api';
+        return 'https://api.ainoval.com/api/v1';
     }
   }
+  
+  /// API认证令牌
+  static String? _authToken;
+  
+  /// 设置认证令牌
+  static void setAuthToken(String? token) {
+    _authToken = token;
+  }
+  
+  /// 获取认证令牌
+  static String? get authToken => _authToken;
+  
+  /// 当前用户ID
+  static String? _userId;
+  
+  /// 设置当前用户ID
+  static void setUserId(String? id) {
+    _userId = id;
+  }
+  
+  /// 获取当前用户ID
+  static String? get userId => _userId;
+  
+  /// 当前用户名
+  static String? _username;
+  
+  /// 设置当前用户名
+  static void setUsername(String? name) {
+    _username = name;
+  }
+  
+  /// 获取当前用户名
+  static String? get username => _username;
   
   /// 日志级别
   static LogLevel get logLevel {

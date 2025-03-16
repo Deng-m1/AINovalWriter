@@ -3,6 +3,7 @@ package com.ainovel.server.domain.model;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.time.Instant;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
@@ -43,6 +44,16 @@ public class Scene {
     
     private String summary;
     
+    /**
+     * 场景序号，用于排序
+     */
+    private Integer sequence;
+    
+    /**
+     * 场景类型
+     */
+    private String sceneType;
+    
     private VectorEmbedding vectorEmbedding;
     
     @Builder.Default
@@ -58,9 +69,9 @@ public class Scene {
     @Builder.Default
     private List<HistoryEntry> history = new ArrayList<>();
     
-    private LocalDateTime createdAt;
+    private Instant createdAt = Instant.now();
     
-    private LocalDateTime updatedAt;
+    private Instant updatedAt = Instant.now();
     
     /**
      * 向量嵌入

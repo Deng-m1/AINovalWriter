@@ -1,14 +1,17 @@
 import 'dart:io';
 
 // 导入聊天相关的类
+import 'package:ainoval/blocs/auth/auth_bloc.dart';
 import 'package:ainoval/blocs/chat/chat_bloc.dart';
 import 'package:ainoval/blocs/novel_list/novel_list_bloc.dart';
 import 'package:ainoval/l10n/l10n.dart';
 import 'package:ainoval/repositories/chat_repository.dart';
 import 'package:ainoval/repositories/codex_repository.dart';
 import 'package:ainoval/repositories/novel_repository.dart';
+import 'package:ainoval/screens/auth/login_screen.dart';
 import 'package:ainoval/screens/novel_list/novel_list_screen.dart';
 import 'package:ainoval/services/api_service.dart';
+import 'package:ainoval/services/auth_service.dart' as auth_service;
 import 'package:ainoval/services/context_provider.dart';
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/services/websocket_service.dart';
@@ -42,6 +45,10 @@ void main() async {
   // 创建WebSocketService
   final webSocketService = WebSocketService();
   
+  // 创建AuthService
+  final authService = auth_service.AuthService();
+  await authService.init();
+  
   // 创建NovelRepository
   final novelRepository = NovelRepository(
     apiService: apiService,
@@ -67,6 +74,11 @@ void main() async {
   runApp(
     MultiBlocProvider(
       providers: [
+        BlocProvider<AuthBloc>(
+          create: (context) => AuthBloc(
+            authService: authService,
+          )..add(AuthInitialize()),
+        ),
         BlocProvider<NovelListBloc>(
           create: (context) => NovelListBloc(
             repository: novelRepository,
@@ -80,7 +92,7 @@ void main() async {
           ),
         ),
       ],
-      child: const MyApp(),
+      child: MyApp(authService: authService),
     ),
   );
 }
@@ -115,7 +127,9 @@ Future<void> _createResourceDirectories() async {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  
+  const MyApp({super.key, required this.authService});
+  final auth_service.AuthService authService;
 
   @override
   Widget build(BuildContext context) {
@@ -124,7 +138,14 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
-      home: const NovelListScreen(),
+      home: BlocBuilder<AuthBloc, AuthState>(
+        builder: (context, state) {
+          if (state is AuthAuthenticated) {
+            return const NovelListScreen();
+          }
+          return const LoginScreen();
+        },
+      ),
       debugShowCheckedModeBanner: false,
       
       // 添加完整的本地化支持

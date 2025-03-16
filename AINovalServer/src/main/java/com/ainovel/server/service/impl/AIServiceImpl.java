@@ -1,52 +1,117 @@
 package com.ainovel.server.service.impl;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
-import com.ainovel.server.domain.model.User.AIModelConfig;
+import com.ainovel.server.domain.model.BaseAIRequest;
 import com.ainovel.server.service.AIService;
-import com.ainovel.server.service.UserService;
 import com.ainovel.server.service.ai.AIModelProvider;
 import com.ainovel.server.service.ai.AnthropicModelProvider;
 import com.ainovel.server.service.ai.GeminiModelProvider;
 import com.ainovel.server.service.ai.OpenAIModelProvider;
 import com.ainovel.server.service.ai.SiliconFlowModelProvider;
+import com.ainovel.server.service.ai.langchain4j.AnthropicLangChain4jModelProvider;
+import com.ainovel.server.service.ai.langchain4j.GeminiLangChain4jModelProvider;
+import com.ainovel.server.service.ai.langchain4j.OpenAILangChain4jModelProvider;
+import com.ainovel.server.service.ai.langchain4j.SiliconFlowLangChain4jModelProvider;
 
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * AI服务实现
+ * 基础AI服务实现
+ * 负责AI模型的基础功能，不包含业务逻辑
  */
+@Slf4j
 @Service
 public class AIServiceImpl implements AIService {
     
-    private final UserService userService;
+    // 是否使用LangChain4j实现
+    private boolean useLangChain4j = true;
     
-    // 缓存用户的AI模型提供商
-    private final Map<String, Map<String, AIModelProvider>> userProviders = new ConcurrentHashMap<>();
+    // 模型分组信息
+    private final Map<String, List<String>> modelGroups = new HashMap<>();
     
-    @Autowired
-    public AIServiceImpl(UserService userService) {
-        this.userService = userService;
+    public AIServiceImpl() {
+        initializeModelGroups();
+    }
+    
+    /**
+     * 初始化模型分组信息
+     */
+    private void initializeModelGroups() {
+        modelGroups.put("openai", List.of(
+                "gpt-3.5-turbo",
+                "gpt-4",
+                "gpt-4-turbo",
+                "gpt-4o"
+        ));
+        
+        modelGroups.put("anthropic", List.of(
+                "claude-3-opus",
+                "claude-3-sonnet",
+                "claude-3-haiku"
+        ));
+        
+        modelGroups.put("gemini", List.of(
+                "gemini-2.0-flash",
+                "gemini-2.0-pro",
+                "gemini-2.0-flash-lite"
+        ));
+        
+        modelGroups.put("siliconflow", List.of(
+                "deepseek-ai/DeepSeek-V2.5",
+                "deepseek-ai/DeepSeek-R1",
+                "Qwen/QwQ-32B",
+                "Qwen/Qwen2-72B"
+        ));
     }
     
     @Override
-    public Mono<AIResponse> generateContent(AIRequest request) {
-        return getAIModelProvider(request.getUserId(), request.getModel())
-                .flatMap(provider -> provider.generateContent(request));
+    public Mono<AIResponse> generateContent(BaseAIRequest request) {
+        // 基础服务只负责创建提供商并调用，不负责获取用户配置
+        if (request.getApiKey() == null || request.getApiKey().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("API密钥不能为空"));
+        }
+        
+        AIModelProvider provider = createAIModelProvider(
+                getProviderForModel(request.getModel()),
+                request.getModel(),
+                request.getApiKey(),
+                request.getApiEndpoint()
+        );
+        
+        if (provider == null) {
+            return Mono.error(new IllegalArgumentException("不支持的AI模型: " + request.getModel()));
+        }
+        
+        return provider.generateContent(convertToProviderRequest(request));
     }
     
     @Override
-    public Flux<String> generateContentStream(AIRequest request) {
-        return getAIModelProvider(request.getUserId(), request.getModel())
-                .flatMapMany(provider -> provider.generateContentStream(request));
+    public Flux<String> generateContentStream(BaseAIRequest request) {
+        // 基础服务只负责创建提供商并调用，不负责获取用户配置
+        if (request.getApiKey() == null || request.getApiKey().isEmpty()) {
+            return Flux.error(new IllegalArgumentException("API密钥不能为空"));
+        }
+        
+        AIModelProvider provider = createAIModelProvider(
+                getProviderForModel(request.getModel()),
+                request.getModel(),
+                request.getApiKey(),
+                request.getApiEndpoint()
+        );
+        
+        if (provider == null) {
+            return Flux.error(new IllegalArgumentException("不支持的AI模型: " + request.getModel()));
+        }
+        
+        return provider.generateContentStream(convertToProviderRequest(request));
     }
     
     @Override
@@ -71,9 +136,24 @@ public class AIServiceImpl implements AIService {
     }
     
     @Override
-    public Mono<Double> estimateCost(AIRequest request) {
-        return getAIModelProvider(request.getUserId(), request.getModel())
-                .flatMap(provider -> provider.estimateCost(request));
+    public Mono<Double> estimateCost(BaseAIRequest request) {
+        // 基础服务只负责创建提供商并调用，不负责获取用户配置
+        if (request.getApiKey() == null || request.getApiKey().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("API密钥不能为空"));
+        }
+        
+        AIModelProvider provider = createAIModelProvider(
+                getProviderForModel(request.getModel()),
+                request.getModel(),
+                request.getApiKey(),
+                request.getApiEndpoint()
+        );
+        
+        if (provider == null) {
+            return Mono.error(new IllegalArgumentException("不支持的AI模型: " + request.getModel()));
+        }
+        
+        return provider.estimateCost(convertToProviderRequest(request));
     }
     
     @Override
@@ -83,61 +163,156 @@ public class AIServiceImpl implements AIService {
     }
     
     /**
-     * 获取AI模型提供商
-     * @param userId 用户ID
-     * @param modelName 模型名称
-     * @return AI模型提供商
+     * 设置是否使用LangChain4j实现
+     * @param useLangChain4j 是否使用LangChain4j
      */
-    private Mono<AIModelProvider> getAIModelProvider(String userId, String modelName) {
-        // 如果没有指定模型名称，则使用用户的默认模型
-        if (modelName == null || modelName.isEmpty()) {
-            return userService.getUserDefaultAIModelConfig(userId)
-                    .flatMap(config -> {
-                        if (config == null) {
-                            return Mono.error(new IllegalArgumentException("用户没有配置默认AI模型"));
-                        }
-                        return getOrCreateAIModelProvider(userId, config);
-                    });
-        }
-        
-        // 如果指定了模型名称，则查找对应的配置
-        return userService.getUserAIModelConfigs(userId)
-                .filter(config -> modelName.equals(config.getModelName()))
-                .next()
-                .flatMap(config -> getOrCreateAIModelProvider(userId, config))
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("找不到指定的AI模型配置: " + modelName)));
+    @Override
+    public void setUseLangChain4j(boolean useLangChain4j) {
+        this.useLangChain4j = useLangChain4j;
     }
     
     /**
-     * 获取或创建AI模型提供商
-     * @param userId 用户ID
-     * @param config AI模型配置
-     * @return AI模型提供商
+     * 将BaseAIRequest转换为AIModelProvider需要的请求格式
+     * 这里假设AIModelProvider使用com.ainovel.server.domain.model.AIRequest
+     * 如果实际使用的是其他格式，需要相应调整
+     * @param baseRequest 基础AI请求
+     * @return 提供商需要的请求格式
      */
-    private Mono<AIModelProvider> getOrCreateAIModelProvider(String userId, AIModelConfig config) {
-        // 检查缓存中是否已存在
-        Map<String, AIModelProvider> userProviderMap = userProviders.computeIfAbsent(userId, k -> new HashMap<>());
-        String key = config.getProvider() + ":" + config.getModelName();
+    private com.ainovel.server.domain.model.AIRequest convertToProviderRequest(BaseAIRequest baseRequest) {
+        com.ainovel.server.domain.model.AIRequest providerRequest = new com.ainovel.server.domain.model.AIRequest();
         
-        AIModelProvider provider = userProviderMap.get(key);
-        if (provider != null) {
-            return Mono.just(provider);
+        // 复制基本字段
+        providerRequest.setUserId(baseRequest.getUserId());
+        providerRequest.setModel(baseRequest.getModel());
+        providerRequest.setPrompt(baseRequest.getPrompt());
+        providerRequest.setMaxTokens(baseRequest.getMaxTokens());
+        providerRequest.setTemperature(baseRequest.getTemperature());
+        providerRequest.setParameters(baseRequest.getParameters());
+        
+        // 转换消息
+        if (baseRequest.getMessages() != null && !baseRequest.getMessages().isEmpty()) {
+            List<com.ainovel.server.domain.model.AIRequest.Message> providerMessages = new java.util.ArrayList<>();
+            
+            for (BaseAIRequest.Message baseMessage : baseRequest.getMessages()) {
+                com.ainovel.server.domain.model.AIRequest.Message providerMessage = 
+                        new com.ainovel.server.domain.model.AIRequest.Message();
+                providerMessage.setRole(baseMessage.getRole());
+                providerMessage.setContent(baseMessage.getContent());
+                providerMessages.add(providerMessage);
+            }
+            
+            providerRequest.setMessages(providerMessages);
         }
         
-        // 创建新的提供商
-        provider = createAIModelProvider(
-                config.getProvider(),
-                config.getModelName(),
-                config.getApiKey(),
-                config.getApiEndpoint()
-        );
-        
-        if (provider != null) {
-            userProviderMap.put(key, provider);
-            return Mono.just(provider);
+        return providerRequest;
+    }
+    
+    /**
+     * 获取模型的提供商名称
+     * @param modelName 模型名称
+     * @return 提供商名称
+     */
+    @Override
+    public String getProviderForModel(String modelName) {
+        for (Map.Entry<String, List<String>> entry : modelGroups.entrySet()) {
+            if (entry.getValue().contains(modelName)) {
+                return entry.getKey();
+            }
         }
-        
-        return Mono.error(new IllegalArgumentException("不支持的AI模型提供商: " + config.getProvider()));
+        throw new IllegalArgumentException("未知的模型: " + modelName);
+    }
+    
+    /**
+     * 获取提供商支持的模型列表
+     * @param provider 提供商名称
+     * @return 模型列表
+     */
+    @Override
+    public Flux<String> getModelsForProvider(String provider) {
+        List<String> models = modelGroups.get(provider.toLowerCase());
+        if (models == null) {
+            return Flux.error(new IllegalArgumentException("未知的提供商: " + provider));
+        }
+        return Flux.fromIterable(models);
+    }
+    
+    /**
+     * 获取所有支持的提供商
+     * @return 提供商列表
+     */
+    @Override
+    public Flux<String> getAvailableProviders() {
+        return Flux.fromIterable(modelGroups.keySet());
+    }
+    
+    /**
+     * 获取模型分组信息
+     * @return 模型分组信息
+     */
+    @Override
+    public Map<String, List<String>> getModelGroups() {
+        return modelGroups;
+    }
+    
+    /**
+     * 清除用户的模型提供商缓存
+     * 基础服务不再维护缓存，此方法为空实现
+     * @param userId 用户ID
+     * @return 操作结果
+     */
+    @Override
+    public Mono<Void> clearUserProviderCache(String userId) {
+        // 基础服务不再维护缓存
+        return Mono.empty();
+    }
+    
+    /**
+     * 清除所有模型提供商缓存
+     * 基础服务不再维护缓存，此方法为空实现
+     * @return 操作结果
+     */
+    @Override
+    public Mono<Void> clearAllProviderCache() {
+        // 基础服务不再维护缓存
+        return Mono.empty();
+    }
+    
+    /**
+     * 设置模型提供商的代理
+     * @param userId 用户ID
+     * @param modelName 模型名称
+     * @param proxyHost 代理主机
+     * @param proxyPort 代理端口
+     * @return 操作结果
+     */
+    @Override
+    public Mono<Void> setModelProviderProxy(String userId, String modelName, String proxyHost, int proxyPort) {
+        // 基础服务不再维护缓存，此方法需要在业务层实现
+        return Mono.error(new UnsupportedOperationException("此方法需要在业务层实现"));
+    }
+    
+    /**
+     * 禁用模型提供商的代理
+     * @param userId 用户ID
+     * @param modelName 模型名称
+     * @return 操作结果
+     */
+    @Override
+    public Mono<Void> disableModelProviderProxy(String userId, String modelName) {
+        // 基础服务不再维护缓存，此方法需要在业务层实现
+        return Mono.error(new UnsupportedOperationException("此方法需要在业务层实现"));
+    }
+    
+    /**
+     * 检查模型提供商的代理是否已启用
+     * @param userId 用户ID
+     * @param modelName 模型名称
+     * @return 是否已启用
+     */
+    @Override
+    public Mono<Boolean> isModelProviderProxyEnabled(String userId, String modelName) {
+        // 基础服务不再维护缓存，此方法需要在业务层实现
+        return Mono.error(new UnsupportedOperationException("此方法需要在业务层实现"));
     }
     
     /**
@@ -148,13 +323,26 @@ public class AIServiceImpl implements AIService {
      * @param apiEndpoint API端点
      * @return AI模型提供商
      */
-    private AIModelProvider createAIModelProvider(String provider, String modelName, String apiKey, String apiEndpoint) {
-        return switch (provider.toLowerCase()) {
-            case "openai" -> new OpenAIModelProvider(modelName, apiKey, apiEndpoint);
-            case "anthropic" -> new AnthropicModelProvider(modelName, apiKey, apiEndpoint);
-            case "gemini" -> new GeminiModelProvider(modelName, apiKey, apiEndpoint);
-            case "siliconflow" -> new SiliconFlowModelProvider(modelName, apiKey, apiEndpoint);
-            default -> null;
-        };
+    @Override
+    public AIModelProvider createAIModelProvider(String provider, String modelName, String apiKey, String apiEndpoint) {
+        if (useLangChain4j) {
+            // 使用LangChain4j实现
+            return switch (provider.toLowerCase()) {
+                case "openai" -> new OpenAILangChain4jModelProvider(modelName, apiKey, apiEndpoint);
+                case "anthropic" -> new AnthropicLangChain4jModelProvider(modelName, apiKey, apiEndpoint);
+                case "gemini" -> new GeminiLangChain4jModelProvider(modelName, apiKey, apiEndpoint);
+                case "siliconflow" -> new SiliconFlowLangChain4jModelProvider(modelName, apiKey, apiEndpoint);
+                default -> null;
+            };
+        } else {
+            // 使用原始实现
+            return switch (provider.toLowerCase()) {
+                case "openai" -> new OpenAIModelProvider(modelName, apiKey, apiEndpoint);
+                case "anthropic" -> new AnthropicModelProvider(modelName, apiKey, apiEndpoint);
+                case "gemini" -> new GeminiModelProvider(modelName, apiKey, apiEndpoint);
+                case "siliconflow" -> new SiliconFlowModelProvider(modelName, apiKey, apiEndpoint);
+                default -> null;
+            };
+        }
     }
 } 

@@ -10,12 +10,16 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.isSaving,
     this.lastSaveTime,
     required this.onBackPressed,
+    this.onChatPressed,
+    this.isChatActive = false,
   });
   final String novelTitle;
   final int wordCount;
   final bool isSaving;
   final DateTime? lastSaveTime;
   final VoidCallback onBackPressed;
+  final VoidCallback? onChatPressed;
+  final bool isChatActive;
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -73,8 +77,8 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
               _NavButton(
                 label: 'Chat',
                 icon: Icons.chat_outlined,
-                isActive: false,
-                onPressed: () {},
+                isActive: isChatActive,
+                onPressed: onChatPressed ?? () {},
               ),
               const SizedBox(width: 8),
               // Review 按钮

@@ -1,12 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:ainoval/blocs/chat/chat_bloc.dart';
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/models/novel_structure.dart';
 import 'package:ainoval/models/novel_summary.dart';
+import 'package:ainoval/repositories/chat_repository.dart';
+import 'package:ainoval/repositories/codex_repository.dart';
 import 'package:ainoval/repositories/editor_repository.dart';
+import 'package:ainoval/repositories/novel_repository.dart';
+import 'package:ainoval/screens/chat/widgets/ai_chat_sidebar.dart';
 import 'package:ainoval/screens/chat/widgets/chat_sidebar.dart';
 import 'package:ainoval/screens/editor/components/editor_app_bar.dart';
 import 'package:ainoval/screens/editor/components/editor_main_area.dart';
@@ -15,7 +20,9 @@ import 'package:ainoval/screens/editor/components/editor_sidebar.dart';
 import 'package:ainoval/screens/editor/widgets/editor_settings_panel.dart';
 import 'package:ainoval/screens/editor/widgets/editor_toolbar.dart';
 import 'package:ainoval/services/api_service.dart';
+import 'package:ainoval/services/context_provider.dart';
 import 'package:ainoval/services/local_storage_service.dart';
+import 'package:ainoval/services/websocket_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
@@ -66,6 +73,9 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
   final Map<String, TextEditingController> _sceneSubtitleControllers = {};
   final Map<String, TextEditingController> _sceneSummaryControllers = {};
   
+  // 添加AI聊天侧边栏状态
+  bool _isAIChatSidebarVisible = false;
+  
   @override
   void initState() {
     super.initState();
@@ -107,8 +117,48 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     
-    return BlocProvider.value(
-      value: _editorBloc, // 使用已创建的EditorBloc实例
+    // 创建共享的服务实例
+    final apiService = ApiService();
+    final localStorageService = LocalStorageService()..init();
+    final webSocketService = WebSocketService();
+    
+    // 创建仓库实例
+    final novelRepository = NovelRepository(
+      apiService: apiService,
+      localStorageService: localStorageService,
+    );
+    
+    // CodexRepository没有构造函数参数
+    final codexRepository = CodexRepository();
+    
+    // 创建上下文提供者
+    final contextProvider = ContextProvider(
+      novelRepository: novelRepository,
+      codexRepository: codexRepository,
+    );
+    
+    // 创建ChatRepository实例
+    final chatRepository = ChatRepository(
+      apiService: apiService,
+      localStorageService: localStorageService,
+      webSocketService: webSocketService,
+    );
+    
+    // 创建ChatBloc实例
+    final chatBloc = ChatBloc(
+      repository: chatRepository,
+      contextProvider: contextProvider,
+    );
+    
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider.value(
+          value: _editorBloc, // 使用已创建的EditorBloc实例
+        ),
+        BlocProvider.value(
+          value: chatBloc, // 使用已创建的ChatBloc实例
+        ),
+      ],
       child: BlocConsumer<EditorBloc, EditorState>(
         listener: (context, state) {
           if (state is EditorError) {
@@ -368,49 +418,84 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
     }
     
     return Scaffold(
-      body: Row(
+      body: Stack(
         children: [
-          // 左侧边栏 - 使用拆分后的组件
-          EditorSidebar(
-            novel: widget.novel,
-            tabController: _tabController,
+          Row(
+            children: [
+              // 左侧边栏 - 使用拆分后的组件
+              EditorSidebar(
+                novel: widget.novel,
+                tabController: _tabController,
+                onOpenAIChat: () {
+                  print('Opening AI chat from sidebar');
+                  setState(() {
+                    _isAIChatSidebarVisible = true;
+                  });
+                },
+              ),
+              
+              // 中间编辑器
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 顶部工具栏 - 使用拆分后的组件
+                    EditorAppBar(
+                      novelTitle: widget.novel.title,
+                      wordCount: state.novel.wordCount,
+                      isSaving: state.isSaving,
+                      lastSaveTime: state.lastSaveTime,
+                      onBackPressed: () => Navigator.pop(context),
+                      onChatPressed: () {
+                        print('Chat button pressed, toggling sidebar visibility');
+                        setState(() {
+                          _isAIChatSidebarVisible = !_isAIChatSidebarVisible;
+                        });
+                      },
+                      isChatActive: _isAIChatSidebarVisible,
+                    ),
+                    
+                    // 编辑器工具栏
+                    EditorToolbar(controller: _controller),
+                    
+                    // 主编辑区 - 使用拆分后的组件
+                    Expanded(
+                      child: EditorMainArea(
+                        novel: state.novel,
+                        editorBloc: _editorBloc,
+                        sceneControllers: _sceneControllers,
+                        sceneSummaryControllers: _sceneSummaryControllers,
+                        activeActId: state.activeActId,
+                        activeChapterId: state.activeChapterId,
+                        scrollController: _scrollController,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           
-          // 中间编辑器
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 顶部工具栏 - 使用拆分后的组件
-                EditorAppBar(
-                  novelTitle: widget.novel.title,
-                  wordCount: state.novel.wordCount,
-                  isSaving: state.isSaving,
-                  lastSaveTime: state.lastSaveTime,
-                  onBackPressed: () => Navigator.pop(context),
-                ),
-                
-                // 编辑器工具栏
-                EditorToolbar(controller: _controller),
-                
-                // 主编辑区 - 使用拆分后的组件
-                Expanded(
-                  child: EditorMainArea(
-                    novel: state.novel,
-                    editorBloc: _editorBloc,
-                    sceneControllers: _sceneControllers,
-                    sceneSummaryControllers: _sceneSummaryControllers,
-                    activeActId: state.activeActId,
-                    activeChapterId: state.activeChapterId,
-                    scrollController: _scrollController,
-                  ),
-                ),
-              ],
+          // 右侧AI聊天侧边栏
+          if (_isAIChatSidebarVisible)
+            Positioned(
+              top: 0,
+              right: 0,
+              bottom: 0,
+              child: AIChatSidebar(
+                novelId: widget.novel.id,
+                chapterId: state.activeChapterId,
+                onClose: () {
+                  print('Closing AI chat sidebar');
+                  setState(() {
+                    _isAIChatSidebarVisible = false;
+                  });
+                },
+              ),
             ),
-          ),
         ],
       ),
-      // 移除保存按钮，改为显示保存状态
+      // 浮动按钮
       floatingActionButton: state.isSaving
           ? FloatingActionButton(
               heroTag: 'saving',
@@ -426,7 +511,23 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
                 ),
               ),
             )
-          : null,
+          : _isAIChatSidebarVisible 
+              ? null // 当聊天侧边栏打开时不显示浮动按钮
+              : FloatingActionButton(
+                  heroTag: 'chat',
+                  onPressed: () {
+                    print('Chat floating button pressed');
+                    setState(() {
+                      _isAIChatSidebarVisible = !_isAIChatSidebarVisible;
+                    });
+                  },
+                  backgroundColor: Colors.grey.shade700,
+                  tooltip: '打开AI聊天',
+                  child: const Icon(
+                    Icons.chat,
+                    color: Colors.white,
+                  ),
+                ),
     );
   }
   

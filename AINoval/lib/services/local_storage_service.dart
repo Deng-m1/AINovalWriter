@@ -346,6 +346,41 @@ class LocalStorageService {
     }
   }
   
+  // 获取需要同步的内容列表（按类型）
+  Future<List<String>> getSyncList(String type) async {
+    try {
+      final prefs = await _ensureInitialized();
+      final syncKey = 'syncList_$type';
+      return prefs.getStringList(syncKey) ?? [];
+    } catch (e) {
+      print('获取同步列表失败: $e');
+      return [];
+    }
+  }
+  
+  // 清除同步标记
+  Future<void> clearSyncFlag(String sessionId) async {
+    final syncList = await _getSyncList();
+    syncList.remove(sessionId);
+    await _saveSyncList(syncList);
+  }
+  
+  // 清除同步标记（按类型和ID）
+  Future<void> clearSyncFlagByType(String type, String id) async {
+    try {
+      final prefs = await _ensureInitialized();
+      final syncKey = 'syncList_$type';
+      final syncList = prefs.getStringList(syncKey) ?? [];
+      
+      if (syncList.contains(id)) {
+        syncList.remove(id);
+        await prefs.setStringList(syncKey, syncList);
+      }
+    } catch (e) {
+      print('清除同步标记失败: $e');
+    }
+  }
+  
   // 标记需要同步的内容
   Future<void> markForSync(String novelId, String chapterId) async {
     try {
@@ -462,13 +497,6 @@ class LocalStorageService {
     }
     
     return sessions;
-  }
-  
-  // 清除同步标记
-  Future<void> clearSyncFlag(String sessionId) async {
-    final syncList = await _getSyncList();
-    syncList.remove(sessionId);
-    await _saveSyncList(syncList);
   }
   
   // 清除所有数据

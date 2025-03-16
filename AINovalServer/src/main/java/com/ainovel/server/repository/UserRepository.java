@@ -4,6 +4,7 @@ import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 import org.springframework.stereotype.Repository;
 
 import com.ainovel.server.domain.model.User;
+import com.ainovel.server.repository.custom.CustomUserRepository;
 
 import reactor.core.publisher.Mono;
 
@@ -11,7 +12,7 @@ import reactor.core.publisher.Mono;
  * 用户仓库接口
  */
 @Repository
-public interface UserRepository extends ReactiveMongoRepository<User, String> {
+public interface UserRepository extends ReactiveMongoRepository<User, String>, CustomUserRepository {
     
     /**
      * 根据用户名查找用户

@@ -1,67 +1,76 @@
 package com.ainovel.server.domain.model;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 /**
- * 知识块领域模型
+ * 知识块模型
+ * 用于存储小说内容的向量化表示和原始内容
  */
 @Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-@Document(collection = "knowledge_chunks")
+@Document(collection = "knowledgeChunk")
 public class KnowledgeChunk {
     
     @Id
     private String id;
     
+    /**
+     * 小说ID
+     */
     private String novelId;
     
-    private String sourceType;  // scene, character, setting, note
+    /**
+     * 源类型（scene, character, setting, note等）
+     */
+    private String sourceType;
     
+    /**
+     * 源ID
+     */
     private String sourceId;
     
+    /**
+     * 内容文本
+     */
     private String content;
     
     /**
      * 向量嵌入
      */
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class VectorEmbedding {
-        private float[] vector;
-        private String model;
-    }
-    
     private VectorEmbedding vectorEmbedding;
     
     /**
-     * 元数据
+     * 创建时间
+     */
+    private Instant createdAt = Instant.now();
+    
+    /**
+     * 更新时间
+     */
+    private Instant updatedAt = Instant.now();
+    
+    /**
+     * 向量嵌入类
      */
     @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class Metadata {
-        private String title;
-        private Integer chunkIndex;
-        private Integer totalChunks;
-        private Integer wordCount;
+    public static class VectorEmbedding {
+        /**
+         * 向量数据
+         */
+        private float[] vector;
+        
+        /**
+         * 向量维度
+         */
+        private int dimension;
+        
+        /**
+         * 使用的模型
+         */
+        private String model;
     }
-    
-    private Metadata metadata;
-    
-    private LocalDateTime createdAt;
-    
-    private LocalDateTime updatedAt;
 } 

@@ -1,0 +1,617 @@
+{
+  "info": {
+    "_postman_id": "b7e9f3c2-8d7c-4f5e-9a8d-1c2e3f4a5b6c",
+    "name": "AINoval API集合",
+    "description": "AI小说助手系统API接口集合",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "AI基础功能",
+      "description": "基础AI功能接口",
+      "item": [
+        {
+          "name": "生成内容",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"请生成一段内容\",\n  \"maxTokens\": 1000,\n  \"temperature\": 0.7,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"请描述一个场景\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "generate"]
+            },
+            "description": "生成AI内容（非流式）"
+          }
+        },
+        {
+          "name": "流式生成内容",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"请生成一段内容\",\n  \"maxTokens\": 1000,\n  \"temperature\": 0.7,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"请描述一个场景\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/generate/stream",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "generate", "stream"]
+            },
+            "description": "流式生成AI内容"
+          }
+        },
+        {
+          "name": "获取可用模型列表",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/models",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "models"]
+            },
+            "description": "获取所有可用的AI模型列表"
+          }
+        },
+        {
+          "name": "获取可用提供商列表",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/providers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "providers"]
+            },
+            "description": "获取所有可用的AI提供商列表"
+          }
+        },
+        {
+          "name": "获取提供商支持的模型",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/providers/{{provider}}/models",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "providers", "{{provider}}", "models"]
+            },
+            "description": "获取指定提供商支持的模型列表"
+          }
+        },
+        {
+          "name": "获取模型分组信息",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/model-groups",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "model-groups"]
+            },
+            "description": "获取AI模型的分组信息"
+          }
+        },
+        {
+          "name": "获取模型的提供商",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/models/{{modelName}}/provider",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "models", "{{modelName}}", "provider"]
+            },
+            "description": "获取指定模型的提供商名称"
+          }
+        },
+        {
+          "name": "估算请求成本",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"请生成一段内容\",\n  \"maxTokens\": 1000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"请描述一个场景\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/estimate-cost",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "estimate-cost"]
+            },
+            "description": "估算AI请求的成本"
+          }
+        }
+      ]
+    },
+    {
+      "name": "小说AI功能",
+      "description": "小说创作相关的AI功能接口",
+      "item": [
+        {
+          "name": "生成小说内容",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"请继续写这个场景\",\n  \"maxTokens\": 1000,\n  \"temperature\": 0.7,\n  \"enableContext\": true,\n  \"novelId\": \"{{novelId}}\",\n  \"sceneId\": \"{{sceneId}}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"请描述场景\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/novels/ai/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "novels", "ai", "generate"]
+            },
+            "description": "生成小说内容"
+          }
+        },
+        {
+          "name": "流式生成小说内容",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"请继续写这个场景\",\n  \"maxTokens\": 1000,\n  \"temperature\": 0.7,\n  \"enableContext\": true,\n  \"novelId\": \"{{novelId}}\",\n  \"sceneId\": \"{{sceneId}}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"请描述场景\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/novels/ai/generate/stream",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "novels", "ai", "generate", "stream"]
+            },
+            "description": "流式生成小说内容"
+          }
+        },
+        {
+          "name": "获取创作建议",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sceneId\": \"{{sceneId}}\",\n  \"suggestionType\": \"plot\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/novels/{{novelId}}/ai/suggest",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "novels", "{{novelId}}", "ai", "suggest"]
+            },
+            "description": "获取创作建议"
+          }
+        },
+        {
+          "name": "流式获取创作建议",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sceneId\": \"{{sceneId}}\",\n  \"suggestionType\": \"plot\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/novels/{{novelId}}/ai/suggest/stream",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "novels", "{{novelId}}", "ai", "suggest", "stream"]
+            },
+            "description": "流式获取创作建议"
+          }
+        },
+        {
+          "name": "修改内容",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sceneId\": \"{{sceneId}}\",\n  \"content\": \"原始内容\",\n  \"instruction\": \"修改指令\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/novels/{{novelId}}/ai/revise",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "novels", "{{novelId}}", "ai", "revise"]
+            },
+            "description": "修改小说内容"
+          }
+        },
+        {
+          "name": "流式修改内容",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sceneId\": \"{{sceneId}}\",\n  \"content\": \"原始内容\",\n  \"instruction\": \"修改指令\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/novels/{{novelId}}/ai/revise/stream",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "novels", "{{novelId}}", "ai", "revise", "stream"]
+            },
+            "description": "流式修改小说内容"
+          }
+        },
+        {
+          "name": "生成角色",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/novels/{{novelId}}/ai/generate-character?description={{description}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "novels", "{{novelId}}", "ai", "generate-character"],
+              "query": [
+                {
+                  "key": "description",
+                  "value": "{{description}}"
+                }
+              ]
+            },
+            "description": "生成小说角色"
+          }
+        },
+        {
+          "name": "生成情节",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/novels/{{novelId}}/ai/generate-plot?description={{description}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "novels", "{{novelId}}", "ai", "generate-plot"],
+              "query": [
+                {
+                  "key": "description",
+                  "value": "{{description}}"
+                }
+              ]
+            },
+            "description": "生成小说情节"
+          }
+        },
+        {
+          "name": "生成设定",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/novels/{{novelId}}/ai/generate-setting?description={{description}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "novels", "{{novelId}}", "ai", "generate-setting"],
+              "query": [
+                {
+                  "key": "description",
+                  "value": "{{description}}"
+                }
+              ]
+            },
+            "description": "生成小说设定"
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI配置管理",
+      "description": "AI模型配置管理接口",
+      "item": [
+        {
+          "name": "验证API密钥",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"provider\": \"openai\",\n  \"modelName\": \"gpt-4\",\n  \"apiKey\": \"sk-your-api-key\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/validate-api-key",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "validate-api-key"]
+            },
+            "description": "验证API密钥是否有效"
+          }
+        },
+        {
+          "name": "清除用户提供商缓存",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/user/{{userId}}/clear-cache",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "user", "{{userId}}", "clear-cache"]
+            },
+            "description": "清除用户的模型提供商缓存"
+          }
+        },
+        {
+          "name": "清除所有提供商缓存",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/clear-all-cache",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "clear-all-cache"]
+            },
+            "description": "清除所有模型提供商缓存"
+          }
+        },
+        {
+          "name": "设置模型代理",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"proxyHost\": \"proxy.example.com\",\n  \"proxyPort\": 8080\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/user/{{userId}}/models/{{modelName}}/set-proxy",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "user", "{{userId}}", "models", "{{modelName}}", "set-proxy"]
+            },
+            "description": "设置模型提供商的代理"
+          }
+        },
+        {
+          "name": "禁用模型代理",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/user/{{userId}}/models/{{modelName}}/disable-proxy",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "user", "{{userId}}", "models", "{{modelName}}", "disable-proxy"]
+            },
+            "description": "禁用模型提供商的代理"
+          }
+        },
+        {
+          "name": "检查代理状态",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/user/{{userId}}/models/{{modelName}}/proxy-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "user", "{{userId}}", "models", "{{modelName}}", "proxy-status"]
+            },
+            "description": "检查模型提供商的代理是否已启用"
+          }
+        },
+        {
+          "name": "获取用户AI模型配置列表",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/user/{{userId}}/models",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "user", "{{userId}}", "models"]
+            },
+            "description": "获取用户的AI模型配置列表"
+          }
+        },
+        {
+          "name": "获取用户默认AI模型配置",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/user/{{userId}}/default-model",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "user", "{{userId}}", "default-model"]
+            },
+            "description": "获取用户的默认AI模型配置"
+          }
+        },
+        {
+          "name": "添加AI模型配置",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"openai\",\n  \"modelName\": \"gpt-4\",\n  \"apiKey\": \"sk-your-api-key\",\n  \"isDefault\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/user/{{userId}}/models",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "user", "{{userId}}", "models"]
+            },
+            "description": "添加AI模型配置"
+          }
+        },
+        {
+          "name": "设置默认AI模型配置",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/user/{{userId}}/models/{{configIndex}}/set-default",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "user", "{{userId}}", "models", "{{configIndex}}", "set-default"]
+            },
+            "description": "设置默认AI模型配置"
+          }
+        },
+        {
+          "name": "删除AI模型配置",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/user/{{userId}}/models/{{configIndex}}/delete",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "user", "{{userId}}", "models", "{{configIndex}}", "delete"]
+            },
+            "description": "删除AI模型配置"
+          }
+        }
+      ]
+    },
+    {
+      "name": "测试接口",
+      "description": "API测试接口",
+      "item": [
+        {
+          "name": "测试Gemini API",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/test/gemini?apiKey={{apiKey}}&modelName={{modelName}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "test", "gemini"],
+              "query": [
+                {
+                  "key": "apiKey",
+                  "value": "{{apiKey}}"
+                },
+                {
+                  "key": "modelName",
+                  "value": "{{modelName}}",
+                  "description": "可选参数"
+                }
+              ]
+            },
+            "description": "测试Gemini API连接"
+          }
+        },
+        {
+          "name": "测试Silicon Flow API",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/test/siliconFlow?apiKey={{apiKey}}&modelName={{modelName}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ai", "test", "siliconFlow"],
+              "query": [
+                {
+                  "key": "apiKey",
+                  "value": "{{apiKey}}"
+                },
+                {
+                  "key": "modelName",
+                  "value": "{{modelName}}",
+                  "description": "可选参数"
+                }
+              ]
+            },
+            "description": "测试Silicon Flow API连接"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:18088",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "novelId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sceneId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "modelName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "provider",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "configIndex",
+      "value": "0",
+      "type": "string"
+    },
+    {
+      "key": "description",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
