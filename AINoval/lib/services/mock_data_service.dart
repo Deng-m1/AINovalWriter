@@ -493,4 +493,20 @@ class MockDataService {
     
     return novels;
   }
+  
+  /// 根据场景ID获取场景
+  novel_models.Scene? getSceneById(String sceneId) {
+    for (final novel in _novelCache.values) {
+      for (final act in novel.acts) {
+        for (final chapter in act.chapters) {
+          for (final scene in chapter.scenes) {
+            if (scene.id == sceneId) {
+              return scene;
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
 } 

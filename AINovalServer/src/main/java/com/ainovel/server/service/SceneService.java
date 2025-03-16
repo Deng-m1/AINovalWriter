@@ -3,6 +3,8 @@ package com.ainovel.server.service;
 import java.util.List;
 
 import com.ainovel.server.domain.model.Scene;
+import com.ainovel.server.domain.model.Scene.HistoryEntry;
+import com.ainovel.server.domain.model.SceneVersionDiff;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -119,4 +121,40 @@ public interface SceneService {
      * @return 操作结果
      */
     Mono<Void> deleteScenesByChapterId(String chapterId);
+    
+    /**
+     * 更新场景内容并保存历史版本
+     * @param id 场景ID
+     * @param content 新内容
+     * @param userId 用户ID
+     * @param reason 修改原因
+     * @return 更新后的场景
+     */
+    Mono<Scene> updateSceneContent(String id, String content, String userId, String reason);
+    
+    /**
+     * 获取场景的历史版本列表
+     * @param id 场景ID
+     * @return 历史版本列表
+     */
+    Mono<List<HistoryEntry>> getSceneHistory(String id);
+    
+    /**
+     * 恢复场景到指定的历史版本
+     * @param id 场景ID
+     * @param historyIndex 历史版本索引
+     * @param userId 用户ID
+     * @param reason 恢复原因
+     * @return 恢复后的场景
+     */
+    Mono<Scene> restoreSceneVersion(String id, int historyIndex, String userId, String reason);
+    
+    /**
+     * 对比两个场景版本
+     * @param id 场景ID
+     * @param versionIndex1 版本1索引 (-1表示当前版本)
+     * @param versionIndex2 版本2索引
+     * @return 差异信息
+     */
+    Mono<SceneVersionDiff> compareSceneVersions(String id, int versionIndex1, int versionIndex2);
 } 

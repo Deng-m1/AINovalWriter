@@ -50,11 +50,13 @@ class ApiServiceFactory {
   
   /// 获取小说仓库
   NovelRepository get novelRepository {
-    _novelRepository ??= NovelRepositoryImpl(
-      apiClient: apiClient,
-      mockClient: mockClient,
-      mockService: mockService,
-    );
+    if (_novelRepository == null) {
+      // 获取NovelRepositoryImpl的单例
+      final impl = NovelRepositoryImpl.getInstance();
+      
+      // 将其赋值给仓库实例
+      _novelRepository = impl;
+    }
     return _novelRepository!;
   }
   

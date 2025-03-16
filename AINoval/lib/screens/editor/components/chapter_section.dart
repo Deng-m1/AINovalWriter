@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
+import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 
 class ChapterSection extends StatefulWidget {
@@ -56,7 +57,7 @@ class _ChapterSectionState extends State<ChapterSection> {
       key: _chapterKey, // 使用GlobalKey
       onTap: () {
         // 点击Chapter时设置为活动Chapter
-        print('Chapter被点击: actId=${widget.actId}, chapterId=${widget.chapterId}');
+        AppLogger.i('Editor', 'Chapter被点击: actId=${widget.actId}, chapterId=${widget.chapterId}');
         widget.editorBloc.add(SetActiveChapter(
           actId: widget.actId,
           chapterId: widget.chapterId,
@@ -149,7 +150,7 @@ class _AddSceneButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 16.0),
         child: TextButton.icon(
           onPressed: () {
-            print('添加新Scene按钮被点击: actId=$actId, chapterId=$chapterId');
+            AppLogger.i('Editor', '添加新Scene按钮被点击: actId=$actId, chapterId=$chapterId');
             // 触发添加新Scene事件
             editorBloc.add(AddNewScene(
               novelId: editorBloc.novelId,

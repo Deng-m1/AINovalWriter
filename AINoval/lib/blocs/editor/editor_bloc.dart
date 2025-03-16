@@ -967,7 +967,6 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         emit(const EditorError(message: '找不到指定的Act'));
         return;
       }
-      print('找到Act: id=${act.id}, title=${act.title}, chapters数量=${act.chapters.length}');
       
       final chapter = act.getChapter(event.chapterId);
       if (chapter == null) {
@@ -975,98 +974,97 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         emit(const EditorError(message: '找不到指定的Chapter'));
         return;
       }
-      print('找到Chapter: id=${chapter.id}, title=${chapter.title}, scenes数量=${chapter.scenes.length}');
       
-      // 向Chapter添加新Scene
-      final updatedChapter = chapter.addScene();
-      final newScene = updatedChapter.scenes.last; // 获取新添加的Scene
-      print('创建新Scene: id=${newScene.id}');
+      // 设置为保存状态，UI可以显示加载指示器
+      emit(currentState.copyWith(isSaving: true));
       
-      // 更新Act的Chapters
-      final updatedChapters = List<novel_models.Chapter>.from(act.chapters);
-      final chapterIndex = updatedChapters.indexWhere((c) => c.id == event.chapterId);
-      updatedChapters[chapterIndex] = updatedChapter;
-      final updatedAct = act.copyWith(chapters: updatedChapters);
-      
-      // 更新Novel的Acts
-      final updatedActs = List<novel_models.Act>.from(novel.acts);
-      final actIndex = updatedActs.indexWhere((a) => a.id == event.actId);
-      updatedActs[actIndex] = updatedAct;
-      final updatedNovel = novel.copyWith(
-        acts: updatedActs,
-        updatedAt: DateTime.now(),
-      );
-      
-      // 设置为脏状态，开始保存
-      print('更新状态为脏状态，开始保存');
-      emit(currentState.copyWith(
-        novel: updatedNovel,
-        isDirty: true,
-        isSaving: true,
-      ));
-      
-      // 立即保存到本地存储
       try {
-        // 保存整个小说数据
-        print('保存整个小说数据');
-        await repository.saveNovel(updatedNovel);
+        // 1. 首先创建并保存场景实体
+        print('创建新场景实体');
+        final sceneId = DateTime.now().millisecondsSinceEpoch.toString();
+        final defaultContent = '{"ops":[{"insert":"\\n"}]}';
+        final defaultSummary = ""; // 或者设置默认摘要
         
-        // 保存场景内容
-        final wordCount = WordCountAnalyzer.countWords(newScene.content);
-        print('保存场景内容: wordCount=$wordCount');
-        
-        novel_models.Scene updatedScene;
-        try {
-          updatedScene = await repository.saveSceneContent(
-            event.novelId,
-            event.actId,
-            event.chapterId,
-            event.sceneId,
-            newScene.content,
-            wordCount.toString(),
-            chapter.scenes.first.summary,
-          );
-          print('场景内容保存成功: sceneId=${updatedScene.id}');
-        } catch (e) {
-          print('保存场景内容失败，使用新创建的场景: $e');
-          // 如果保存失败，使用新创建的场景
-          updatedScene = newScene;
-        }
-        
-        // 更新小说数据，包含保存后的场景
-        final finalNovel = _updateNovelScene(
-          updatedNovel,
-          event.actId,
-          event.chapterId,
-          updatedScene,
+        // 创建场景摘要
+        final summary = novel_models.Summary(
+          id: 'summary_$sceneId', // 添加必需的id参数
+          content: defaultSummary
         );
         
-        // 保存成功后，更新状态为已保存
-        print('保存成功，更新状态为已保存');
+        // 创建新场景
+        final newScene = novel_models.Scene(
+          id: sceneId,
+          content: defaultContent,
+          summary: summary,
+          wordCount: 0,
+          lastEdited: DateTime.now()
+        );
+        
+        // 使用saveSceneContent替代不存在的createScene方法
+        final scene = await repository.saveSceneContent(
+          event.novelId,
+          event.actId,
+          event.chapterId,
+          sceneId,
+          defaultContent,
+          "0", // 初始字数为0
+          summary,
+        );
+        
+        print('成功创建场景实体: sceneId=${scene.id}');
+        
+        // 2. 然后更新本地小说模型
+        // 创建新的场景列表并添加新场景
+        final updatedScenes = List<novel_models.Scene>.from(chapter.scenes);
+        updatedScenes.add(scene);
+        
+        // 更新章节 - 使用copyWith代替不存在的addSceneWithId
+        final updatedChapter = chapter.copyWith(scenes: updatedScenes);
+        
+        // 更新章节
+        final updatedChapters = List<novel_models.Chapter>.from(act.chapters);
+        final chapterIndex = updatedChapters.indexWhere((c) => c.id == event.chapterId);
+        updatedChapters[chapterIndex] = updatedChapter;
+        
+        // 更新Act
+        final updatedAct = act.copyWith(chapters: updatedChapters);
+        
+        // 更新小说
+        final updatedActs = List<novel_models.Act>.from(novel.acts);
+        final actIndex = updatedActs.indexWhere((a) => a.id == event.actId);
+        updatedActs[actIndex] = updatedAct;
+        final updatedNovel = novel.copyWith(
+          acts: updatedActs,
+          updatedAt: DateTime.now(),
+        );
+        
+        // 3. 保存更新后的小说结构
+        print('保存更新后的小说结构');
+        await repository.saveNovel(updatedNovel);
+        
+        // 4. 成功后更新状态
+        print('创建场景完成，更新前端状态');
         emit((state as EditorLoaded).copyWith(
-          novel: finalNovel,
+          novel: updatedNovel,
           isDirty: false,
           isSaving: false,
           lastSaveTime: DateTime.now(),
           // 设置新创建的Scene为活动Scene
           activeActId: event.actId,
           activeChapterId: event.chapterId,
-          activeSceneId: event.sceneId,
+          activeSceneId: scene.id, // 使用服务器返回的ID
         ));
         
-        print('新Scene添加成功, ID: ${newScene.id}');
+        print('新Scene添加成功, ID: ${scene.id}');
       } catch (e) {
         print('添加新Scene失败: $e');
-        
-        // 保存失败，恢复原始数据
+        // 保存失败，恢复原始状态
         emit((state as EditorLoaded).copyWith(
           novel: novel,
           isSaving: false,
-          errorMessage: '添加新Scene失败，请重试',
+          errorMessage: '添加新Scene失败，请重试: $e',
         ));
       }
-    } else {
-      print('当前状态不是EditorLoaded: ${state.runtimeType}');
     }
   }
   
