@@ -25,4 +25,23 @@ abstract class ChatRepository {
   
   /// 删除会话
   Future<void> deleteChatSession(String sessionId);
+  
+  /// 获取聊天会话列表 (对应ChatBloc中使用的方法名)
+  Future<List<ChatSession>> getChatSessions(String novelId);
+  
+  /// 获取特定会话 (对应ChatBloc中使用的方法名)
+  Future<ChatSession> getChatSession(String sessionId);
+  
+  /// 发送消息并获取响应
+  Future<AIChatResponse> sendMessage({
+    required String sessionId,
+    required String message,
+    required ChatContext context,
+  });
+  
+  /// 保存会话消息
+  Future<void> saveChatSession(String sessionId, List<ChatMessage> messages);
+  
+  /// 取消请求
+  Future<void> cancelRequest(String sessionId);
 }
