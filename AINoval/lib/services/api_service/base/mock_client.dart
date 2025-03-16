@@ -6,10 +6,10 @@ import 'package:ainoval/services/mock_data_service.dart';
 /// 
 /// 用于开发和测试环境，模拟API响应
 class MockClient {
-  final MockDataService _mockService;
   
   MockClient({MockDataService? mockService}) 
       : _mockService = mockService ?? MockDataService();
+  final MockDataService _mockService;
   
   Future<dynamic> get(String path, {Map<String, dynamic>? queryParameters}) async {
     // 模拟网络延迟

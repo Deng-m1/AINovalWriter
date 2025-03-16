@@ -12,13 +12,13 @@ import 'package:ainoval/services/mock_data_service.dart';
 /// 
 /// 负责创建和管理仓库实例，采用单例模式
 class ApiServiceFactory {
-  static final ApiServiceFactory _instance = ApiServiceFactory._internal();
   
   factory ApiServiceFactory() {
     return _instance;
   }
   
   ApiServiceFactory._internal();
+  static final ApiServiceFactory _instance = ApiServiceFactory._internal();
   
   // 客户端实例
   ApiClient? _apiClient;

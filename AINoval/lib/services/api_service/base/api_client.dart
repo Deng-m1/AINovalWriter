@@ -6,11 +6,11 @@ import 'package:ainoval/services/api_service/base/api_exception.dart';
 /// 
 /// 负责处理与后端API的基础通信，使用Dio包实现HTTP请求
 class ApiClient {
-  late final Dio _dio;
   
   ApiClient({Dio? dio}) {
     _dio = dio ?? _createDio();
   }
+  late final Dio _dio;
   
   /// 创建并配置Dio实例
   Dio _createDio() {

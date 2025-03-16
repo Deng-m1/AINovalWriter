@@ -376,7 +376,7 @@ class _SummaryActionButton extends StatelessWidget {
 
   const _SummaryActionButton({
     required this.icon,
-    required this.label, this.onPressed,
+    required this.label,
   });
   final IconData icon;
   final String label;
@@ -400,7 +400,7 @@ class _ActionButton extends StatelessWidget {
 
   const _ActionButton({
     required this.icon,
-    required this.label, this.onPressed,
+    required this.label,
   });
   final IconData icon;
   final String label;

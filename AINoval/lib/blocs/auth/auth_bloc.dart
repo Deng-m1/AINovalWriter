@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:ainoval/services/auth_service.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 // 认证事件
 abstract class AuthEvent extends Equatable {

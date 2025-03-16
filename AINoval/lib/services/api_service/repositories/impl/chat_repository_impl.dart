@@ -7,14 +7,14 @@ import 'package:ainoval/services/mock_data_service.dart';
 
 /// 聊天仓库实现
 class ChatRepositoryImpl implements ChatRepository {
-  final ApiClient _apiClient;
-  final MockDataService _mockService;
   
   ChatRepositoryImpl({
     ApiClient? apiClient,
     MockDataService? mockService,
   }) : _apiClient = apiClient ?? ApiClient(),
        _mockService = mockService ?? MockDataService();
+  final ApiClient _apiClient;
+  final MockDataService _mockService;
   
   /// 获取聊天会话列表
   @override

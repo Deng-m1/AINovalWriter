@@ -8,9 +8,6 @@ import 'package:ainoval/services/mock_data_service.dart';
 
 /// 小说仓库实现
 class NovelRepositoryImpl implements NovelRepository {
-  final ApiClient _apiClient;
-  final MockClient _mockClient;
-  final MockDataService _mockService;
   
   NovelRepositoryImpl({
     ApiClient? apiClient,
@@ -19,6 +16,9 @@ class NovelRepositoryImpl implements NovelRepository {
   }) : _apiClient = apiClient ?? ApiClient(),
        _mockClient = mockClient ?? MockClient(),
        _mockService = mockService ?? MockDataService();
+  final ApiClient _apiClient;
+  final MockClient _mockClient;
+  final MockDataService _mockService;
   
   /// 获取当前用户ID
   String? get _currentUserId => AppConfig.userId;

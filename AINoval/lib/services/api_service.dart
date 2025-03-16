@@ -11,10 +11,10 @@ import 'package:ainoval/services/api_service/base/api_exception.dart';
 /// 
 /// 作为对外的统一接口，封装了所有与后端通信的操作
 class ApiService {
-  final ApiServiceFactory _factory;
   
   ApiService({ApiServiceFactory? factory}) 
       : _factory = factory ?? ApiServiceFactory();
+  final ApiServiceFactory _factory;
   
   /// 获取小说仓库
   NovelRepository get _novelRepository => _factory.novelRepository;

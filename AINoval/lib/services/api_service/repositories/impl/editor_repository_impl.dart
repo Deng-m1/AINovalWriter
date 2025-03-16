@@ -8,14 +8,14 @@ import 'package:ainoval/services/mock_data_service.dart';
 
 /// 编辑器仓库实现
 class EditorRepositoryImpl implements EditorRepository {
-  final ApiClient _apiClient;
-  final MockDataService _mockService;
   
   EditorRepositoryImpl({
     ApiClient? apiClient,
     MockDataService? mockService,
   }) : _apiClient = apiClient ?? ApiClient(),
        _mockService = mockService ?? MockDataService();
+  final ApiClient _apiClient;
+  final MockDataService _mockService;
   
   /// 获取编辑器内容
   @override
