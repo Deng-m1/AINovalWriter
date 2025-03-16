@@ -6,6 +6,8 @@ import 'package:ainoval/models/novel_summary.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/chat_models.dart';
+import 'package:ainoval/utils/logger.dart';
+
 
 /// 本地存储服务，用于缓存和获取小说数据
 class LocalStorageService {
@@ -119,7 +121,7 @@ class LocalStorageService {
       final json = jsonDecode(jsonString);
       return EditorContent.fromJson(json);
     } catch (e) {
-      print('解析章节内容失败: $e');
+      AppLogger.e('Services/local_storage_service', '解析章节内容失败', e);
       return null;
     }
   }
@@ -173,7 +175,7 @@ class LocalStorageService {
         'autoSave': true,
       };
     } catch (e) {
-      print('获取编辑器设置失败: $e');
+      AppLogger.e('Services/local_storage_service', '获取编辑器设置失败', e);
       // 返回默认设置
       return {
         'fontSize': 16.0,
@@ -191,7 +193,7 @@ class LocalStorageService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('editor_settings', jsonEncode(settings));
     } catch (e) {
-      print('保存编辑器设置失败: $e');
+      AppLogger.e('Services/local_storage_service', '保存编辑器设置失败', e);
       throw Exception('保存编辑器设置失败: $e');
     }
   }
@@ -275,7 +277,7 @@ class LocalStorageService {
       
       await saveNovel(updatedNovel);
     } catch (e) {
-      print('保存场景内容失败: $e');
+      AppLogger.e('Services/local_storage_service', '保存场景内容失败', e);
     }
   }
   
@@ -325,7 +327,7 @@ class LocalStorageService {
       
       await saveNovel(updatedNovel);
     } catch (e) {
-      print('保存摘要内容失败: $e');
+      AppLogger.e('Services/local_storage_service', '保存摘要内容失败', e);
     }
   }
   
@@ -339,10 +341,10 @@ class LocalStorageService {
       if (!syncList.contains(id)) {
         syncList.add(id);
         await prefs.setStringList(syncKey, syncList);
-        print('已标记 $type: $id 需要同步');
+        AppLogger.i('Services/local_storage_service', '已标记 $type: $id 需要同步');
       }
     } catch (e) {
-      print('标记同步失败: $e');
+      AppLogger.e('Services/local_storage_service', '标记同步失败', e);
     }
   }
   
@@ -353,7 +355,7 @@ class LocalStorageService {
       final syncKey = 'syncList_$type';
       return prefs.getStringList(syncKey) ?? [];
     } catch (e) {
-      print('获取同步列表失败: $e');
+      AppLogger.e('Services/local_storage_service', '获取同步列表失败', e);
       return [];
     }
   }
@@ -377,7 +379,7 @@ class LocalStorageService {
         await prefs.setStringList(syncKey, syncList);
       }
     } catch (e) {
-      print('清除同步标记失败: $e');
+      AppLogger.e('Services/local_storage_service', '清除同步标记失败', e);
     }
   }
   
@@ -392,7 +394,7 @@ class LocalStorageService {
         await prefs.setStringList('syncList', syncList);
       }
     } catch (e) {
-      print('标记同步失败: $e');
+      AppLogger.e('Services/local_storage_service', '标记同步失败', e);
     }
   }
   

@@ -5,6 +5,8 @@ import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/services/api_service.dart';
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/utils/mock_data.dart';
+import 'package:ainoval/utils/logger.dart';
+
 
 class NovelRepository {
   
@@ -31,7 +33,7 @@ class NovelRepository {
         completionPercentage: 0.0, // 需要计算或从后端获取
       )).toList();
     } catch (e) {
-      print('获取小说列表失败: $e');
+      AppLogger.e('Repositories/novel_repository', '获取小说列表失败', e);
       
       // 如果使用模拟数据，返回模拟数据
       if (AppConfig.shouldUseMockData) {
@@ -108,7 +110,7 @@ class NovelRepository {
         completionPercentage: 0.0,
       );
     } catch (e) {
-      print('创建小说失败: $e');
+      AppLogger.e('Repositories/novel_repository', '创建小说失败', e);
       
       // 如果使用模拟数据，使用mock数据创建
       if (AppConfig.shouldUseMockData) {
@@ -175,7 +177,7 @@ class NovelRepository {
         updatedAt: novel.updatedAt,
       );
     } catch (e) {
-      print('获取小说详情失败: $e');
+      AppLogger.e('Repositories/novel_repository', '获取小说详情失败', e);
       
       // 如果使用模拟数据，返回模拟数据
       if (AppConfig.shouldUseMockData) {
@@ -214,7 +216,7 @@ class NovelRepository {
               try {
                 return await apiService.fetchSceneContent(novelId, act.id, ch.id, scene.id);
               } catch (e) {
-                print('获取场景内容失败: $e');
+                AppLogger.e('Repositories/novel_repository', '获取场景内容失败', e);
                 return scene;
               }
             }));
@@ -241,7 +243,7 @@ class NovelRepository {
       
       throw Exception('章节不存在');
     } catch (e) {
-      print('获取章节详情失败: $e');
+      AppLogger.e('Repositories/novel_repository', '获取章节内容失败', e);
       
       // 如果使用模拟数据，返回模拟数据
       if (AppConfig.shouldUseMockData) {
@@ -296,7 +298,7 @@ class NovelRepository {
       
       return previousChapter;
     } catch (e) {
-      print('获取前一章节失败: $e');
+      AppLogger.e('Repositories/novel_repository', '获取前一章节失败', e);
       
       // 如果使用模拟数据，返回模拟数据
       if (AppConfig.shouldUseMockData) {

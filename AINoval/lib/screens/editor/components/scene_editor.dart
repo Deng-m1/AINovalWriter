@@ -4,6 +4,18 @@ import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 
+/// 场景编辑器组件，用于编辑小说中的单个场景
+///
+/// [title] 场景标题
+/// [wordCount] 场景字数统计
+/// [isActive] 当前场景是否处于激活状态
+/// [actId] 所属篇章ID
+/// [chapterId] 所属章节ID
+/// [sceneId] 场景ID
+/// [isFirst] 是否为章节中的第一个场景
+/// [controller] 场景内容编辑控制器
+/// [summaryController] 场景摘要编辑控制器
+/// [editorBloc] 编辑器状态管理
 class SceneEditor extends StatefulWidget {
 
   const SceneEditor({
@@ -44,19 +56,20 @@ class _SceneEditorState extends State<SceneEditor> {
   @override
   void initState() {
     super.initState();
-    // 初始化GlobalKey
+    // 修改初始化GlobalKey的方式，确保唯一性
     final String sceneId = widget.sceneId ?? 
         (widget.actId != null && widget.chapterId != null 
             ? '${widget.actId}_${widget.chapterId}' 
             : widget.title.replaceAll(' ', '_').toLowerCase());
+    // 使用一致的命名方式，避免每次重建时生成新的key
     _editorKey = GlobalObjectKey('editor_$sceneId');
     
     // 监听焦点变化
     _focusNode.addListener(_onFocusChange);
     
-    // 如果当前场景是活动场景，自动请求焦点
+    // 如果当前场景是活动场景，等待组件完全构建后再请求焦点
     if (widget.isActive) {
-      Future.microtask(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _focusNode.canRequestFocus) {
           _focusNode.requestFocus();
           setState(() {
@@ -106,13 +119,13 @@ class _SceneEditorState extends State<SceneEditor> {
           children: [
             // 编辑器区域
             Expanded(
-              flex: 7, // 占据70%的宽度
+              flex: 7, // 固定比例
               child: _buildEditor(sceneId),
             ),
             
             // 摘要区域
             Expanded(
-              flex: 3, // 占据30%的宽度
+              flex: 3, // 固定比例
               child: _buildSummaryArea(sceneId),
             ),
           ],
@@ -157,25 +170,33 @@ class _SceneEditorState extends State<SceneEditor> {
       onTap: () {
         // 如果有actId和chapterId，设置为活动章节
         if (widget.actId != null && widget.chapterId != null) {
-          // 设置活动章节
+          // 按顺序设置活动状态，避免状态错乱
+          // 先设置活动章节
           widget.editorBloc.add(SetActiveChapter(
             actId: widget.actId!, 
             chapterId: widget.chapterId!
           ));
           
-          // 如果有sceneId，设置为活动场景
-          if (widget.sceneId != null) {
-            widget.editorBloc.add(SetActiveScene(
-              actId: widget.actId!,
-              chapterId: widget.chapterId!,
-              sceneId: widget.sceneId!
-            ));
+          // 等待状态更新后再设置活动场景
+          Future.microtask(() {
+            if (widget.sceneId != null) {
+              widget.editorBloc.add(SetActiveScene(
+                actId: widget.actId!,
+                chapterId: widget.chapterId!,
+                sceneId: widget.sceneId!
+              ));
+            }
+            
+            // 请求焦点
+            if (mounted && _focusNode.canRequestFocus) {
+              _focusNode.requestFocus();
+            }
+          });
+        } else {
+          // 立即请求焦点
+          if (mounted && _focusNode.canRequestFocus) {
+            _focusNode.requestFocus();
           }
-        }
-        
-        // 立即请求焦点
-        if (mounted && _focusNode.canRequestFocus) {
-          _focusNode.requestFocus();
         }
       },
       child: Container(
@@ -376,7 +397,7 @@ class _SummaryActionButton extends StatelessWidget {
 
   const _SummaryActionButton({
     required this.icon,
-    required this.label,
+    required this.label, this.onPressed,
   });
   final IconData icon;
   final String label;
@@ -400,7 +421,7 @@ class _ActionButton extends StatelessWidget {
 
   const _ActionButton({
     required this.icon,
-    required this.label,
+    required this.label, this.onPressed,
   });
   final IconData icon;
   final String label;

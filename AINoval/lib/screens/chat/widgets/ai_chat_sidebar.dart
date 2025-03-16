@@ -5,6 +5,8 @@ import '../../../blocs/chat/chat_bloc.dart';
 import '../../../blocs/chat/chat_event.dart';
 import '../../../blocs/chat/chat_state.dart';
 import '../../../models/chat_models.dart';
+import 'package:ainoval/utils/logger.dart';
+
 
 /// AI聊天侧边栏组件，用于在编辑器右侧显示聊天功能
 class AIChatSidebar extends StatefulWidget {
@@ -132,7 +134,7 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
   
   @override
   Widget build(BuildContext context) {
-    print('Building AIChatSidebar widget');
+    AppLogger.i('Screens/chat/widgets/ai_chat_sidebar', 'Building AIChatSidebar widget');
     return Material(
       elevation: 8.0,
       child: Container(
@@ -176,7 +178,7 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
             Expanded(
               child: BlocConsumer<ChatBloc, ChatState>(
                 listener: (context, state) {
-                  print('ChatBloc state changed: $state');
+                  AppLogger.i('Screens/chat/widgets/ai_chat_sidebar', 'ChatBloc state changed: $state');
                   if (state is ChatSessionActive) {
                     // 当新消息添加时，滚动到底部
                     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -185,7 +187,7 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
                   }
                 },
                 builder: (context, state) {
-                  print('Building chat UI for state: $state');
+                  AppLogger.i('Screens/chat/widgets/ai_chat_sidebar', 'Building chat UI for state: $state');
                   if (state is ChatSessionsLoading) {
                     return const Center(child: CircularProgressIndicator());
                   } else if (state is ChatSessionsLoaded) {

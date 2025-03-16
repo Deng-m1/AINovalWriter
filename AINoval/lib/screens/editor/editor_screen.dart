@@ -26,6 +26,8 @@ import 'package:ainoval/services/websocket_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:ainoval/utils/logger.dart';
+
 import 'package:flutter_quill/flutter_quill.dart' hide EditorState;
 
 class EditorScreen extends StatefulWidget {
@@ -84,6 +86,74 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
     
     // 直接加载编辑器内容，不需要等待LocalStorageService初始化
     _editorBloc.add(const LoadEditorContent());
+    
+    // 添加状态监听，处理新场景添加的情况
+    _editorBloc.stream.listen((state) {
+      if (state is EditorLoaded && state.activeSceneId != null) {
+        final sceneId = '${state.activeActId}_${state.activeChapterId}_${state.activeSceneId}';
+        
+        // 如果是新场景且控制器不存在，创建新控制器
+        if (!_sceneControllers.containsKey(sceneId)) {
+          try {
+            // 找到对应的场景
+            final act = state.novel.getAct(state.activeActId!);
+            if (act != null) {
+              final chapter = act.getChapter(state.activeChapterId!);
+              if (chapter != null) {
+                final scene = chapter.scenes.firstWhere(
+                  (s) => s.id == state.activeSceneId,
+                  orElse: () => chapter.scenes.first,
+                );
+                
+                // 创建新控制器
+                _sceneControllers[sceneId] = QuillController(
+                  document: _parseDocument(scene.content),
+                  selection: const TextSelection.collapsed(offset: 0),
+                );
+                
+                // 创建标题和摘要控制器
+                _sceneTitleControllers[sceneId] = TextEditingController(
+                  text: '${chapter.title} · Scene ${chapter.scenes.indexOf(scene) + 1}'
+                );
+                _sceneSubtitleControllers[sceneId] = TextEditingController(text: '');
+                _sceneSummaryControllers[sceneId] = TextEditingController(text: scene.summary.content);
+                
+                // 更新活动场景ID
+                _activeSceneId = sceneId;
+                
+                // 添加监听
+                _sceneControllers[sceneId]!.document.changes.listen((_) {
+                  if (!mounted) return;
+                  
+                  _debounceTimer?.cancel();
+                  _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+                    if (!mounted) return;
+                    
+                    try {
+                      final jsonStr = jsonEncode(_sceneControllers[sceneId]!.document.toDelta().toJson());
+                      
+                      // 更新内容
+                      _editorBloc.add(UpdateSceneContent(
+                        novelId: _editorBloc.novelId,
+                        actId: state.activeActId!,
+                        chapterId: state.activeChapterId!,
+                        sceneId: state.activeSceneId!,
+                        content: jsonStr,
+                        shouldRebuild: false,
+                      ));
+                    } catch (e) {
+                      AppLogger.e('Screens/editor/editor_screen', '更新内容失败', e);
+                    }
+                  });
+                });
+              }
+            }
+          } catch (e) {
+            AppLogger.e('Screens/editor/editor_screen', '创建新场景控制器失败: $sceneId', e);
+          }
+        }
+      }
+    });
   }
   
   @override
@@ -275,7 +345,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
       _initEditorController(state.novel);
       _isControllerInitialized = true;
     } catch (e) {
-      print('初始化编辑器控制器失败: $e');
+      AppLogger.e('Screens/editor/editor_screen', '初始化编辑器控制器失败', e);
       // 使用空文档初始化
       if (!_isControllerInitialized) {
         _controller = QuillController(
@@ -349,12 +419,12 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
                         shouldRebuild: false, // 添加标志，指示不需要重建UI
                       ));
                     } catch (e) {
-                      print('更新内容失败: $e');
+                      AppLogger.e('Screens/editor/editor_screen', '更新内容失败', e);
                     }
                   });
                 });
               } catch (e) {
-                print('初始化场景控制器失败: $e, sceneId: $sceneId');
+                AppLogger.e('Screens/editor/editor_screen', '初始化场景控制器失败, sceneId: $sceneId', e);
               }
             }
           }
@@ -409,7 +479,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
             }
           }
         } catch (e) {
-          print('初始化活动场景控制器失败: $e');
+          AppLogger.e('Screens/editor/editor_screen', '初始化活动场景控制器失败', e);
         }
       } else {
         // 设置为活动场景
@@ -427,7 +497,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
                 novel: widget.novel,
                 tabController: _tabController,
                 onOpenAIChat: () {
-                  print('Opening AI chat from sidebar');
+                  AppLogger.i('Screens/editor/editor_screen', 'Opening AI chat from sidebar');
                   setState(() {
                     _isAIChatSidebarVisible = true;
                   });
@@ -447,7 +517,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
                       lastSaveTime: state.lastSaveTime,
                       onBackPressed: () => Navigator.pop(context),
                       onChatPressed: () {
-                        print('Chat button pressed, toggling sidebar visibility');
+                        AppLogger.i('Screens/editor/editor_screen', 'Chat button pressed, toggling sidebar visibility');
                         setState(() {
                           _isAIChatSidebarVisible = !_isAIChatSidebarVisible;
                         });
@@ -486,7 +556,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
                 novelId: widget.novel.id,
                 chapterId: state.activeChapterId,
                 onClose: () {
-                  print('Closing AI chat sidebar');
+                  AppLogger.i('Screens/editor/editor_screen', 'Closing AI chat sidebar');
                   setState(() {
                     _isAIChatSidebarVisible = false;
                   });
@@ -516,7 +586,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
               : FloatingActionButton(
                   heroTag: 'chat',
                   onPressed: () {
-                    print('Chat floating button pressed');
+                    AppLogger.i('Screens/editor/editor_screen', 'Chat floating button pressed');
                     setState(() {
                       _isAIChatSidebarVisible = !_isAIChatSidebarVisible;
                     });
@@ -626,7 +696,17 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
       selection: const TextSelection.collapsed(offset: 0),
     );
     
-    // 清除旧的控制器
+    // 保留所有现有控制器的内容映射
+    final Map<String, Document> existingDocuments = {};
+    for (final entry in _sceneControllers.entries) {
+      try {
+        existingDocuments[entry.key] = entry.value.document;
+      } catch (e) {
+        AppLogger.e('Screens/editor/editor_screen', '保存现有文档失败: ${entry.key}', e);
+      }
+    }
+    
+    // 现在安全地清除旧的控制器
     for (final controller in _sceneControllers.values) {
       controller.dispose();
     }
@@ -655,52 +735,55 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
           final scene = chapter.scenes[i];
           final sceneId = '${act.id}_${chapter.id}_${scene.id}';
           
-          if (!_sceneControllers.containsKey(sceneId)) {
-            try {
-              final sceneDocument = _parseDocument(scene.content);
-              _sceneControllers[sceneId] = QuillController(
-                document: sceneDocument,
-                selection: const TextSelection.collapsed(offset: 0),
-              );
-              
-              // 为场景标题创建控制器
-              _sceneTitleControllers[sceneId] = TextEditingController(text: '${chapter.title} · Scene ${i + 1}');
-              
-              // 为场景子标题创建控制器
-              _sceneSubtitleControllers[sceneId] = TextEditingController(text: '');
-              
-              // 为场景摘要创建控制器
-              _sceneSummaryControllers[sceneId] = TextEditingController(text: scene.summary.content);
-              
-              // 添加内容变化监听
-              _sceneControllers[sceneId]!.document.changes.listen((_) {
-                if (!mounted) return; // 检查组件是否仍然挂载
-                
-                _debounceTimer?.cancel();
-                _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-                  if (!mounted) return; // 再次检查，因为Timer可能在组件卸载后触发
-                  
-                  try {
-                    final jsonStr = jsonEncode(_sceneControllers[sceneId]!.document.toDelta().toJson());
-                    
-                    // 更新EditorBloc中的场景内容，但不触发UI重建
-                    _editorBloc.add(UpdateSceneContent(
-                      novelId: _editorBloc.state is EditorLoaded ? (_editorBloc.state as EditorLoaded).novel.id : widget.novel.id,
-                      actId: act.id,
-                      chapterId: chapter.id,
-                      sceneId: scene.id,
-                      content: jsonStr,
-                      shouldRebuild: false, // 添加标志，指示不需要重建UI
-                    ));
-                  } catch (e) {
-                    print('更新内容失败: $e');
-                  }
-                });
-              });
-            } catch (e) {
-              print('初始化场景控制器失败: $e, sceneId: $sceneId');
-            }
+          Document sceneDocument;
+          
+          // 优先使用现有的文档（如果存在）
+          if (existingDocuments.containsKey(sceneId)) {
+            sceneDocument = existingDocuments[sceneId]!;
+          } else {
+            // 否则从场景内容解析
+            sceneDocument = _parseDocument(scene.content);
           }
+          
+          _sceneControllers[sceneId] = QuillController(
+            document: sceneDocument,
+            selection: const TextSelection.collapsed(offset: 0),
+          );
+          
+          // 为场景标题创建控制器
+          _sceneTitleControllers[sceneId] = TextEditingController(text: '${chapter.title} · Scene ${i + 1}');
+          
+          // 为场景子标题创建控制器
+          _sceneSubtitleControllers[sceneId] = TextEditingController(text: '');
+          
+          // 为场景摘要创建控制器
+          _sceneSummaryControllers[sceneId] = TextEditingController(text: scene.summary.content);
+          
+          // 添加内容变化监听
+          _sceneControllers[sceneId]!.document.changes.listen((_) {
+            if (!mounted) return; // 检查组件是否仍然挂载
+            
+            _debounceTimer?.cancel();
+            _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+              if (!mounted) return; // 再次检查，因为Timer可能在组件卸载后触发
+              
+              try {
+                final jsonStr = jsonEncode(_sceneControllers[sceneId]!.document.toDelta().toJson());
+                
+                // 更新EditorBloc中的场景内容，但不触发UI重建
+                _editorBloc.add(UpdateSceneContent(
+                  novelId: _editorBloc.state is EditorLoaded ? (_editorBloc.state as EditorLoaded).novel.id : widget.novel.id,
+                  actId: act.id,
+                  chapterId: chapter.id,
+                  sceneId: scene.id,
+                  content: jsonStr,
+                  shouldRebuild: false, // 添加标志，指示不需要重建UI
+                ));
+              } catch (e) {
+                AppLogger.e('Screens/editor/editor_screen', '更新内容失败', e);
+              }
+            });
+          });
         }
         
         // 为兼容性保留旧的sceneId格式
@@ -708,24 +791,29 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
         if (!_sceneControllers.containsKey(legacySceneId) && chapter.scenes.isNotEmpty) {
           // 使用第一个场景的内容
           final scene = chapter.scenes.first;
-          try {
-            final sceneDocument = _parseDocument(scene.content);
-            _sceneControllers[legacySceneId] = QuillController(
-              document: sceneDocument,
-              selection: const TextSelection.collapsed(offset: 0),
-            );
-            
-            // 为场景标题创建控制器
-            _sceneTitleControllers[legacySceneId] = TextEditingController(text: '${chapter.title} · Scene 1');
-            
-            // 为场景子标题创建控制器
-            _sceneSubtitleControllers[legacySceneId] = TextEditingController(text: '');
-            
-            // 为场景摘要创建控制器
-            _sceneSummaryControllers[legacySceneId] = TextEditingController(text: scene.summary.content);
-          } catch (e) {
-            print('初始化兼容性场景控制器失败: $e, sceneId: $legacySceneId');
+          
+          Document sceneDocument;
+          // 优先使用现有的文档（如果存在）
+          if (existingDocuments.containsKey(legacySceneId)) {
+            sceneDocument = existingDocuments[legacySceneId]!;
+          } else {
+            // 否则从场景内容解析
+            sceneDocument = _parseDocument(scene.content);
           }
+          
+          _sceneControllers[legacySceneId] = QuillController(
+            document: sceneDocument,
+            selection: const TextSelection.collapsed(offset: 0),
+          );
+          
+          // 为场景标题创建控制器
+          _sceneTitleControllers[legacySceneId] = TextEditingController(text: '${chapter.title} · Scene 1');
+          
+          // 为场景子标题创建控制器
+          _sceneSubtitleControllers[legacySceneId] = TextEditingController(text: '');
+          
+          // 为场景摘要创建控制器
+          _sceneSummaryControllers[legacySceneId] = TextEditingController(text: scene.summary.content);
         }
       }
     }
@@ -789,7 +877,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
     }
   }
   
-  // 将内容字符串解析为Document
+  // 解析文档内容的方法
   Document _parseDocument(String content) {
     try {
       // 尝试解析JSON
@@ -799,20 +887,20 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
         if (ops is List) {
           return Document.fromJson(ops);
         } else {
-          print('ops 不是列表类型：$ops');
-          return Document();
+          AppLogger.i('Screens/editor/editor_screen', 'ops 不是列表类型：$ops');
+          return Document.fromJson([{"insert": "\n"}]);
         }
       } else if (deltaJson is List) {
         // 直接是ops数组
         return Document.fromJson(deltaJson);
       } else {
-        print('内容格式不正确：$content');
-        return Document();
+        AppLogger.i('Screens/editor/editor_screen', '内容格式不正确：$content');
+        return Document.fromJson([{"insert": "\n"}]);
       }
     } catch (e) {
-      // 如果解析失败，可能是纯文本格式，创建简单的delta
-      print('解析内容失败，使用纯文本格式: $e');
-      return Document()..insert(0, content);
+      // 如果解析失败，创建空文档
+      AppLogger.e('Screens/editor/editor_screen', '解析内容失败，使用空文档', e);
+      return Document.fromJson([{"insert": "\n"}]);
     }
   }
   
@@ -823,7 +911,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
       final context = GlobalObjectKey('chapter_$chapterId').currentContext;
       return context?.findRenderObject();
     } catch (e) {
-      print('查找章节元素失败: $e');
+      AppLogger.e('Screens/editor/editor_screen', '查找章节元素失败', e);
       return null;
     }
   }
@@ -845,7 +933,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
       // 计算需要滚动的位置，使章节中心与视图中心对齐
       return _scrollController.offset + (chapterCenter - viewportCenter);
     } catch (e) {
-      print('计算章节位置失败: $e');
+      AppLogger.e('Screens/editor/editor_screen', '计算章节位置失败', e);
       return _scrollController.position.maxScrollExtent;
     }
   }
@@ -864,18 +952,18 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
           if (focusNode != null && focusNode.canRequestFocus) {
             // 请求焦点
             focusNode.requestFocus();
-            print('成功请求焦点到新章节: $sceneId');
+            AppLogger.i('Screens/editor/editor_screen', '成功请求焦点到新章节: $sceneId');
           } else {
-            print('无法找到焦点节点或焦点节点不可请求焦点');
+            AppLogger.i('Screens/editor/editor_screen', '无法找到焦点节点或焦点节点不可请求焦点');
           }
         } else {
-          print('无法找到编辑器上下文');
+          AppLogger.i('Screens/editor/editor_screen', '无法找到编辑器上下文');
         }
       } else {
-        print('无法找到场景控制器: $sceneId');
+        AppLogger.i('Screens/editor/editor_screen', '无法找到场景控制器: $sceneId');
       }
     } catch (e) {
-      print('请求焦点到新章节失败: $e');
+      AppLogger.e('Screens/editor/editor_screen', '请求焦点到新章节失败', e);
     }
   }
   

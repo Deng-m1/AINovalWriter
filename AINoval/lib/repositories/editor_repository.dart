@@ -6,6 +6,8 @@ import 'package:ainoval/models/novel_structure.dart';
 import 'package:ainoval/services/api_service.dart';
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/services/mock_data_service.dart';
+import 'package:ainoval/utils/logger.dart';
+
 
 /// 编辑器仓库
 /// 
@@ -37,7 +39,7 @@ class EditorRepository {
       await localStorageService.saveNovel(apiNovel);
       return apiNovel;
     } catch (e) {
-      print('获取小说失败: $e');
+      AppLogger.e('Repositories/editor_repository', '获取小说失败', e);
       
       // 如果配置为使用模拟数据，则返回模拟数据
       if (AppConfig.shouldUseMockData) {
@@ -60,7 +62,7 @@ class EditorRepository {
       }
       return true;
     } catch (e) {
-      print('保存小说失败: $e');
+      AppLogger.e('Repositories/editor_repository', '保存小说失败', e);
       return false;
     }
   }
@@ -80,7 +82,7 @@ class EditorRepository {
       await localStorageService.saveSceneContent(novelId, actId, chapterId, sceneId, apiScene);
       return apiScene;
     } catch (e) {
-      print('获取场景内容失败: $e');
+      AppLogger.e('Repositories/editor_repository', '获取场景内容失败', e);
       
       // 如果配置为使用模拟数据，则返回模拟数据
       if (AppConfig.shouldUseMockData) {
@@ -108,7 +110,7 @@ class EditorRepository {
         // 尝试获取特定Scene
         scene = await getSceneContent(novelId, actId, chapterId, sceneId);
       } catch (e) {
-        print('获取场景失败，将创建新场景: $e');
+        AppLogger.e('Repositories/editor_repository', '获取场景失败，将创建新场景', e);
         // 如果获取失败，创建一个新的场景
         scene = null;
       }
@@ -137,7 +139,7 @@ class EditorRepository {
       
       return updatedScene;
     } catch (e) {
-      print('保存场景内容失败: $e');
+      AppLogger.e('Repositories/editor_repository', '保存场景内容失败', e);
       throw Exception('保存场景内容失败: $e');
     }
   }
@@ -175,7 +177,7 @@ class EditorRepository {
       
       return updatedSummary;
     } catch (e) {
-      print('保存摘要失败: $e');
+      AppLogger.e('Repositories/editor_repository', '保存摘要失败', e);
       throw Exception('保存摘要失败: $e');
     }
   }
@@ -195,7 +197,7 @@ class EditorRepository {
       await localStorageService.saveEditorContent(apiContent);
       return apiContent;
     } catch (e) {
-      print('获取编辑器内容失败: $e');
+      AppLogger.e('Repositories/editor_repository', '获取编辑器内容失败', e);
       
       // 如果配置为使用模拟数据，则返回模拟数据
       if (AppConfig.shouldUseMockData) {
@@ -233,7 +235,7 @@ class EditorRepository {
       
       return true;
     } catch (e) {
-      print('保存编辑器内容失败: $e');
+      AppLogger.e('Repositories/editor_repository', '保存编辑器内容失败', e);
       return false;
     }
   }
@@ -245,7 +247,7 @@ class EditorRepository {
       final settings = await localStorageService.getEditorSettings();
       return settings;
     } catch (e) {
-      print('获取编辑器设置失败: $e');
+      AppLogger.e('Repositories/editor_repository', '获取编辑器设置失败', e);
       // 返回默认设置
       return {
         'fontSize': 16.0,
@@ -263,7 +265,7 @@ class EditorRepository {
       // 保存到本地存储
       await localStorageService.saveEditorSettings(settings);
     } catch (e) {
-      print('保存编辑器设置失败: $e');
+      AppLogger.e('Repositories/editor_repository', '保存编辑器设置失败', e);
       throw Exception('保存编辑器设置失败: $e');
     }
   }
@@ -291,7 +293,7 @@ class EditorRepository {
       
       return success;
     } catch (e) {
-      print('保存场景标题失败: $e');
+      AppLogger.e('Repositories/editor_repository', '保存场景标题失败', e);
       return false;
     }
   }
@@ -340,7 +342,7 @@ class EditorRepository {
       // 如果配置为使用模拟数据，则返回模拟数据
       return _mockService.getRevisionHistory(novelId, chapterId);
     } catch (e) {
-      print('获取修订历史失败: $e');
+      AppLogger.e('Repositories/editor_repository', '获取修订历史失败', e);
       return [];
     }
   }
@@ -367,7 +369,7 @@ class EditorRepository {
       // 在模拟环境中，直接返回成功
       return true;
     } catch (e) {
-      print('创建修订版本失败: $e');
+      AppLogger.e('Repositories/editor_repository', '创建修订版本失败', e);
       return false;
     }
   }
@@ -396,7 +398,7 @@ class EditorRepository {
       final success = await saveEditorContent(novelId, chapterId, '', content);
       return success;
     } catch (e) {
-      print('应用修订版本失败: $e');
+      AppLogger.e('Repositories/editor_repository', '应用修订版本失败', e);
       return false;
     }
   }
@@ -411,7 +413,7 @@ class EditorRepository {
       // 获取章节
       return novel.getChapter(actId, chapterId);
     } catch (e) {
-      print('获取章节失败: $e');
+      AppLogger.e('Repositories/editor_repository', '获取章节失败', e);
       return null;
     }
   }

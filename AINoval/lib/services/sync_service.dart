@@ -4,6 +4,8 @@ import 'package:ainoval/config/app_config.dart';
 import 'package:ainoval/services/api_service.dart';
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:ainoval/utils/logger.dart';
+
 
 /// 数据同步服务
 /// 
@@ -122,7 +124,7 @@ class SyncService {
       _updateSyncState(isSyncing: false, error: null);
       return true;
     } catch (e) {
-      print('同步失败: $e');
+      AppLogger.e('Services/sync_service', '同步失败', e);
       _updateSyncState(isSyncing: false, error: '同步失败: $e');
       return false;
     }
@@ -148,7 +150,7 @@ class SyncService {
         await localStorageService.clearSyncFlagByType('novel', novelId);
       }
     } catch (e) {
-      print('同步小说数据失败: $e');
+      AppLogger.e('Services/sync_service', '同步小说数据失败', e);
       throw SyncException('同步小说数据失败: $e');
     }
   }
@@ -184,7 +186,7 @@ class SyncService {
         await localStorageService.clearSyncFlagByType('scene', sceneKey);
       }
     } catch (e) {
-      print('同步场景内容失败: $e');
+      AppLogger.e('Services/sync_service', '同步场景内容失败', e);
       throw SyncException('同步场景内容失败: $e');
     }
   }
@@ -218,7 +220,7 @@ class SyncService {
         await localStorageService.clearSyncFlagByType('editor', contentKey);
       }
     } catch (e) {
-      print('同步编辑器内容失败: $e');
+      AppLogger.e('Services/sync_service', '同步编辑器内容失败', e);
       throw SyncException('同步编辑器内容失败: $e');
     }
   }
@@ -243,7 +245,7 @@ class SyncService {
         await localStorageService.clearSyncFlag(session.id);
       }
     } catch (e) {
-      print('同步聊天会话失败: $e');
+      AppLogger.e('Services/sync_service', '同步聊天会话失败', e);
       throw SyncException('同步聊天会话失败: $e');
     }
   }
@@ -270,7 +272,7 @@ class SyncService {
       
       return true;
     } catch (e) {
-      print('同步小说失败: $e');
+      AppLogger.e('Services/sync_service', '同步小说失败', e);
       _updateSyncState(error: '同步小说失败: $e');
       return false;
     }
@@ -306,7 +308,7 @@ class SyncService {
       
       return true;
     } catch (e) {
-      print('同步场景失败: $e');
+      AppLogger.e('Services/sync_service', '同步场景失败', e);
       _updateSyncState(error: '同步场景失败: $e');
       return false;
     }
@@ -340,7 +342,7 @@ class SyncService {
       
       return true;
     } catch (e) {
-      print('同步编辑器内容失败: $e');
+      AppLogger.e('Services/sync_service', '同步编辑器内容失败', e);
       _updateSyncState(error: '同步编辑器内容失败: $e');
       return false;
     }
@@ -372,7 +374,7 @@ class SyncService {
       
       return true;
     } catch (e) {
-      print('同步聊天会话失败: $e');
+      AppLogger.e('Services/sync_service', '同步聊天会话失败', e);
       _updateSyncState(error: '同步聊天会话失败: $e');
       return false;
     }
@@ -424,7 +426,7 @@ class SyncService {
           return false;
       }
     } catch (e) {
-      print('解决冲突失败: $e');
+      AppLogger.e('Services/sync_service', '解决冲突失败', e);
       _updateSyncState(error: '解决冲突失败: $e');
       return false;
     }

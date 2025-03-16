@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
+import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
+import 'package:ainoval/utils/debouncer.dart' as debouncer;
+import 'package:ainoval/components/editable_title.dart';
 
 class ChapterSection extends StatefulWidget {
 
@@ -25,14 +28,15 @@ class ChapterSection extends StatefulWidget {
 
 class _ChapterSectionState extends State<ChapterSection> {
   late TextEditingController _chapterTitleController;
-  Timer? _chapterTitleDebounceTimer;
-  // 为章节创建一个GlobalKey
-  late final GlobalKey _chapterKey = GlobalObjectKey('chapter_${widget.chapterId}');
+  late debouncer.Debouncer _debouncer;
+  // 为章节创建一个GlobalKey，确保唯一性
+  late final GlobalKey _chapterKey = GlobalObjectKey('chapter_${widget.actId}_${widget.chapterId}_${DateTime.now().millisecondsSinceEpoch}');
 
   @override
   void initState() {
     super.initState();
     _chapterTitleController = TextEditingController(text: widget.title);
+    _debouncer = debouncer.Debouncer();
   }
 
   @override
@@ -45,7 +49,7 @@ class _ChapterSectionState extends State<ChapterSection> {
 
   @override
   void dispose() {
-    _chapterTitleDebounceTimer?.cancel();
+    _debouncer.dispose();
     _chapterTitleController.dispose();
     super.dispose();
   }
@@ -56,7 +60,8 @@ class _ChapterSectionState extends State<ChapterSection> {
       key: _chapterKey, // 使用GlobalKey
       onTap: () {
         // 点击Chapter时设置为活动Chapter
-        print('Chapter被点击: actId=${widget.actId}, chapterId=${widget.chapterId}');
+        AppLogger.i('Editor', 'Chapter被点击: actId=${widget.actId}, chapterId=${widget.chapterId}');
+        // 不检查当前状态，直接触发事件
         widget.editorBloc.add(SetActiveChapter(
           actId: widget.actId,
           chapterId: widget.chapterId,
@@ -72,38 +77,23 @@ class _ChapterSectionState extends State<ChapterSection> {
               children: [
                 // 可编辑的文本字段
                 Expanded(
-                  child: TextField(
-                    controller: _chapterTitleController,
+                  child: EditableTitle(
+                    initialText: widget.title,
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
                       color: Colors.black,
                     ),
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                      isDense: true,
-                    ),
                     onChanged: (value) {
-                      // 使用防抖动机制，避免频繁更新
-                      _chapterTitleDebounceTimer?.cancel();
-                      _chapterTitleDebounceTimer = Timer(const Duration(milliseconds: 500), () {
-                        if (mounted) {
-                          widget.editorBloc.add(UpdateChapterTitle(
-                            actId: widget.actId,
-                            chapterId: widget.chapterId,
-                            title: value,
-                          ));
-                        }
-                      });
-                    },
-                    onTap: () {
-                      // 防止点击文本框时触发GestureDetector的onTap
-                      // 但仍然设置为活动Chapter
-                      widget.editorBloc.add(SetActiveChapter(
-                        actId: widget.actId,
-                        chapterId: widget.chapterId,
-                      ));
+                      try {
+                        widget.editorBloc.add(UpdateChapterTitle(
+                          actId: widget.actId,
+                          chapterId: widget.chapterId,
+                          title: value,
+                        ));
+                      } catch (e) {
+                        AppLogger.e('ChapterSection', '更新章节标题失败', e);
+                      }
                     },
                   ),
                 ),
@@ -116,10 +106,10 @@ class _ChapterSectionState extends State<ChapterSection> {
               ],
             ),
           ),
-          
+
           // 场景列表
           ...widget.scenes,
-          
+
           // 添加新场景按钮
           _AddSceneButton(
             actId: widget.actId,
@@ -149,14 +139,25 @@ class _AddSceneButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 16.0),
         child: TextButton.icon(
           onPressed: () {
-            print('添加新Scene按钮被点击: actId=$actId, chapterId=$chapterId');
-            // 触发添加新Scene事件
-            editorBloc.add(AddNewScene(
-              novelId: editorBloc.novelId,
+            final newSceneId = 'scene_${DateTime.now().millisecondsSinceEpoch}';
+            AppLogger.i('Editor', '添加新Scene按钮被点击: actId=$actId, chapterId=$chapterId, sceneId=$newSceneId');
+            
+            // 先设置活动章节，确保状态正确
+            editorBloc.add(SetActiveChapter(
               actId: actId,
-              chapterId: chapterId,
-              sceneId: 'scene_${DateTime.now().millisecondsSinceEpoch}', // 生成临时的sceneId
+              chapterId: chapterId
             ));
+            
+            // 延迟一帧后再添加场景，确保活动章节状态已更新
+            Future.microtask(() {
+              // 触发添加新Scene事件
+              editorBloc.add(AddNewScene(
+                novelId: editorBloc.novelId,
+                actId: actId,
+                chapterId: chapterId,
+                sceneId: newSceneId,
+              ));
+            });
           },
           icon: const Icon(Icons.add),
           label: const Text('New Scene'),

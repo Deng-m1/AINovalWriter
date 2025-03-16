@@ -11,6 +11,27 @@ class EditorToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 处理无效控制器情况
+    if (controller.document.isEmpty() && controller.document.length == 0) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        height: 48,
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        alignment: Alignment.centerLeft,
+        child: const Text('编辑器工具栏加载中...'),
+      );
+    }
+    
     // 构建基础工具栏
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8),
