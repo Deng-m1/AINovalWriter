@@ -18,7 +18,7 @@ class NovelListScreen extends StatefulWidget {
 class _NovelListScreenState extends State<NovelListScreen> {
   bool _isGridView = true;
   final TextEditingController _searchController = TextEditingController();
-  
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -28,321 +28,651 @@ class _NovelListScreenState extends State<NovelListScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    
+    final theme = Theme.of(context);
+    final screenSize = MediaQuery.of(context).size;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            const Icon(Icons.book, size: 40),
-            const SizedBox(width: 10),
-            Text(l10n.homeTitle),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.help_outline),
-            onPressed: () {
-              // TODO: 显示帮助信息
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: Stack(
         children: [
-          // 标题区域
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Text(
-              '你的小说',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+          Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/images/background.jpg'),
+                fit: BoxFit.cover,
+              ),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.blueGrey.shade50,
+                  Colors.grey.shade100,
+                ],
               ),
             ),
           ),
           
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              '这是你的个人小说库，你想今天写哪一部？',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              color: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: const Text(
+                '您的试用期已过期。请升级账户以继续编辑。只读访问仍然可用。→',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                ),
               ),
             ),
           ),
           
-          // 最近编辑区域
-          _buildContinueWritingSection(),
-          
-          // 搜索和过滤栏
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: '搜索名称/系列...',
-                      prefixIcon: const Icon(Icons.search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
+            padding: const EdgeInsets.only(top: 16),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: screenSize.width * 0.5,
+                  maxHeight: screenSize.height * 0.75,
+                ),
+                child: Card(
+                  elevation: 8,
+                  margin: const EdgeInsets.symmetric(vertical: 24),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16.0),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              offset: const Offset(0, 2),
+                              blurRadius: 4,
+                            ),
+                          ],
+                          border: Border(
+                            bottom: BorderSide(
+                              color: Colors.grey.shade200,
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary.withOpacity(0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.menu_book,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Text(
+                                  '你的小说',
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: () {
+                                    // TODO: 导入小说
+                                  },
+                                  icon: const Icon(Icons.file_upload),
+                                  label: const Text('导入'),
+                                  style: ElevatedButton.styleFrom(
+                                    elevation: 0,
+                                    backgroundColor: Colors.grey.shade200,
+                                    foregroundColor: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                ElevatedButton.icon(
+                                  onPressed: () => _showCreateNovelDialog(),
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('创建小说'),
+                                  style: ElevatedButton.styleFrom(
+                                    elevation: 0,
+                                    backgroundColor: theme.colorScheme.primary,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                    ),
-                    onChanged: (query) {
-                      context.read<NovelListBloc>().add(SearchNovels(query: query));
-                    },
+                      
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                        color: Colors.white,
+                        child: const Text(
+                          '这是你的个人小说库，你想今天写哪一部？',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                      
+                      _buildContinueWritingSection(),
+                      
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border(
+                            top: BorderSide(
+                              color: Colors.grey.shade200,
+                              width: 1,
+                            ),
+                            bottom: BorderSide(
+                              color: Colors.grey.shade200,
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                child: TextField(
+                                  controller: _searchController,
+                                  decoration: InputDecoration(
+                                    hintText: '搜索名称/系列...',
+                                    prefixIcon: const Icon(Icons.search, color: Colors.grey, size: 20),
+                                    border: InputBorder.none,
+                                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                                  ),
+                                  onChanged: (query) {
+                                    context.read<NovelListBloc>().add(SearchNovels(query: query));
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Row(
+                              children: [
+                                _buildFilterButton(
+                                  label: '过滤',
+                                  icon: Icons.filter_list,
+                                  onPressed: () {
+                                    // TODO: 显示过滤选项
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                _buildFilterButton(
+                                  label: '排序',
+                                  icon: Icons.sort,
+                                  onPressed: () {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('排序功能将在下一个迭代中实现')),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                _buildFilterButton(
+                                  label: '分组',
+                                  icon: Icons.group_work,
+                                  onPressed: () {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('分组功能将在下一个迭代中实现')),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey.shade300),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      InkWell(
+                                        onTap: () {
+                                          setState(() {
+                                            _isGridView = true;
+                                          });
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(6),
+                                          color: _isGridView ? Colors.grey.shade200 : Colors.transparent,
+                                          child: Icon(
+                                            Icons.grid_view,
+                                            size: 18,
+                                            color: _isGridView ? theme.colorScheme.primary : Colors.grey,
+                                          ),
+                                        ),
+                                      ),
+                                      InkWell(
+                                        onTap: () {
+                                          setState(() {
+                                            _isGridView = false;
+                                          });
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(6),
+                                          color: !_isGridView ? Colors.grey.shade200 : Colors.transparent,
+                                          child: Icon(
+                                            Icons.view_list,
+                                            size: 18,
+                                            color: !_isGridView ? theme.colorScheme.primary : Colors.grey,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      Expanded(
+                        child: Container(
+                          color: Colors.white,
+                          child: BlocBuilder<NovelListBloc, NovelListState>(
+                            builder: (context, state) {
+                              if (state is NovelListInitial) {
+                                context.read<NovelListBloc>().add(LoadNovels());
+                                return const Center(child: CircularProgressIndicator());
+                              } else if (state is NovelListLoading) {
+                                return const Center(child: CircularProgressIndicator());
+                              } else if (state is NovelListLoaded) {
+                                if (state.novels.isEmpty) {
+                                  return _buildEmptyState();
+                                }
+                                
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                                      child: Row(
+                                        children: [
+                                          const Text(
+                                            '无系列',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '${state.novels.length} 本书',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: _isGridView
+                                          ? _buildNovelGrid(state.novels,
+                                              contentPadding: const EdgeInsets.all(16))
+                                          : _buildNovelListView(state.novels,
+                                              contentPadding: const EdgeInsets.all(16)),
+                                    ),
+                                  ],
+                                );
+                              } else if (state is NovelListError) {
+                                return NovelListErrorView(
+                                  message: state.message,
+                                  onRetry: () {
+                                    context.read<NovelListBloc>().add(LoadNovels());
+                                  },
+                                );
+                              }
+                              return const Center(child: CircularProgressIndicator());
+                            },
+                          ),
+                        ),
+                      ),
+                      
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border(
+                            top: BorderSide(
+                              color: Colors.grey.shade200,
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Build Alpha1',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Released ${DateFormatter.formatDate(DateTime.now())}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                
-                // 过滤按钮
-                IconButton(
-                  icon: const Icon(Icons.filter_list),
-                  onPressed: () {
-                    // TODO: 显示过滤选项
-                  },
-                ),
-                
-                // 排序按钮
-                IconButton(
-                  icon: const Icon(Icons.sort),
-                  onPressed: () {
-                    // 简化为仅显示提示
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('排序功能将在下一个迭代中实现')),
-                    );
-                  },
-                ),
-                
-                // 分组按钮
-                IconButton(
-                  icon: const Icon(Icons.group_work),
-                  onPressed: () {
-                    // 简化为仅显示提示
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('分组功能将在下一个迭代中实现')),
-                    );
-                  },
-                ),
-                
-                // 视图切换按钮
-                IconButton(
-                  icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view),
-                  onPressed: () {
-                    setState(() {
-                      _isGridView = !_isGridView;
-                    });
-                  },
-                ),
-              ],
+              ),
             ),
-          ),
-          
-          // 小说列表
-          Expanded(
-            child: BlocBuilder<NovelListBloc, NovelListState>(
-              builder: (context, state) {
-                if (state is NovelListInitial) {
-                  // 触发加载小说列表事件
-                  context.read<NovelListBloc>().add(LoadNovels());
-                  return const Center(child: CircularProgressIndicator());
-                } else if (state is NovelListLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                } else if (state is NovelListLoaded) {
-                  if (state.novels.isEmpty) {
-                    return const Center(
-                      child: Text('没有找到小说，创建一部新的吧！'),
-                    );
-                  }
-                  
-                  // 简化为不分组显示
-                  return _isGridView
-                      ? _buildNovelGrid(state.novels)
-                      : _buildNovelListView(state.novels);
-                } else if (state is NovelListError) {
-                  return NovelListErrorView(
-                    message: state.message,
-                    onRetry: () {
-                      context.read<NovelListBloc>().add(LoadNovels());
-                    },
-                  );
-                }
-                
-                return const Center(child: CircularProgressIndicator());
-              },
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 导入按钮
-          FloatingActionButton.extended(
-            heroTag: 'import',
-            onPressed: () {
-              // TODO: 导入小说
-            },
-            label: const Text('导入'),
-            icon: const Icon(Icons.file_upload),
-          ),
-          const SizedBox(width: 16),
-          
-          // 创建按钮
-          FloatingActionButton.extended(
-            heroTag: 'create',
-            onPressed: () => _showCreateNovelDialog(),
-            label: const Text('创建小说'),
-            icon: const Icon(Icons.add),
           ),
         ],
       ),
     );
   }
-  
-  // 继续写作区域
+
+  Widget _buildFilterButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: Colors.grey.shade700),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade800,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.auto_stories,
+            size: 80,
+            color: Colors.grey.shade300,
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            '没有找到小说',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '点击"创建小说"按钮开始您的写作之旅',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () => _showCreateNovelDialog(),
+            icon: const Icon(Icons.add),
+            label: const Text('创建小说'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              textStyle: const TextStyle(fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildContinueWritingSection() {
     return BlocBuilder<NovelListBloc, NovelListState>(
       builder: (context, state) {
         if (state is NovelListLoaded && state.novels.isNotEmpty) {
-          // 获取最近编辑的3部小说
           final recentNovels = List<NovelSummary>.from(state.novels)
             ..sort((a, b) => b.lastEditTime.compareTo(a.lastEditTime));
-          
+
           if (recentNovels.length > 3) {
             recentNovels.removeRange(3, recentNovels.length);
           }
-          
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Text(
-                  '继续写作',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              
-              SizedBox(
-                height: 100,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: recentNovels.length,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemBuilder: (context, index) {
-                    final novel = recentNovels[index];
-                    return Card(
-                      margin: const EdgeInsets.only(right: 16),
-                      child: InkWell(
-                        onTap: () => _navigateToEditor(novel),
-                        child: Container(
-                          width: 250,
-                          padding: const EdgeInsets.all(12),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 60,
-                                height: 80,
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade300,
-                                  borderRadius: BorderRadius.circular(4),
-                                  image: novel.coverImagePath.isNotEmpty
-                                      ? DecorationImage(
-                                          image: AssetImage(novel.coverImagePath),
-                                          fit: BoxFit.cover,
-                                        )
-                                      : null,
-                                ),
-                                child: novel.coverImagePath.isEmpty
-                                    ? const Icon(Icons.book, size: 30)
-                                    : null,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      novel.title,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '上次编辑于 ${DateFormatter.formatRelative(novel.lastEditTime)}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${novel.wordCount} 字',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+
+          return Container(
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.edit_note,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
-                    );
-                  },
+                      const SizedBox(width: 12),
+                      const Text(
+                        '继续写作',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 150),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    scrollDirection: Axis.horizontal,
+                    itemCount: recentNovels.length,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    itemBuilder: (context, index) {
+                      final novel = recentNovels[index];
+                      return Container(
+                        width: 300,
+                        margin: const EdgeInsets.only(left: 4, right: 16),
+                        child: Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () => _navigateToEditor(novel),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 100,
+                                  height: double.infinity,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade200,
+                                    image: novel.coverImagePath.isNotEmpty
+                                        ? DecorationImage(
+                                            image: AssetImage(
+                                                novel.coverImagePath),
+                                            fit: BoxFit.cover,
+                                          )
+                                        : null,
+                                  ),
+                                  child: novel.coverImagePath.isEmpty
+                                      ? const Icon(Icons.auto_stories,
+                                          size: 40, color: Colors.grey)
+                                      : null,
+                                ),
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          novel.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 18,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.access_time,
+                                              size: 14,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '上次编辑于 ${DateFormatter.formatRelative(novel.lastEditTime)}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.text_fields,
+                                              size: 14,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '${novel.wordCount} 字',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 12),
+                                        LinearProgressIndicator(
+                                          value: novel.completionPercentage,
+                                          backgroundColor: Colors.grey.shade200,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                          borderRadius:
+                                              BorderRadius.circular(2),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Flexible(
+                                          child: Text(
+                                            '完成度: ${(novel.completionPercentage * 100).toInt()}%',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                            maxLines: 1,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           );
         }
-        
+
         return const SizedBox.shrink();
       },
     );
   }
-  
-  // 构建网格视图
-  Widget _buildNovelGrid(List<NovelSummary> novels, {Axis scrollDirection = Axis.vertical}) {
-    if (scrollDirection == Axis.horizontal) {
-      return ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: novels.length,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemBuilder: (context, index) {
-          return SizedBox(
-            width: 150,
-            child: NovelCard(
-              novel: novels[index],
-              onTap: () => _navigateToEditor(novels[index]),
-              isGridView: true,
-            ),
-          );
-        },
-      );
-    }
-    
+
+  Widget _buildNovelGrid(List<NovelSummary> novels,
+      {EdgeInsetsGeometry contentPadding = const EdgeInsets.all(16)}) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final availableWidth = screenWidth * 0.5 - (contentPadding.horizontal / 2);
+    final crossAxisCount = (availableWidth / 130).floor().clamp(2, 6);
+
     return GridView.builder(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.7,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        childAspectRatio: 0.75,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
       ),
-      padding: const EdgeInsets.all(16),
+      padding: contentPadding,
       itemCount: novels.length,
       itemBuilder: (context, index) {
         return NovelCard(
@@ -353,12 +683,12 @@ class _NovelListScreenState extends State<NovelListScreen> {
       },
     );
   }
-  
-  // 构建列表视图
-  Widget _buildNovelListView(List<NovelSummary> novels) {
+
+  Widget _buildNovelListView(List<NovelSummary> novels,
+      {EdgeInsetsGeometry contentPadding = const EdgeInsets.all(16)}) {
     return ListView.builder(
       itemCount: novels.length,
-      padding: const EdgeInsets.all(16),
+      padding: contentPadding,
       itemBuilder: (context, index) {
         return NovelCard(
           novel: novels[index],
@@ -368,8 +698,7 @@ class _NovelListScreenState extends State<NovelListScreen> {
       },
     );
   }
-  
-  // 导航到编辑器
+
   void _navigateToEditor(NovelSummary novel) {
     Navigator.push(
       context,
@@ -378,13 +707,12 @@ class _NovelListScreenState extends State<NovelListScreen> {
       ),
     );
   }
-  
-  // 创建新小说对话框
+
   void _showCreateNovelDialog() {
     final TextEditingController titleController = TextEditingController();
     final TextEditingController seriesController = TextEditingController();
     final l10n = AppLocalizations.of(context)!;
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -419,15 +747,14 @@ class _NovelListScreenState extends State<NovelListScreen> {
             onPressed: () {
               final title = titleController.text.trim();
               final series = seriesController.text.trim();
-              
+
               if (title.isNotEmpty) {
                 Navigator.pop(context);
-                
-                // 使用BlocProvider提供的NovelListBloc来创建小说
+
                 context.read<NovelListBloc>().add(CreateNovel(
-                  title: title,
-                  seriesName: series.isNotEmpty ? series : null,
-                ));
+                      title: title,
+                      seriesName: series.isNotEmpty ? series : null,
+                    ));
               }
             },
             child: Text(l10n.create),
@@ -436,4 +763,4 @@ class _NovelListScreenState extends State<NovelListScreen> {
       ),
     );
   }
-} 
+}

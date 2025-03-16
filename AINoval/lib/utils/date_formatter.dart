@@ -40,4 +40,31 @@ class DateFormatter {
   static String formatFull(DateTime date) {
     return DateFormat('yyyy年MM月dd日 HH:mm').format(date);
   }
+
+  static String formatDate(DateTime date) {
+    final months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                   'July', 'August', 'September', 'October', 'November', 'December'];
+    final day = date.day;
+    final month = months[date.month - 1];
+    final year = date.year;
+    final hour = date.hour;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final hour12 = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+    
+    return '$month ${_getOrdinal(day)}, $year at $hour12:$minute $period';
+  }
+
+  static String _getOrdinal(int day) {
+    if (day >= 11 && day <= 13) {
+      return '${day}th';
+    }
+    
+    switch (day % 10) {
+      case 1: return '${day}st';
+      case 2: return '${day}nd';
+      case 3: return '${day}rd';
+      default: return '${day}th';
+    }
+  }
 } 

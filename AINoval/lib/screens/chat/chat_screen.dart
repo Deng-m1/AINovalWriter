@@ -6,6 +6,7 @@ import '../../blocs/chat/chat_bloc.dart';
 import '../../blocs/chat/chat_event.dart';
 import '../../blocs/chat/chat_state.dart';
 import '../../models/chat_models.dart';
+import '../../utils/logger.dart';
 import 'widgets/chat_input.dart';
 import 'widgets/chat_message_bubble.dart';
 import 'widgets/context_panel.dart';
@@ -183,41 +184,112 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: BlocConsumer<ChatBloc, ChatState>(
         listener: (context, state) {
-          if (state is ChatSessionActive) {
-            // 当新消息添加时，滚动到底部
+           // --- SnackBar 错误提示 ---
+           if (state is ChatSessionsLoaded && state.error != null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                 SnackBar(content: Text(state.error!), backgroundColor: Colors.red),
+              );
+           }
+           if (state is ChatSessionActive && state.error != null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                 SnackBar(content: Text(state.error!), backgroundColor: Colors.red),
+              );
+            }
+           // --- 滚动逻辑 ---
+          if (state is ChatSessionActive && !state.isLoadingHistory) {
+            // 当新消息添加或流式更新时，滚动到底部
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _scrollToBottom();
             });
           }
         },
+         // --- buildWhen 优化 ---
+         buildWhen: (previous, current) {
+           // 允许从加载到加载完成的状态转换
+            if (previous is ChatSessionsLoading && current is ChatSessionsLoaded) return true;
+            if (previous is ChatSessionsLoaded && current is ChatSessionsLoading) return true;
+            if (previous is ChatSessionLoading && current is ChatSessionActive) return true;
+            if (previous is ChatSessionActive && current is ChatSessionLoading) return true;
+           // 允许在 ChatSessionActive 状态内部更新
+            if (previous is ChatSessionActive && current is ChatSessionActive) {
+              return previous.session != current.session ||
+                     previous.messages.length != current.messages.length ||
+                     previous.messages != current.messages || // 浅比较
+                     previous.isGenerating != current.isGenerating ||
+                     previous.isLoadingHistory != current.isLoadingHistory ||
+                     previous.error != current.error;
+            }
+           // 允许在 ChatSessionsLoaded 状态内部更新
+            if (previous is ChatSessionsLoaded && current is ChatSessionsLoaded) {
+               return previous.sessions != current.sessions ||
+                      previous.error != current.error;
+            }
+            // 允许错误状态和初始状态
+            if (current is ChatError) return true;
+            if (current is ChatInitial) return true;
+
+             return previous.runtimeType != current.runtimeType; // 默认状态类型变化时重建
+         },
         builder: (context, state) {
-          if (state is ChatSessionsLoading) {
+           AppLogger.d('ChatScreen builder', 'Building UI for state: ${state.runtimeType}');
+           // --- 加载状态 ---
+          if (state is ChatSessionsLoading || state is ChatSessionLoading) {
             return const Center(child: CircularProgressIndicator());
-          } else if (state is ChatSessionsLoaded) {
-            return _buildSessionsList(state.sessions);
-          } else if (state is ChatSessionLoading) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (state is ChatSessionActive) {
+          }
+           // --- 会话列表 ---
+          else if (state is ChatSessionsLoaded) {
+            // _buildSessionsList 会处理空列表
+            return _buildSessionsList(state); // 传递整个state以便访问error
+          }
+           // --- 活动会话 ---
+          else if (state is ChatSessionActive) {
             return _buildChatView(state);
-          } else if (state is ChatError) {
-            return Center(child: Text('错误: ${state.message}'));
-          } else {
-            return const Center(child: Text('选择或创建一个会话开始聊天'));
+          }
+           // --- 错误状态 ---
+          else if (state is ChatError) {
+            return Center(
+               child: Padding(
+                 padding: const EdgeInsets.all(16.0),
+                 child: Text('错误: ${state.message}', style: TextStyle(color: Colors.red)),
+               ),
+             );
+          }
+           // --- 初始状态 ---
+          else {
+            // 可以显示提示或触发加载
+            // context.read<ChatBloc>().add(LoadChatSessions(novelId: widget.novelId));
+            return Center(
+               child: Column(
+                 mainAxisAlignment: MainAxisAlignment.center,
+                 children: [
+                    const Text('选择或创建一个会话开始聊天'),
+                    const SizedBox(height: 16),
+                    ElevatedButton(onPressed: _createNewSession, child: const Text('创建新会话')),
+                 ],
+               ),
+            );
           }
         },
       ),
     );
   }
   
-  // 构建会话列表
-  Widget _buildSessionsList(List<ChatSession> sessions) {
+  // 构建会话列表 - 修改为接收 state
+  Widget _buildSessionsList(ChatSessionsLoaded state) {
+    final sessions = state.sessions;
     if (sessions.isEmpty) {
+      // 处理空列表
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text('没有聊天会话'),
             const SizedBox(height: 16),
+            // 可以显示错误信息
+            if (state.error != null) Padding(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: Text(state.error!, style: TextStyle(color: Colors.red)),
+            ),
             ElevatedButton(
               onPressed: _createNewSession,
               child: const Text('创建新会话'),
@@ -226,54 +298,72 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
     }
-    
-    return ListView.builder(
-      itemCount: sessions.length,
-      itemBuilder: (context, index) {
-        final session = sessions[index];
-        return ListTile(
-          title: Text(session.title),
-          subtitle: Text(
-            session.messages.isNotEmpty
-                ? session.messages.last.content.length > 50
-                    ? '${session.messages.last.content.substring(0, 50)}...'
-                    : session.messages.last.content
-                : '无消息',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+
+    return Column(
+      children: [
+        // 显示列表加载错误
+         if (state.error != null) Padding(
+           padding: const EdgeInsets.all(8.0),
+           child: Text(state.error!, style: TextStyle(color: Colors.red)),
+         ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: sessions.length,
+            itemBuilder: (context, index) {
+              final session = sessions[index];
+              // ListTile 内容保持不变
+              return ListTile(
+                title: Text(session.title),
+                subtitle: Text(
+                  '消息数: ${session.messageCount ?? 'N/A'} | 更新于: ${DateFormat('yyyy-MM-dd HH:mm').format(session.lastUpdatedAt)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                onTap: () => _selectSession(session.id),
+                  // 可以加入选中高亮
+                 selected: /* Add logic to check if this session is the active one */ false,
+              );
+            },
           ),
-          trailing: Text(
-            DateFormat('MM-dd HH:mm').format(session.lastUpdatedAt),
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          onTap: () => _selectSession(session.id),
-        );
-      },
+        ),
+      ],
     );
   }
   
-  // 构建聊天视图
+  // 构建聊天视图 - 修改以处理 isLoadingHistory
   Widget _buildChatView(ChatSessionActive state) {
     return Row(
       children: [
         // 聊天主界面
         Expanded(
-          flex: 3,
+          flex: _isContextPanelExpanded ? 2 : 3,
           child: Column(
             children: [
+               // 显示历史加载指示器
+               if (state.isLoadingHistory)
+                 const Padding(
+                   padding: EdgeInsets.symmetric(vertical: 8.0),
+                   child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+                 ),
+               // 显示错误信息 (如果不用SnackBar的话)
+               // if (state.error != null && !state.isLoadingHistory)
+               //   Padding(...),
               // 消息列表
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  itemCount: state.session.messages.length + (state.isGenerating ? 1 : 0),
+                  // itemCount 保持不变
+                  itemCount: state.messages.length + (state.isGenerating && !state.isLoadingHistory ? 1 : 0),
                   itemBuilder: (context, index) {
-                    // 如果是最后一项且正在生成，显示打字指示器
-                    if (state.isGenerating && index == state.session.messages.length) {
+                    // 打字指示器逻辑保持不变
+                    if (state.isGenerating && !state.isLoadingHistory && index == state.messages.length) {
                       return const TypingIndicator();
                     }
-                    
-                    final message = state.session.messages[index];
+
+                    final message = state.messages[index];
+                    // ChatMessageBubble 逻辑保持不变
                     return ChatMessageBubble(
                       message: message,
                       onActionSelected: _executeAction,
@@ -281,8 +371,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   },
                 ),
               ),
-              
-              // 输入框
+
+              // 输入框逻辑保持不变
               ChatInput(
                 controller: _messageController,
                 onSend: _sendMessage,
@@ -294,8 +384,8 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
         ),
-        
-        // 上下文面板
+
+        // 上下文面板逻辑保持不变
         if (_isContextPanelExpanded)
           Expanded(
             flex: 1,
@@ -315,29 +405,46 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (context) => AlertDialog(
         title: const Text('会话列表'),
         content: BlocBuilder<ChatBloc, ChatState>(
+          // 仅在 ChatSessionsLoaded 状态下构建列表
+          buildWhen: (prev, curr) => curr is ChatSessionsLoaded || curr is ChatSessionsLoading,
           builder: (context, state) {
             if (state is ChatSessionsLoaded) {
               return SizedBox(
                 width: double.maxFinite,
                 height: 300,
-                child: ListView.builder(
-                  itemCount: state.sessions.length,
-                  itemBuilder: (context, index) {
-                    final session = state.sessions[index];
-                    return ListTile(
-                      title: Text(session.title),
-                      subtitle: Text(
-                        DateFormat('yyyy-MM-dd HH:mm').format(session.lastUpdatedAt),
-                      ),
-                      onTap: () {
-                        _selectSession(session.id);
-                        Navigator.pop(context);
-                      },
-                    );
-                  },
+                child: Column( // Wrap ListView in Column to show error
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                     // 显示错误
+                     if (state.error != null) Padding(
+                       padding: const EdgeInsets.only(bottom: 8.0),
+                       child: Text(state.error!, style: TextStyle(color: Colors.red)),
+                     ),
+                    Expanded(
+                      child: state.sessions.isEmpty
+                       ? const Center(child: Text("没有会话")) // 处理空列表
+                       : ListView.builder(
+                          shrinkWrap: true, // Important inside Column
+                          itemCount: state.sessions.length,
+                          itemBuilder: (context, index) {
+                            final session = state.sessions[index];
+                            return ListTile(
+                              title: Text(session.title),
+                              subtitle: Text(
+                                DateFormat('yyyy-MM-dd HH:mm').format(session.lastUpdatedAt),
+                              ),
+                              onTap: () {
+                                _selectSession(session.id);
+                                Navigator.pop(context); // Close dialog
+                              },
+                            );
+                          },
+                        ),
+                    ),
+                  ],
                 ),
               );
-            } else {
+            } else { // Handle ChatSessionsLoading or other states
               return const SizedBox(
                 height: 100,
                 child: Center(child: CircularProgressIndicator()),
@@ -352,8 +459,9 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           TextButton(
             onPressed: () {
+              Navigator.pop(context); // Close current dialog first
+              // _createNewSession will show another dialog
               _createNewSession();
-              Navigator.pop(context);
             },
             child: const Text('新建会话'),
           ),

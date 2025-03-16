@@ -100,13 +100,13 @@ class ChatMessageBubble extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (message.status == MessageStatus.pending)
-                      _buildLoadingIndicator(context)
-                    else if (message.status == MessageStatus.error)
+                    if (message.status == MessageStatus.error)
                       _buildErrorMessage(context)
                     else
                       MarkdownBody(
-                        data: message.content,
+                        data: message.content.isEmpty && message.status == MessageStatus.pending
+                              ? "思考中..."
+                              : message.content,
                         styleSheet: MarkdownStyleSheet(
                           p: Theme.of(context).textTheme.bodyMedium,
                           h1: Theme.of(context).textTheme.titleLarge,
@@ -154,29 +154,6 @@ class ChatMessageBubble extends StatelessWidget {
           ),
         ),
         const Spacer(),
-      ],
-    );
-  }
-  
-  // 构建加载指示器
-  Widget _buildLoadingIndicator(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Theme.of(context).colorScheme.secondary,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          '正在生成回复...',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-          ),
-        ),
       ],
     );
   }

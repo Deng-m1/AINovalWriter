@@ -5,7 +5,6 @@ import 'package:ainoval/services/api_service/api_service_factory.dart';
 import 'package:ainoval/services/api_service/repositories/chat_repository.dart';
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/api_service/repositories/novel_repository.dart';
-import 'package:ainoval/services/api_service/base/api_exception.dart';
 
 /// API服务类
 /// 
@@ -96,42 +95,86 @@ class ApiService {
   
   // ==================== 聊天相关操作 ====================
   
-  /// 获取聊天会话列表
-  Future<List<ChatSession>> fetchChatSessions(String novelId) {
-    return _chatRepository.fetchChatSessions(novelId);
+  /// 获取用户的所有会话
+  Stream<ChatSession> fetchUserSessions(String userId) {
+    return _chatRepository.fetchUserSessions(userId);
   }
   
   /// 创建新的聊天会话
-  Future<ChatSession> createChatSession({
-    required String title,
+  Future<ChatSession> createSession({
+    required String userId,
     required String novelId,
-    String? chapterId,
+    String? modelName,
+    Map<String, dynamic>? metadata,
   }) {
-    return _chatRepository.createChatSession(
-      title: title,
+    return _chatRepository.createSession(
+      userId: userId,
       novelId: novelId,
-      chapterId: chapterId,
+      modelName: modelName,
+      metadata: metadata,
     );
   }
   
   /// 获取特定会话
-  Future<ChatSession> fetchChatSession(String sessionId) {
-    return _chatRepository.fetchChatSession(sessionId);
-  }
-  
-  /// 更新会话消息
-  Future<void> updateChatSessionMessages(String sessionId, List<ChatMessage> messages) {
-    return _chatRepository.updateChatSessionMessages(sessionId, messages);
+  Future<ChatSession> getSession(String userId, String sessionId) {
+    return _chatRepository.getSession(userId, sessionId);
   }
   
   /// 更新会话
-  Future<void> updateChatSession(ChatSession session) {
-    return _chatRepository.updateChatSession(session);
+  Future<ChatSession> updateSession({
+    required String userId,
+    required String sessionId,
+    required Map<String, dynamic> updates,
+  }) {
+    return _chatRepository.updateSession(
+      userId: userId,
+      sessionId: sessionId,
+      updates: updates,
+    );
   }
   
   /// 删除会话
-  Future<void> deleteChatSession(String sessionId) {
-    return _chatRepository.deleteChatSession(sessionId);
+  Future<void> deleteSession(String userId, String sessionId) {
+    return _chatRepository.deleteSession(userId, sessionId);
+  }
+  
+  /// 发送消息并获取响应
+  Future<ChatMessage> sendMessage({
+    required String userId,
+    required String sessionId,
+    required String content,
+    Map<String, dynamic>? metadata,
+  }) {
+    return _chatRepository.sendMessage(
+      userId: userId,
+      sessionId: sessionId,
+      content: content,
+      metadata: metadata,
+    );
+  }
+  
+  /// 流式发送消息并获取响应
+  Stream<ChatMessage> streamMessage({
+    required String userId,
+    required String sessionId,
+    required String content,
+    Map<String, dynamic>? metadata,
+  }) {
+    return _chatRepository.streamMessage(
+      userId: userId,
+      sessionId: sessionId,
+      content: content,
+      metadata: metadata,
+    );
+  }
+  
+  /// 获取会话消息历史
+  Stream<ChatMessage> getMessageHistory(
+    String userId, 
+    String sessionId, {
+    int limit = 100,
+  }) {
+    return _chatRepository.getMessageHistory(userId, sessionId, limit: limit);
   }
   
   // ==================== 编辑器相关操作 ====================

@@ -1,4 +1,3 @@
-import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/services/mock_data_service.dart';
 
@@ -55,19 +54,7 @@ class MockClient {
         }
         return _sceneToJson(scene);
       }
-    } else if (path.contains('/chats')) {
-      if (path.split('/').length > 2) {
-        // 获取单个聊天会话
-        final id = path.split('/').last;
-        final session = _mockService.getChatSession(id);
-        return session.toJson();
-      } else {
-        // 获取所有聊天会话
-        final novelId = path.split('/')[2];
-        return _mockService.getChatSessions(novelId)
-            .map((session) => session.toJson())
-            .toList();
-      }
+    
     }
     
     throw _createApiException(404, '未找到资源');
@@ -87,11 +74,7 @@ class MockClient {
       // 创建聊天会话
       if (data is Map<String, dynamic> && data.containsKey('title')) {
         final novelId = path.split('/')[2];
-        final session = _mockService.createChatSession(
-          title: data['title'],
-          novelId: novelId,
-          chapterId: data['chapterId'],
-        );
+        final session = null;
         return session.toJson();
       }
     }

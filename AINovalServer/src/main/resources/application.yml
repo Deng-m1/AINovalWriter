@@ -27,6 +27,7 @@ logging:
     org.springframework.data.mongodb: INFO
     org.springframework.web: INFO
     reactor.netty: INFO
+    com.ainovel.server: DEBUG
 
 management:
   endpoints:
@@ -56,6 +57,10 @@ ainovel:
       enabled: true
     monitoring:
       enabled: true
+  version-control:
+    enabled: true
+    auto-save-history: true
+    max-history-count: 20
 
 # 向量存储配置
 vectorstore:

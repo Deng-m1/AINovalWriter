@@ -1,5 +1,7 @@
 import 'package:intl/intl.dart';
 
+import '../utils/date_time_parser.dart';
+
 // 聊天会话模型
 class ChatSession {
   
@@ -8,32 +10,47 @@ class ChatSession {
     required this.title,
     required this.createdAt,
     required this.lastUpdatedAt,
-    required this.messages,
     required this.novelId,
     this.chapterId,
+    this.modelName,
+    this.status,
+    this.messageCount,
   });
   
   // 从JSON转换方法
   factory ChatSession.fromJson(Map<String, dynamic> json) {
+    // 辅助函数安全地获取和转换 String
+    String safeString(String key, [String defaultValue = '']) {
+      return json[key] as String? ?? defaultValue;
+    }
+    // 辅助函数安全地获取和解析 DateTime
+    DateTime safeDateTime(String key, DateTime defaultValue) {
+      final value = json[key] as String?;
+      return value != null ? (DateTime.tryParse(value) ?? defaultValue) : defaultValue;
+    }
+
     return ChatSession(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      lastUpdatedAt: DateTime.parse(json['lastUpdatedAt'] as String),
-      messages: (json['messages'] as List)
-          .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      novelId: json['novelId'] as String,
+      // 使用 sessionId 作为 id，并提供一个默认空字符串以防万一
+      id: safeString('sessionId'),
+      title: safeString('title', '无标题会话'),
+      createdAt: parseBackendDateTime(json['createdAt']),
+      lastUpdatedAt: parseBackendDateTime(json['updatedAt']),
+      novelId: safeString('novelId'),
       chapterId: json['chapterId'] as String?,
+      modelName: json['modelName'] as String?,
+      status: json['status'] as String?,
+      messageCount: (json['messageCount'] as num?)?.toInt() ?? 0,
     );
   }
   final String id;
   final String title;
   final DateTime createdAt;
   final DateTime lastUpdatedAt;
-  final List<ChatMessage> messages;
   final String novelId;
   final String? chapterId;
+  final String? modelName;
+  final String? status;
+  final int? messageCount;
   
   // 复制方法，用于创建会话的副本
   ChatSession copyWith({
@@ -41,18 +58,22 @@ class ChatSession {
     String? title,
     DateTime? createdAt,
     DateTime? lastUpdatedAt,
-    List<ChatMessage>? messages,
     String? novelId,
     String? chapterId,
+    String? modelName,
+    String? status,
+    int? messageCount,
   }) {
     return ChatSession(
       id: id ?? this.id,
       title: title ?? this.title,
       createdAt: createdAt ?? this.createdAt,
       lastUpdatedAt: lastUpdatedAt ?? this.lastUpdatedAt,
-      messages: messages ?? this.messages,
       novelId: novelId ?? this.novelId,
       chapterId: chapterId ?? this.chapterId,
+      modelName: modelName ?? this.modelName,
+      status: status ?? this.status,
+      messageCount: messageCount ?? this.messageCount,
     );
   }
   
@@ -63,9 +84,11 @@ class ChatSession {
       'title': title,
       'createdAt': createdAt.toIso8601String(),
       'lastUpdatedAt': lastUpdatedAt.toIso8601String(),
-      'messages': messages.map((e) => e.toJson()).toList(),
       'novelId': novelId,
       'chapterId': chapterId,
+      'modelName': modelName,
+      'status': status,
+      'messageCount': messageCount,
     };
   }
 }
@@ -80,26 +103,40 @@ class ChatMessage {
     required this.timestamp,
     this.status = MessageStatus.sent,
     this.actions,
+    this.sessionId,
+    this.userId,
+    this.novelId,
+    this.modelName,
+    this.metadata,
   });
   
   // 从JSON转换方法
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    List<MessageAction>? parsedActions;
+    if (json['metadata'] != null && json['metadata']['actions'] is List) {
+       parsedActions = (json['metadata']['actions'] as List)
+           .map((e) => MessageAction.fromJson(e as Map<String, dynamic>))
+           .toList();
+    }
+
     return ChatMessage(
       id: json['id'] as String,
       role: MessageRole.values.firstWhere(
-        (e) => e.toString() == 'MessageRole.${json['role']}',
+        (e) => e.name == (json['role'] as String?)?.toLowerCase(),
+        orElse: () => MessageRole.system,
       ),
       content: json['content'] as String,
-      timestamp: DateTime.parse(json['timestamp'] as String),
+      timestamp: parseBackendDateTime(json['createdAt']),
       status: MessageStatus.values.firstWhere(
-        (e) => e.toString() == 'MessageStatus.${json['status']}',
+        (e) => e.name == (json['status'] as String?)?.toLowerCase(),
         orElse: () => MessageStatus.sent,
       ),
-      actions: json['actions'] != null
-          ? (json['actions'] as List)
-              .map((e) => MessageAction.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : null,
+      actions: parsedActions,
+      sessionId: json['sessionId'] as String?,
+      userId: json['userId'] as String?,
+      novelId: json['novelId'] as String?,
+      modelName: json['modelName'] as String?,
+      metadata: json['metadata'] as Map<String, dynamic>?,
     );
   }
   final String id;
@@ -108,6 +145,11 @@ class ChatMessage {
   final DateTime timestamp;
   final MessageStatus status;
   final List<MessageAction>? actions;
+  final String? sessionId;
+  final String? userId;
+  final String? novelId;
+  final String? modelName;
+  final Map<String, dynamic>? metadata;
   
   // 复制方法
   ChatMessage copyWith({
@@ -117,6 +159,11 @@ class ChatMessage {
     DateTime? timestamp,
     MessageStatus? status,
     List<MessageAction>? actions,
+    String? sessionId,
+    String? userId,
+    String? novelId,
+    String? modelName,
+    Map<String, dynamic>? metadata,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -125,18 +172,32 @@ class ChatMessage {
       timestamp: timestamp ?? this.timestamp,
       status: status ?? this.status,
       actions: actions ?? this.actions,
+      sessionId: sessionId ?? this.sessionId,
+      userId: userId ?? this.userId,
+      novelId: novelId ?? this.novelId,
+      modelName: modelName ?? this.modelName,
+      metadata: metadata ?? this.metadata,
     );
   }
   
   // 转换为JSON方法
   Map<String, dynamic> toJson() {
+    final Map<String, dynamic> currentMetadata = Map.from(metadata ?? {});
+    if (actions != null) {
+      currentMetadata['actions'] = actions!.map((e) => e.toJson()).toList();
+    }
+    
     return {
       'id': id,
-      'role': role.toString().split('.').last,
+      'role': role.name,
       'content': content,
-      'timestamp': timestamp.toIso8601String(),
-      'status': status.toString().split('.').last,
-      'actions': actions?.map((e) => e.toJson()).toList(),
+      'createdAt': timestamp.toIso8601String(),
+      'status': status.name,
+      'sessionId': sessionId,
+      'userId': userId,
+      'novelId': novelId,
+      'modelName': modelName,
+      'metadata': currentMetadata.isEmpty ? null : currentMetadata,
     };
   }
   
@@ -160,6 +221,9 @@ enum MessageStatus {
   sent,
   error,
   pending,
+  delivered,
+  read,
+  streaming,
 }
 
 // 消息关联操作
@@ -315,35 +379,4 @@ enum ContextItemType {
   scene,
   note,
   lore,
-}
-
-// AI回复模型
-class AIChatResponse {
-  
-  AIChatResponse({
-    required this.content,
-    this.actions = const [],
-  });
-  
-  // 从JSON转换方法
-  factory AIChatResponse.fromJson(Map<String, dynamic> json) {
-    return AIChatResponse(
-      content: json['content'] as String,
-      actions: json['actions'] != null
-          ? (json['actions'] as List)
-              .map((e) => MessageAction.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : [],
-    );
-  }
-  final String content;
-  final List<MessageAction> actions;
-  
-  // 转换为JSON方法
-  Map<String, dynamic> toJson() {
-    return {
-      'content': content,
-      'actions': actions.map((e) => e.toJson()).toList(),
-    };
-  }
 } 
