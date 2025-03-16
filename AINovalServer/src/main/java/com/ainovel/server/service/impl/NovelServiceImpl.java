@@ -2,7 +2,9 @@ package com.ainovel.server.service.impl;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -15,6 +17,7 @@ import com.ainovel.server.domain.model.Setting;
 import com.ainovel.server.repository.NovelRepository;
 import com.ainovel.server.repository.SceneRepository;
 import com.ainovel.server.service.NovelService;
+import com.ainovel.server.web.dto.NovelWithScenesDto;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -209,5 +212,45 @@ public class NovelServiceImpl implements NovelService {
         
         // 提取前后n章的ID
         return allChapterIds.subList(startIndex, endIndex + 1);
+    }
+    
+    @Override
+    public Mono<NovelWithScenesDto> getNovelWithAllScenes(String novelId) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取所有章节ID
+                    List<String> allChapterIds = new ArrayList<>();
+                    for (Novel.Act act : novel.getStructure().getActs()) {
+                        for (Novel.Chapter chapter : act.getChapters()) {
+                            allChapterIds.add(chapter.getId());
+                        }
+                    }
+                    
+                    // 如果没有章节，直接返回只有小说信息的DTO
+                    if (allChapterIds.isEmpty()) {
+                        return Mono.just(NovelWithScenesDto.builder()
+                                .novel(novel)
+                                .scenesByChapter(new HashMap<>())
+                                .build());
+                    }
+                    
+                    // 查询所有场景并按章节分组
+                    return sceneRepository.findByNovelId(novelId)
+                            .collectList()
+                            .map(scenes -> {
+                                // 按章节ID分组
+                                Map<String, List<Scene>> scenesByChapter = scenes.stream()
+                                        .collect(Collectors.groupingBy(Scene::getChapterId));
+                                
+                                // 构建并返回DTO
+                                return NovelWithScenesDto.builder()
+                                        .novel(novel)
+                                        .scenesByChapter(scenesByChapter)
+                                        .build();
+                            });
+                })
+                .doOnSuccess(dto -> log.info("获取小说及其所有场景成功，小说ID: {}, 章节数: {}", 
+                        novelId, dto.getScenesByChapter().size()));
     }
 } 

@@ -1,11 +1,7 @@
 package com.ainovel.server.web.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -13,7 +9,12 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ainovel.server.domain.model.User;
 import com.ainovel.server.domain.model.User.AIModelConfig;
 import com.ainovel.server.service.UserService;
+import com.ainovel.server.web.dto.AIModelConfigDto;
+import com.ainovel.server.web.dto.IdDto;
+import com.ainovel.server.web.dto.UserIdConfigIndexDto;
+import com.ainovel.server.web.dto.UserIdDto;
 import com.ainovel.server.web.dto.UserRegistrationRequest;
+import com.ainovel.server.web.dto.UserUpdateDto;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -22,18 +23,19 @@ import reactor.core.publisher.Mono;
  * 用户控制器
  */
 @RestController
-@RequestMapping("/users")
+@RequestMapping("/api/v1/users")
 public class UserController {
-    
+
     private final UserService userService;
-    
+
     @Autowired
     public UserController(UserService userService) {
         this.userService = userService;
     }
-    
+
     /**
      * 注册用户
+     * 
      * @param request 注册请求
      * @return 创建的用户
      */
@@ -45,106 +47,113 @@ public class UserController {
                 .email(request.getEmail())
                 .displayName(request.getDisplayName())
                 .build();
-        
+
         return userService.createUser(user);
     }
-    
+
     /**
      * 获取用户信息
-     * @param id 用户ID
+     * 
+     * @param idDto 包含用户ID的DTO
      * @return 用户信息
      */
-    @GetMapping("/{id}")
-    public Mono<User> getUserById(@PathVariable String id) {
-        return userService.findUserById(id);
+    @PostMapping("/get")
+    public Mono<User> getUserById(@RequestBody IdDto idDto) {
+        return userService.findUserById(idDto.getId());
     }
-    
+
     /**
      * 更新用户信息
-     * @param id 用户ID
-     * @param user 更新的用户信息
+     * 
+     * @param userUpdateDto 包含用户ID和更新信息的DTO
      * @return 更新后的用户
      */
-    @PutMapping("/{id}")
-    public Mono<User> updateUser(@PathVariable String id, @RequestBody User user) {
-        return userService.updateUser(id, user);
+    @PostMapping("/update")
+    public Mono<User> updateUser(@RequestBody UserUpdateDto userUpdateDto) {
+        return userService.updateUser(userUpdateDto.getId(), userUpdateDto.getUser());
     }
-    
+
     /**
      * 删除用户
-     * @param id 用户ID
+     * 
+     * @param idDto 包含用户ID的DTO
      * @return 操作结果
      */
-    @DeleteMapping("/{id}")
-    public Mono<Void> deleteUser(@PathVariable String id) {
-        return userService.deleteUser(id);
+    @PostMapping("/delete")
+    public Mono<Void> deleteUser(@RequestBody IdDto idDto) {
+        return userService.deleteUser(idDto.getId());
     }
-    
+
     /**
      * 获取用户的AI模型配置列表
-     * @param userId 用户ID
+     * 
+     * @param userIdDto 包含用户ID的DTO
      * @return AI模型配置列表
      */
-    @GetMapping("/{userId}/ai-models")
-    public Flux<AIModelConfig> getUserAIModels(@PathVariable String userId) {
-        return userService.getUserAIModelConfigs(userId);
+    @PostMapping("/get-ai-models")
+    public Flux<AIModelConfig> getUserAIModels(@RequestBody UserIdDto userIdDto) {
+        return userService.getUserAIModelConfigs(userIdDto.getUserId());
     }
-    
+
     /**
      * 获取用户的默认AI模型配置
-     * @param userId 用户ID
+     * 
+     * @param userIdDto 包含用户ID的DTO
      * @return 默认AI模型配置
      */
-    @GetMapping("/{userId}/ai-models/default")
-    public Mono<AIModelConfig> getUserDefaultAIModel(@PathVariable String userId) {
-        return userService.getUserDefaultAIModelConfig(userId);
+    @PostMapping("/get-default-ai-model")
+    public Mono<AIModelConfig> getUserDefaultAIModel(@RequestBody UserIdDto userIdDto) {
+        return userService.getUserDefaultAIModelConfig(userIdDto.getUserId());
     }
-    
+
     /**
      * 添加AI模型配置
-     * @param userId 用户ID
-     * @param config AI模型配置
+     * 
+     * @param aiModelConfigDto 包含用户ID和AI模型配置的DTO
      * @return 更新后的用户
      */
-    @PostMapping("/{userId}/ai-models")
-    public Mono<User> addAIModelConfig(@PathVariable String userId, @RequestBody AIModelConfig config) {
-        return userService.addAIModelConfig(userId, config);
+    @PostMapping("/add-ai-model")
+    public Mono<User> addAIModelConfig(@RequestBody AIModelConfigDto aiModelConfigDto) {
+        return userService.addAIModelConfig(aiModelConfigDto.getUserId(), aiModelConfigDto.getConfig());
     }
-    
+
     /**
      * 更新AI模型配置
-     * @param userId 用户ID
-     * @param configIndex 配置索引
-     * @param config 更新的AI模型配置
+     * 
+     * @param userIdConfigIndexDto 包含用户ID、配置索引和更新的AI模型配置的DTO
      * @return 更新后的用户
      */
-    @PutMapping("/{userId}/ai-models/{configIndex}")
-    public Mono<User> updateAIModelConfig(
-            @PathVariable String userId,
-            @PathVariable int configIndex,
-            @RequestBody AIModelConfig config) {
-        return userService.updateAIModelConfig(userId, configIndex, config);
+    @PostMapping("/update-ai-model")
+    public Mono<User> updateAIModelConfig(@RequestBody UserIdConfigIndexDto userIdConfigIndexDto) {
+        return userService.updateAIModelConfig(
+                userIdConfigIndexDto.getUserId(),
+                userIdConfigIndexDto.getConfigIndex(),
+                userIdConfigIndexDto.getConfig());
     }
-    
+
     /**
      * 删除AI模型配置
-     * @param userId 用户ID
-     * @param configIndex 配置索引
+     * 
+     * @param userIdConfigIndexDto 包含用户ID和配置索引的DTO
      * @return 更新后的用户
      */
-    @DeleteMapping("/{userId}/ai-models/{configIndex}")
-    public Mono<User> deleteAIModelConfig(@PathVariable String userId, @PathVariable int configIndex) {
-        return userService.deleteAIModelConfig(userId, configIndex);
+    @PostMapping("/delete-ai-model")
+    public Mono<User> deleteAIModelConfig(@RequestBody UserIdConfigIndexDto userIdConfigIndexDto) {
+        return userService.deleteAIModelConfig(
+                userIdConfigIndexDto.getUserId(),
+                userIdConfigIndexDto.getConfigIndex());
     }
-    
+
     /**
      * 设置默认AI模型配置
-     * @param userId 用户ID
-     * @param configIndex 配置索引
+     * 
+     * @param userIdConfigIndexDto 包含用户ID和配置索引的DTO
      * @return 更新后的用户
      */
-    @PostMapping("/{userId}/ai-models/{configIndex}/set-default")
-    public Mono<User> setDefaultAIModelConfig(@PathVariable String userId, @PathVariable int configIndex) {
-        return userService.setDefaultAIModelConfig(userId, configIndex);
+    @PostMapping("/set-default-ai-model")
+    public Mono<User> setDefaultAIModelConfig(@RequestBody UserIdConfigIndexDto userIdConfigIndexDto) {
+        return userService.setDefaultAIModelConfig(
+                userIdConfigIndexDto.getUserId(),
+                userIdConfigIndexDto.getConfigIndex());
     }
 }

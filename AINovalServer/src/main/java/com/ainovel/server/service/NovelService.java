@@ -6,6 +6,7 @@ import com.ainovel.server.domain.model.Character;
 import com.ainovel.server.domain.model.Novel;
 import com.ainovel.server.domain.model.Scene;
 import com.ainovel.server.domain.model.Setting;
+import com.ainovel.server.web.dto.NovelWithScenesDto;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -94,4 +95,11 @@ public interface NovelService {
      * @return 场景列表
      */
     Mono<List<Scene>> getChapterContextScenes(String novelId, String authorId);
+
+    /**
+     * 获取整本小说内容，包括小说基本信息及其所有场景
+     * @param novelId 小说ID
+     * @return 含小说及其所有场景数据的DTO
+     */
+    Mono<NovelWithScenesDto> getNovelWithAllScenes(String novelId);
 }
