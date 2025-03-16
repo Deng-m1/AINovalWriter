@@ -1,10 +1,11 @@
 import 'package:ainoval/config/app_config.dart';
-import 'package:ainoval/models/chat_models.dart';
 import 'package:ainoval/models/editor_content.dart';
 import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/mock_data_service.dart';
+import 'package:ainoval/utils/logger.dart';
+
 
 /// 编辑器仓库实现
 class EditorRepositoryImpl implements EditorRepository {
@@ -29,7 +30,7 @@ class EditorRepositoryImpl implements EditorRepository {
       final data = await _apiClient.get('/novels/$novelId/chapters/$chapterId/scenes/$sceneId/content');
       return EditorContent.fromJson(data);
     } catch (e) {
-      print('获取编辑器内容失败: $e');
+      AppLogger.e('Services/api_service/repositories/impl/editor_repository_impl', '获取编辑器内容失败', e);
       // 如果API请求失败，回退到模拟数据
       return _mockService.getEditorContent(novelId, chapterId, sceneId);
     }
@@ -56,7 +57,7 @@ class EditorRepositoryImpl implements EditorRepository {
       
       await _apiClient.put('/novels/$novelId/chapters/$chapterId/content', data: content.toJson());
     } catch (e) {
-      print('保存编辑器内容失败: $e');
+      AppLogger.e('Services/api_service/repositories/impl/editor_repository_impl', '保存编辑器内容失败', e);
       throw ApiException(-1, '保存编辑器内容失败: $e');
     }
   }
@@ -76,7 +77,7 @@ class EditorRepositoryImpl implements EditorRepository {
       }
       return [];
     } catch (e) {
-      print('获取修订历史失败: $e');
+      AppLogger.e('Services/api_service/repositories/impl/editor_repository_impl', '获取修订历史失败', e);
       // 如果API请求失败，回退到模拟数据
       return _mockService.getRevisionHistory(novelId, chapterId);
     }
@@ -97,7 +98,7 @@ class EditorRepositoryImpl implements EditorRepository {
           data: revision.toJson());
       return Revision.fromJson(data);
     } catch (e) {
-      print('创建修订版本失败: $e');
+      AppLogger.e('Services/api_service/repositories/impl/editor_repository_impl', '创建修订版本失败', e);
       throw ApiException(-1, '创建修订版本失败: $e');
     }
   }
@@ -115,7 +116,7 @@ class EditorRepositoryImpl implements EditorRepository {
     try {
       await _apiClient.post('/novels/$novelId/chapters/$chapterId/revisions/$revisionId/apply');
     } catch (e) {
-      print('应用修订版本失败: $e');
+      AppLogger.e('Services/api_service/repositories/impl/editor_repository_impl', '应用修订版本失败', e);
       throw ApiException(-1, '应用修订版本失败: $e');
     }
   }

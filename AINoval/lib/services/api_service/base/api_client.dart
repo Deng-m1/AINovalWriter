@@ -1,6 +1,6 @@
-import 'package:dio/dio.dart';
 import 'package:ainoval/config/app_config.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
+import 'package:dio/dio.dart';
 
 /// API客户端基类
 /// 
@@ -50,11 +50,11 @@ class ApiClient {
     final currentLogLevel = AppConfig.logLevel;
     
     return LogInterceptor(
-      requestBody: currentLogLevel == LogLevel.debug,
-      responseBody: currentLogLevel == LogLevel.debug,
+      requestBody: currentLogLevel == LogLevel.warning,
+      responseBody: currentLogLevel == LogLevel.warning,
       error: currentLogLevel == LogLevel.debug || currentLogLevel == LogLevel.error,
-      requestHeader: currentLogLevel == LogLevel.debug,
-      responseHeader: currentLogLevel == LogLevel.debug,
+      requestHeader: currentLogLevel == LogLevel.warning,
+      responseHeader: currentLogLevel == LogLevel.warning,
     );
   }
   

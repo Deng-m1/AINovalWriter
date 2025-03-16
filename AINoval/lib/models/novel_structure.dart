@@ -373,9 +373,11 @@ class Scene {
   Scene({
     required this.id,
     required this.content,
-    this.wordCount = 0,
+    required this.wordCount,
     required this.summary,
     required this.lastEdited,
+    this.version = 1,
+    this.history = const [],
   });
   
   /// 从JSON创建Scene实例
@@ -386,6 +388,10 @@ class Scene {
       wordCount: json['wordCount'] ?? 0,
       summary: Summary.fromJson(json['summary']),
       lastEdited: DateTime.parse(json['lastEdited']),
+      version: json['version'] ?? 1,
+      history: (json['history'] as List?)
+          ?.map((historyJson) => HistoryEntry.fromJson(historyJson))
+          .toList() ?? [],
     );
   }
   final String id;
@@ -393,6 +399,8 @@ class Scene {
   final int wordCount;
   final Summary summary;
   final DateTime lastEdited;
+  final int version;
+  final List<HistoryEntry> history;
   
   /// 转换为JSON
   Map<String, dynamic> toJson() {
@@ -402,6 +410,8 @@ class Scene {
       'wordCount': wordCount,
       'summary': summary.toJson(),
       'lastEdited': lastEdited.toIso8601String(),
+      'version': version,
+      'history': history.map((entry) => entry.toJson()).toList(),
     };
   }
   
@@ -412,6 +422,8 @@ class Scene {
     int? wordCount,
     Summary? summary,
     DateTime? lastEdited,
+    int? version,
+    List<HistoryEntry>? history,
   }) {
     return Scene(
       id: id ?? this.id,
@@ -419,6 +431,8 @@ class Scene {
       wordCount: wordCount ?? this.wordCount,
       summary: summary ?? this.summary,
       lastEdited: lastEdited ?? this.lastEdited,
+      version: version ?? this.version,
+      history: history ?? this.history,
     );
   }
   
@@ -426,11 +440,16 @@ class Scene {
   static Scene createEmpty() {
     final now = DateTime.now();
     return Scene(
-      id: 'scene_${now.millisecondsSinceEpoch}',
-      content: '{"ops":[{"insert":"\\n"}]}',
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      content: '',
       wordCount: 0,
-      summary: Summary.createEmpty(),
+      summary: Summary(
+        id: '${DateTime.now().millisecondsSinceEpoch}_summary',
+        content: '',
+      ),
       lastEdited: now,
+      version: 1,
+      history: [],
     );
   }
 }
@@ -479,4 +498,34 @@ class Summary {
       content: '',
     );
   }
+}
+
+class HistoryEntry {
+
+  HistoryEntry({
+    this.content,
+    required this.updatedAt,
+    required this.updatedBy,
+    required this.reason,
+  });
+
+  factory HistoryEntry.fromJson(Map<String, dynamic> json) {
+    return HistoryEntry(
+      content: json['content'],
+      updatedAt: DateTime.parse(json['updatedAt']),
+      updatedBy: json['updatedBy'],
+      reason: json['reason'],
+    );
+  }
+  final String? content;
+  final DateTime updatedAt;
+  final String updatedBy;
+  final String reason;
+
+  Map<String, dynamic> toJson() => {
+    'content': content,
+    'updatedAt': updatedAt.toIso8601String(),
+    'updatedBy': updatedBy,
+    'reason': reason,
+  };
 } 

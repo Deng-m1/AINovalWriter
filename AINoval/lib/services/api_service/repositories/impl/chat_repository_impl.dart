@@ -4,6 +4,8 @@ import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/services/api_service/repositories/chat_repository.dart';
 import 'package:ainoval/services/mock_data_service.dart';
+import 'package:ainoval/utils/logger.dart';
+
 
 /// 聊天仓库实现
 class ChatRepositoryImpl implements ChatRepository {
@@ -33,7 +35,7 @@ class ChatRepositoryImpl implements ChatRepository {
       }
       return [];
     } catch (e) {
-      print('获取聊天会话列表失败: $e');
+      AppLogger.e('Services/api_service/repositories/impl/chat_repository_impl', '获取聊天会话列表失败', e);
       // 如果API请求失败，回退到模拟数据
       return _mockService.getChatSessions(novelId);
     }
@@ -66,7 +68,7 @@ class ChatRepositoryImpl implements ChatRepository {
       final data = await _apiClient.post('/novels/$novelId/chats', data: body);
       return ChatSession.fromJson(data);
     } catch (e) {
-      print('创建聊天会话失败: $e');
+      AppLogger.e('Services/api_service/repositories/impl/chat_repository_impl', '创建聊天会话失败', e);
       // 如果API请求失败，回退到模拟数据
       return _mockService.createChatSession(
         title: title,
@@ -90,7 +92,7 @@ class ChatRepositoryImpl implements ChatRepository {
       final data = await _apiClient.get('/chats/$sessionId');
       return ChatSession.fromJson(data);
     } catch (e) {
-      print('获取聊天会话失败: $e');
+      AppLogger.e('Services/api_service/repositories/impl/chat_repository_impl', '获取聊天会话失败', e);
       // 如果API请求失败，回退到模拟数据
       return _mockService.getChatSession(sessionId);
     }
@@ -110,7 +112,7 @@ class ChatRepositoryImpl implements ChatRepository {
       await _apiClient.put('/chats/$sessionId/messages', 
           data: messages.map((m) => m.toJson()).toList());
     } catch (e) {
-      print('更新聊天消息失败: $e');
+      AppLogger.e('Services/api_service/repositories/impl/chat_repository_impl', '更新聊天消息失败', e);
       throw ApiException(-1, '更新聊天消息失败: $e');
     }
   }
@@ -128,7 +130,7 @@ class ChatRepositoryImpl implements ChatRepository {
     try {
       await _apiClient.put('/chats/${session.id}', data: session.toJson());
     } catch (e) {
-      print('更新聊天会话失败: $e');
+      AppLogger.e('Services/api_service/repositories/impl/chat_repository_impl', '更新聊天会话失败', e);
       throw ApiException(-1, '更新聊天会话失败: $e');
     }
   }
@@ -146,7 +148,7 @@ class ChatRepositoryImpl implements ChatRepository {
     try {
       await _apiClient.delete('/chats/$sessionId');
     } catch (e) {
-      print('删除聊天会话失败: $e');
+      AppLogger.e('Services/api_service/repositories/impl/chat_repository_impl', '删除聊天会话失败', e);
       throw ApiException(-1, '删除聊天会话失败: $e');
     }
   }

@@ -22,7 +22,8 @@ dependencies:
   path_provider: ^2.1.0
   
   # UI组件
-  flutter_quill: ^10.8.5
+  flutter_quill: ^11.0.0
+  flutter_quill_extensions: ^11.0.0
   flutter_svg: ^2.0.7
   google_fonts: ^5.1.0
   shimmer: ^3.0.0
@@ -37,6 +38,7 @@ dependencies:
   share_plus: ^7.1.0
   flutter_markdown: ^0.6.17
   dio: ^5.4.0
+  logging: ^1.2.0
   
   # 国际化
   flutter_localizations:
