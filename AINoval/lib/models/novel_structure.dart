@@ -1,3 +1,5 @@
+import 'package:ainoval/utils/logger.dart';
+
 /// 小说模型
 class Novel {
   
@@ -9,21 +11,54 @@ class Novel {
     required this.updatedAt,
     this.acts = const [],
     this.lastEditedChapterId,
+    this.author,
   });
   
   /// 从JSON创建Novel实例
   factory Novel.fromJson(Map<String, dynamic> json) {
-    return Novel(
-      id: json['id'],
-      title: json['title'],
-      coverImagePath: json['coverImagePath'] ?? '',
-      createdAt: DateTime.parse(json['createdAt']),
-      updatedAt: DateTime.parse(json['updatedAt']),
-      acts: (json['acts'] as List?)
-          ?.map((actJson) => Act.fromJson(actJson))
-          .toList() ?? [],
-      lastEditedChapterId: json['lastEditedChapterId'],
-    );
+    AppLogger.v('NovelModel', 'Parsing Novel from JSON: ${json['id']}'); // 添加日志确认进入
+    try {
+      // --- 这是关键部分 ---
+      List<Act> parsedActs = [];
+      if (json['acts'] != null && json['acts'] is List) {
+         // 检查 'acts' 是否存在且是一个列表
+         AppLogger.v('NovelModel', 'Found "acts" list with ${json['acts'].length} items.'); // 记录找到的 acts 数量
+         parsedActs = (json['acts'] as List<dynamic>)
+            .map((actJson) {
+               if (actJson is Map<String, dynamic>) {
+                  // 对列表中的每个元素调用 Act.fromJson
+                  return Act.fromJson(actJson);
+               } else {
+                  // 处理无效数据项
+                  AppLogger.w('NovelModel', 'Invalid item found in "acts" list: $actJson');
+                  return null; // 或者抛出错误，或者返回一个默认的 Act
+               }
+            })
+            .whereType<Act>() // 过滤掉可能的 null 值
+            .toList();
+         AppLogger.v('NovelModel', 'Successfully parsed ${parsedActs.length} acts.'); // 记录成功解析的数量
+      } else {
+         AppLogger.w('NovelModel', '"acts" field is missing, null, or not a list in JSON for Novel ${json['id']}'); // 记录 acts 字段问题
+      }
+      // --- 关键部分结束 ---
+
+      return Novel(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        coverImagePath: json['coverImagePath'] as String? ?? '', // 处理可能的 null
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        updatedAt: DateTime.parse(json['updatedAt'] as String),
+        acts: parsedActs, // 使用上面解析得到的列表
+        lastEditedChapterId: json['lastEditedChapterId'] as String?, // 如果有这个字段
+        author: json['author'] != null ? Author.fromJson(json['author']) : null, // 如果有 Author 字段
+      );
+    } catch (e, stackTrace) {
+       AppLogger.e('NovelModel', 'Error parsing Novel from JSON: ${json['id']}', e, stackTrace);
+       // 可以抛出错误，或者返回一个带有默认值的对象，取决于你的错误处理策略
+       rethrow; // 重新抛出错误，让上层知道解析失败
+       // 或者返回一个默认/错误状态的 Novel 对象
+       // return Novel(id: json['id'] ?? 'error', title: 'Error Parsing', acts: [], /* ... 其他默认值 ... */);
+    }
   }
   final String id;
   final String title;
@@ -32,6 +67,7 @@ class Novel {
   final DateTime updatedAt;
   final List<Act> acts;
   final String? lastEditedChapterId; // 上次编辑的章节ID
+  final Author? author; // 作者信息
   
   /// 计算小说总字数
   int get wordCount {
@@ -48,6 +84,7 @@ class Novel {
       'updatedAt': updatedAt.toIso8601String(),
       'acts': acts.map((act) => act.toJson()).toList(),
       'lastEditedChapterId': lastEditedChapterId,
+      'author': author?.toJson(),
     };
   }
   
@@ -60,6 +97,7 @@ class Novel {
     DateTime? updatedAt,
     List<Act>? acts,
     String? lastEditedChapterId,
+    Author? author,
   }) {
     return Novel(
       id: id ?? this.id,
@@ -69,6 +107,7 @@ class Novel {
       updatedAt: updatedAt ?? this.updatedAt,
       acts: acts ?? this.acts,
       lastEditedChapterId: lastEditedChapterId ?? this.lastEditedChapterId,
+      author: author ?? this.author,
     );
   }
   
@@ -196,13 +235,17 @@ class Act {
   
   /// 从JSON创建Act实例
   factory Act.fromJson(Map<String, dynamic> json) {
+    List<Chapter> parsedChapters = [];
+    if (json['chapters'] != null && json['chapters'] is List) {
+      parsedChapters = (json['chapters'] as List<dynamic>)
+          .map((chapterJson) => Chapter.fromJson(chapterJson as Map<String, dynamic>))
+          .toList();
+    }
     return Act(
-      id: json['id'],
-      title: json['title'],
-      order: json['order'],
-      chapters: (json['chapters'] as List?)
-          ?.map((chapterJson) => Chapter.fromJson(chapterJson))
-          .toList() ?? [],
+      id: json['id'] as String,
+      title: json['title'] as String,
+      order: json['order'] as int,
+      chapters: parsedChapters, // 使用解析后的列表
     );
   }
   final String id;
@@ -279,27 +322,17 @@ class Chapter {
   
   /// 从JSON创建Chapter实例
   factory Chapter.fromJson(Map<String, dynamic> json) {
-    // 兼容旧版本数据，如果是单个scene，则转换为scenes列表
-    List<Scene> parseScenes() {
-      if (json.containsKey('scene')) {
-        // 旧版本数据，单个scene
-        return [Scene.fromJson(json['scene'])];
-      } else if (json.containsKey('scenes') && json['scenes'] is List) {
-        // 新版本数据，scenes列表
-        return (json['scenes'] as List)
-            .map((sceneJson) => Scene.fromJson(sceneJson))
-            .toList();
-      } else {
-        // 默认返回空列表
-        return [];
-      }
+    List<Scene> parsedScenes = [];
+    if (json['scenes'] != null && json['scenes'] is List) {
+       parsedScenes = (json['scenes'] as List<dynamic>)
+          .map((sceneJson) => Scene.fromJson(sceneJson as Map<String, dynamic>))
+          .toList();
     }
-    
     return Chapter(
       id: json['id'],
       title: json['title'],
       order: json['order'],
-      scenes: parseScenes(),
+      scenes: parsedScenes, // 使用解析后的列表
     );
   }
   final String id;
@@ -338,11 +371,8 @@ class Chapter {
   }
   
   /// 添加一个新的Scene
-  Chapter addScene() {
-    final newScene = Scene.createEmpty();
-    return copyWith(
-      scenes: [...scenes, newScene],
-    );
+  void addScene(Scene newScene) {
+    scenes.add(newScene);
   }
   
   /// 获取指定Scene
@@ -373,19 +403,23 @@ class Scene {
   Scene({
     required this.id,
     required this.content,
-    this.wordCount = 0,
+    required this.wordCount,
     required this.summary,
     required this.lastEdited,
+    this.version = 1,
+    this.history = const [],
   });
   
   /// 从JSON创建Scene实例
   factory Scene.fromJson(Map<String, dynamic> json) {
     return Scene(
       id: json['id'],
-      content: json['content'],
+      content: json['content'] ?? '',
       wordCount: json['wordCount'] ?? 0,
-      summary: Summary.fromJson(json['summary']),
-      lastEdited: DateTime.parse(json['lastEdited']),
+      summary: Summary.fromJson(json['summary'] as Map<String, dynamic>),
+      lastEdited: DateTime.parse(json['lastEdited'] as String),
+      version: json['version'] ?? 1,
+      history: [],
     );
   }
   final String id;
@@ -393,6 +427,8 @@ class Scene {
   final int wordCount;
   final Summary summary;
   final DateTime lastEdited;
+  final int version;
+  final List<HistoryEntry> history;
   
   /// 转换为JSON
   Map<String, dynamic> toJson() {
@@ -402,6 +438,8 @@ class Scene {
       'wordCount': wordCount,
       'summary': summary.toJson(),
       'lastEdited': lastEdited.toIso8601String(),
+      'version': version,
+      'history': history.map((entry) => entry.toJson()).toList(),
     };
   }
   
@@ -412,6 +450,8 @@ class Scene {
     int? wordCount,
     Summary? summary,
     DateTime? lastEdited,
+    int? version,
+    List<HistoryEntry>? history,
   }) {
     return Scene(
       id: id ?? this.id,
@@ -419,20 +459,46 @@ class Scene {
       wordCount: wordCount ?? this.wordCount,
       summary: summary ?? this.summary,
       lastEdited: lastEdited ?? this.lastEdited,
+      version: version ?? this.version,
+      history: history ?? this.history,
     );
   }
   
   /// 创建一个空的场景
   static Scene createEmpty() {
+    const defaultContent = '{"ops":[{"insert":"\\n"}]}'; // <-- 确保是这个值
     final now = DateTime.now();
     return Scene(
-      id: 'scene_${now.millisecondsSinceEpoch}',
-      content: '{"ops":[{"insert":"\\n"}]}',
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      content: defaultContent,
       wordCount: 0,
-      summary: Summary.createEmpty(),
+      summary: Summary(
+        id: '${DateTime.now().millisecondsSinceEpoch}_summary',
+        content: '',
+      ),
       lastEdited: now,
+      version: 1,
+      history: [],
     );
   }
+
+   /// 创建一个默认的场景
+  static Scene createDefault(String sceneIdBase) {
+    const defaultContent = '{"ops":[{"insert":"\\n"}]}'; // <-- 确保是这个值
+    final now = DateTime.now();
+    return Scene(
+      id: sceneIdBase,
+      content: defaultContent,
+      wordCount: 0,
+      summary: Summary(
+        id: '${DateTime.now().millisecondsSinceEpoch}_summary',
+        content: '',
+      ),
+      lastEdited: now,
+      version: 1,
+      history: [],
+    );
+  } 
 }
 
 /// 摘要模型
@@ -446,8 +512,8 @@ class Summary {
   /// 从JSON创建Summary实例
   factory Summary.fromJson(Map<String, dynamic> json) {
     return Summary(
-      id: json['id'],
-      content: json['content'],
+      id: json['id'] as String,
+      content: json['content'] as String,
     );
   }
   final String id;
@@ -477,6 +543,81 @@ class Summary {
     return Summary(
       id: 'summary_${DateTime.now().millisecondsSinceEpoch}',
       content: '',
+    );
+  }
+}
+
+class HistoryEntry {
+
+  HistoryEntry({
+    this.content,
+    required this.updatedAt,
+    required this.updatedBy,
+    required this.reason,
+  });
+
+  factory HistoryEntry.fromJson(Map<String, dynamic> json) {
+    DateTime updatedAt;
+    try {
+      updatedAt = DateTime.parse(json['updatedAt']);
+    } catch (e) {
+      updatedAt = DateTime.now();
+    }
+
+    return HistoryEntry(
+      content: json['content'],
+      updatedAt: updatedAt,
+      updatedBy: json['updatedBy'] ?? 'unknown',
+      reason: json['reason'] ?? '',
+    );
+  }
+  final String? content;
+  final DateTime updatedAt;
+  final String updatedBy;
+  final String reason;
+
+  Map<String, dynamic> toJson() => {
+    'content': content,
+    'updatedAt': updatedAt.toIso8601String(),
+    'updatedBy': updatedBy,
+    'reason': reason,
+  };
+}
+
+/// 作者信息模型
+class Author {
+  Author({
+    required this.id,
+    required this.username,
+  });
+  
+  /// 从JSON创建Author实例
+  factory Author.fromJson(Map<String, dynamic> json) {
+    return Author(
+      id: json['id'] ?? '',
+      username: json['username'] ?? '未知作者',
+    );
+  }
+  
+  final String id;
+  final String username;
+  
+  /// 转换为JSON
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'username': username,
+    };
+  }
+  
+  /// 创建Author的副本
+  Author copyWith({
+    String? id,
+    String? username,
+  }) {
+    return Author(
+      id: id ?? this.id,
+      username: username ?? this.username,
     );
   }
 } 

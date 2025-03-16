@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'package:ainoval/models/editor_content.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/models/novel_summary.dart';
+import 'package:ainoval/utils/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/chat_models.dart';
+
 
 /// 本地存储服务，用于缓存和获取小说数据
 class LocalStorageService {
@@ -34,20 +36,44 @@ class LocalStorageService {
   Future<List<novel_models.Novel>> getNovels() async {
     final prefs = await _ensureInitialized();
     final novelsJson = prefs.getStringList(_novelsKey) ?? [];
-    
-    return novelsJson
-        .map((json) => novel_models.Novel.fromJson(jsonDecode(json)))
-        .toList();
+    AppLogger.d('LocalStorageService', 'getNovels: Raw JSON list from prefs: $novelsJson');
+
+    try {
+      final novels = novelsJson
+          .map((json) {
+            AppLogger.v('LocalStorageService', 'getNovels: Parsing JSON: $json');
+            final novel = novel_models.Novel.fromJson(jsonDecode(json));
+            AppLogger.v('LocalStorageService', 'getNovels: Parsed Novel: ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}');
+            return novel;
+          })
+          .toList();
+      AppLogger.i('LocalStorageService', 'getNovels: Successfully parsed ${novels.length} novels.');
+      return novels;
+    } catch (e, stackTrace) {
+      AppLogger.e('LocalStorageService', 'getNovels: Failed to parse novels JSON.', e, stackTrace);
+      return [];
+    }
   }
   
   // 保存所有小说
   Future<void> saveNovels(List<novel_models.Novel> novels) async {
     final prefs = await _ensureInitialized();
-    final novelsJson = novels
-        .map((novel) => jsonEncode(novel.toJson()))
-        .toList();
-    
-    await prefs.setStringList(_novelsKey, novelsJson);
+    try {
+      final novelsJson = novels
+          .map((novel) {
+            final jsonMap = novel.toJson();
+            final jsonString = jsonEncode(jsonMap);
+            AppLogger.v('LocalStorageService', 'saveNovels: Serializing Novel ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}. JSON: $jsonString');
+            return jsonString;
+          })
+          .toList();
+
+      AppLogger.d('LocalStorageService', 'saveNovels: Saving JSON list to prefs: $novelsJson');
+      await prefs.setStringList(_novelsKey, novelsJson);
+      AppLogger.i('LocalStorageService', 'saveNovels: Successfully saved ${novels.length} novels.');
+    } catch (e, stackTrace) {
+      AppLogger.e('LocalStorageService', 'saveNovels: Failed to save novels.', e, stackTrace);
+    }
   }
   
   // 保存小说摘要列表
@@ -62,28 +88,36 @@ class LocalStorageService {
   
   // 获取单个小说
   Future<novel_models.Novel?> getNovel(String id) async {
+    AppLogger.d('LocalStorageService', 'getNovel: Attempting to get novel with ID: $id');
     final novels = await getNovels();
     try {
-      return novels.firstWhere(
+      final novel = novels.firstWhere(
         (novel) => novel.id == id,
       );
+      AppLogger.i('LocalStorageService', 'getNovel: Found novel: ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}');
+      return novel;
     } catch (e) {
+      AppLogger.w('LocalStorageService', 'getNovel: Novel with ID $id not found.', e);
       return null;
     }
   }
   
   // 保存单个小说
   Future<void> saveNovel(novel_models.Novel novel) async {
+    AppLogger.d('LocalStorageService', 'saveNovel: Attempting to save novel ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}');
     final novels = await getNovels();
     final index = novels.indexWhere((n) => n.id == novel.id);
     
     if (index >= 0) {
+      AppLogger.d('LocalStorageService', 'saveNovel: Updating existing novel at index $index.');
       novels[index] = novel;
     } else {
+      AppLogger.d('LocalStorageService', 'saveNovel: Adding new novel.');
       novels.add(novel);
     }
     
     await saveNovels(novels);
+    AppLogger.i('LocalStorageService', 'saveNovel: Completed saving process for novel ID=${novel.id}.');
   }
   
   // 删除小说
@@ -119,7 +153,7 @@ class LocalStorageService {
       final json = jsonDecode(jsonString);
       return EditorContent.fromJson(json);
     } catch (e) {
-      print('解析章节内容失败: $e');
+      AppLogger.e('Services/local_storage_service', '解析章节内容失败', e);
       return null;
     }
   }
@@ -173,7 +207,7 @@ class LocalStorageService {
         'autoSave': true,
       };
     } catch (e) {
-      print('获取编辑器设置失败: $e');
+      AppLogger.e('Services/local_storage_service', '获取编辑器设置失败', e);
       // 返回默认设置
       return {
         'fontSize': 16.0,
@@ -191,7 +225,7 @@ class LocalStorageService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('editor_settings', jsonEncode(settings));
     } catch (e) {
-      print('保存编辑器设置失败: $e');
+      AppLogger.e('Services/local_storage_service', '保存编辑器设置失败', e);
       throw Exception('保存编辑器设置失败: $e');
     }
   }
@@ -275,7 +309,7 @@ class LocalStorageService {
       
       await saveNovel(updatedNovel);
     } catch (e) {
-      print('保存场景内容失败: $e');
+      AppLogger.e('Services/local_storage_service', '保存场景内容失败', e);
     }
   }
   
@@ -325,7 +359,7 @@ class LocalStorageService {
       
       await saveNovel(updatedNovel);
     } catch (e) {
-      print('保存摘要内容失败: $e');
+      AppLogger.e('Services/local_storage_service', '保存摘要内容失败', e);
     }
   }
   
@@ -339,10 +373,10 @@ class LocalStorageService {
       if (!syncList.contains(id)) {
         syncList.add(id);
         await prefs.setStringList(syncKey, syncList);
-        print('已标记 $type: $id 需要同步');
+        AppLogger.i('Services/local_storage_service', '已标记 $type: $id 需要同步');
       }
     } catch (e) {
-      print('标记同步失败: $e');
+      AppLogger.e('Services/local_storage_service', '标记同步失败', e);
     }
   }
   
@@ -353,7 +387,7 @@ class LocalStorageService {
       final syncKey = 'syncList_$type';
       return prefs.getStringList(syncKey) ?? [];
     } catch (e) {
-      print('获取同步列表失败: $e');
+      AppLogger.e('Services/local_storage_service', '获取同步列表失败', e);
       return [];
     }
   }
@@ -377,7 +411,7 @@ class LocalStorageService {
         await prefs.setStringList(syncKey, syncList);
       }
     } catch (e) {
-      print('清除同步标记失败: $e');
+      AppLogger.e('Services/local_storage_service', '清除同步标记失败', e);
     }
   }
   
@@ -392,7 +426,7 @@ class LocalStorageService {
         await prefs.setStringList('syncList', syncList);
       }
     } catch (e) {
-      print('标记同步失败: $e');
+      AppLogger.e('Services/local_storage_service', '标记同步失败', e);
     }
   }
   

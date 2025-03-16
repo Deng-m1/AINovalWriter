@@ -1,13 +1,18 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/screens/editor/components/act_section.dart';
 import 'package:ainoval/screens/editor/components/chapter_section.dart';
 import 'package:ainoval/screens/editor/components/scene_editor.dart';
+import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:uuid/uuid.dart';
 
-class EditorMainArea extends StatelessWidget {
 
+class EditorMainArea extends StatefulWidget {
   const EditorMainArea({
     super.key,
     required this.novel,
@@ -16,6 +21,7 @@ class EditorMainArea extends StatelessWidget {
     required this.sceneSummaryControllers,
     this.activeActId,
     this.activeChapterId,
+    this.activeSceneId,
     required this.scrollController,
   });
   final novel_models.Novel novel;
@@ -24,26 +30,41 @@ class EditorMainArea extends StatelessWidget {
   final Map<String, TextEditingController> sceneSummaryControllers;
   final String? activeActId;
   final String? activeChapterId;
+  final String? activeSceneId;
   final ScrollController scrollController;
+
+  @override
+  State<EditorMainArea> createState() => _EditorMainAreaState();
+}
+
+class _EditorMainAreaState extends State<EditorMainArea> {
+  Timer? _debounceTimer;
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: Colors.grey.shade50, // 更改背景色为浅灰色，增强对比度
       child: SingleChildScrollView(
-        controller: scrollController,
+        controller: widget.scrollController,
         child: Center(
           child: Container(
             width: 1100, // 增加宽度以容纳内容和摘要
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20), // 添加垂直内边距
+            padding: const EdgeInsets.symmetric(
+                horizontal: 40, vertical: 20), // 添加垂直内边距
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 动态构建Acts
-                ...novel.acts.map((act) => _buildActSection(act)),
-                
+                ...widget.novel.acts.map((act) => _buildActSection(act)),
+
                 // 添加新Act按钮
-                _AddActButton(editorBloc: editorBloc),
+                _AddActButton(editorBloc: widget.editorBloc),
               ],
             ),
           ),
@@ -55,72 +76,118 @@ class EditorMainArea extends StatelessWidget {
   Widget _buildActSection(novel_models.Act act) {
     return ActSection(
       title: act.title,
-      chapters: act.chapters.map((chapter) => _buildChapterSection(act.id, chapter)).toList(),
+      chapters: act.chapters
+          .map((chapter) => _buildChapterSection(act.id, chapter))
+          .toList(),
       actId: act.id,
-      editorBloc: editorBloc,
+      editorBloc: widget.editorBloc,
     );
   }
 
   Widget _buildChapterSection(String actId, novel_models.Chapter chapter) {
-    // 构建该章节的所有场景
+    if (chapter.scenes.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 16.0),
+        child: Center(
+          child: Column(
+            children: [
+              Text('章节 "${chapter.title}" 还没有场景。'),
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: () {
+                  // 生成一个新的唯一 ID
+                  final newSceneId = const Uuid().v4(); 
+                  widget.editorBloc.add(AddNewScene(
+                    novelId: widget.editorBloc.novelId,
+                    actId: actId,
+                    chapterId: chapter.id,
+                    sceneId: newSceneId, // 传递新生成的 ID
+                  ));
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('添加第一个场景'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final sceneWidgets = chapter.scenes.asMap().entries.map((entry) {
       final index = entry.key;
       final scene = entry.value;
       final isFirst = index == 0;
-      
-      // 为每个场景创建一个唯一的ID
+
       final sceneId = '${actId}_${chapter.id}_${scene.id}';
-      
-      // 检查控制器是否存在，如果不存在则跳过
-      if (!sceneControllers.containsKey(sceneId)) {
-        return const SizedBox(); // 返回空组件
+
+      if (!widget.sceneControllers.containsKey(sceneId)) {
+        try {
+          widget.sceneControllers[sceneId] = QuillController(
+            document: _parseDocumentSafely(scene.content),
+            selection: const TextSelection.collapsed(offset: 0),
+          );
+
+          widget.sceneSummaryControllers[sceneId] = TextEditingController(
+            text: scene.summary.content,
+          );
+        } catch (e) {
+          AppLogger.e('EditorMainArea', '创建场景控制器失败: $sceneId', e);
+          widget.sceneControllers[sceneId] = QuillController(
+            document: Document.fromJson([
+              {'insert': '\n'}
+            ]),
+            selection: const TextSelection.collapsed(offset: 0),
+          );
+          widget.sceneSummaryControllers[sceneId] = TextEditingController(text: '');
+        }
       }
-      
+
       return SceneEditor(
         title: '${chapter.title} · Scene ${index + 1}',
         wordCount: '${scene.wordCount} Words',
-        isActive: activeActId == actId && activeChapterId == chapter.id,
+        isActive: widget.activeActId == actId &&
+                  widget.activeChapterId == chapter.id &&
+                  widget.activeSceneId == scene.id,
         actId: actId,
         chapterId: chapter.id,
         sceneId: scene.id,
         isFirst: isFirst,
-        controller: sceneControllers[sceneId]!,
-        summaryController: sceneSummaryControllers[sceneId]!,
-        editorBloc: editorBloc,
+        controller: widget.sceneControllers[sceneId]!,
+        summaryController: widget.sceneSummaryControllers[sceneId]!,
+        editorBloc: widget.editorBloc,
       );
     }).toList();
-    
-    // 如果没有场景或者场景控制器不存在，则使用默认的场景编辑器
-    if (sceneWidgets.isEmpty) {
-      final defaultSceneId = '${actId}_${chapter.id}';
-      if (sceneControllers.containsKey(defaultSceneId)) {
-        // 尝试查找章节的第一个场景ID
-        String? firstSceneId;
-        if (chapter.scenes.isNotEmpty) {
-          firstSceneId = chapter.scenes.first.id;
-        }
-        
-        sceneWidgets.add(SceneEditor(
-          title: '${chapter.title} · Scene 1',
-          wordCount: '${chapter.wordCount} Words',
-          isActive: activeActId == actId && activeChapterId == chapter.id,
-          actId: actId,
-          chapterId: chapter.id,
-          sceneId: firstSceneId,
-          controller: sceneControllers[defaultSceneId]!,
-          summaryController: sceneSummaryControllers[defaultSceneId]!,
-          editorBloc: editorBloc,
-        ));
-      }
-    }
-    
+
     return ChapterSection(
       title: chapter.title,
       scenes: sceneWidgets,
       actId: actId,
       chapterId: chapter.id,
-      editorBloc: editorBloc,
+      editorBloc: widget.editorBloc,
     );
+  }
+
+  Document _parseDocumentSafely(String content) {
+    try {
+      final dynamic deltaJson = jsonDecode(content);
+      if (deltaJson is Map<String, dynamic> && deltaJson.containsKey('ops')) {
+        final ops = deltaJson['ops'];
+        if (ops is List) {
+          return Document.fromJson(ops);
+        }
+      } else if (deltaJson is List) {
+        return Document.fromJson(deltaJson);
+      }
+    } catch (e) {
+      AppLogger.e('EditorMainArea', '解析文档内容失败: $content', e);
+    }
+    
+    return Document.fromJson([
+      {'insert': '\n'}
+    ]);
   }
 }
 
@@ -135,7 +202,6 @@ class _AddActButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 16.0),
         child: TextButton.icon(
           onPressed: () {
-            // 触发添加新Act事件
             editorBloc.add(const AddNewAct(title: '新Act'));
           },
           icon: const Icon(Icons.add),
@@ -147,4 +213,4 @@ class _AddActButton extends StatelessWidget {
       ),
     );
   }
-} 
+}
