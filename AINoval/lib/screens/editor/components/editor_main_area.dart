@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 
 class EditorMainArea extends StatelessWidget {
-
   const EditorMainArea({
     super.key,
     required this.novel,
@@ -35,13 +34,14 @@ class EditorMainArea extends StatelessWidget {
         child: Center(
           child: Container(
             width: 1100, // 增加宽度以容纳内容和摘要
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20), // 添加垂直内边距
+            padding: const EdgeInsets.symmetric(
+                horizontal: 40, vertical: 20), // 添加垂直内边距
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 动态构建Acts
                 ...novel.acts.map((act) => _buildActSection(act)),
-                
+
                 // 添加新Act按钮
                 _AddActButton(editorBloc: editorBloc),
               ],
@@ -55,7 +55,9 @@ class EditorMainArea extends StatelessWidget {
   Widget _buildActSection(novel_models.Act act) {
     return ActSection(
       title: act.title,
-      chapters: act.chapters.map((chapter) => _buildChapterSection(act.id, chapter)).toList(),
+      chapters: act.chapters
+          .map((chapter) => _buildChapterSection(act.id, chapter))
+          .toList(),
       actId: act.id,
       editorBloc: editorBloc,
     );
@@ -67,15 +69,22 @@ class EditorMainArea extends StatelessWidget {
       final index = entry.key;
       final scene = entry.value;
       final isFirst = index == 0;
-      
+
       // 为每个场景创建一个唯一的ID
       final sceneId = '${actId}_${chapter.id}_${scene.id}';
-      
+
       // 检查控制器是否存在，如果不存在则跳过
       if (!sceneControllers.containsKey(sceneId)) {
-        return const SizedBox(); // 返回空组件
+        // 创建默认控制器
+        sceneControllers[sceneId] = QuillController(
+          document: Document.fromJson([
+            {"insert": "\n"}
+          ]),
+          selection: const TextSelection.collapsed(offset: 0),
+        );
+        // 其他控制器初始化...
       }
-      
+
       return SceneEditor(
         title: '${chapter.title} · Scene ${index + 1}',
         wordCount: '${scene.wordCount} Words',
@@ -89,7 +98,7 @@ class EditorMainArea extends StatelessWidget {
         editorBloc: editorBloc,
       );
     }).toList();
-    
+
     // 如果没有场景或者场景控制器不存在，则使用默认的场景编辑器
     if (sceneWidgets.isEmpty) {
       final defaultSceneId = '${actId}_${chapter.id}';
@@ -99,7 +108,7 @@ class EditorMainArea extends StatelessWidget {
         if (chapter.scenes.isNotEmpty) {
           firstSceneId = chapter.scenes.first.id;
         }
-        
+
         sceneWidgets.add(SceneEditor(
           title: '${chapter.title} · Scene 1',
           wordCount: '${chapter.wordCount} Words',
@@ -113,7 +122,7 @@ class EditorMainArea extends StatelessWidget {
         ));
       }
     }
-    
+
     return ChapterSection(
       title: chapter.title,
       scenes: sceneWidgets,
@@ -147,4 +156,4 @@ class _AddActButton extends StatelessWidget {
       ),
     );
   }
-} 
+}

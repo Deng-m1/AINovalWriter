@@ -1,4 +1,5 @@
 import 'package:ainoval/models/novel_structure.dart';
+import 'package:ainoval/models/scene_version.dart';
 
 /// 小说仓库接口
 /// 
@@ -49,5 +50,41 @@ abstract class NovelRepository {
     String chapterId,
     String sceneId,
     Summary summary
+  );
+  
+  /// 更新场景内容并保存历史版本
+  Future<Scene> updateSceneContentWithHistory(
+    String novelId,
+    String chapterId,
+    String sceneId,
+    String content,
+    String userId,
+    String reason
+  );
+  
+  /// 获取场景的历史版本列表
+  Future<List<SceneHistoryEntry>> getSceneHistory(
+    String novelId,
+    String chapterId,
+    String sceneId
+  );
+  
+  /// 恢复场景到指定的历史版本
+  Future<Scene> restoreSceneVersion(
+    String novelId,
+    String chapterId,
+    String sceneId,
+    int historyIndex,
+    String userId,
+    String reason
+  );
+  
+  /// 对比两个场景版本
+  Future<SceneVersionDiff> compareSceneVersions(
+    String novelId,
+    String chapterId,
+    String sceneId,
+    int versionIndex1,
+    int versionIndex2
   );
 } 

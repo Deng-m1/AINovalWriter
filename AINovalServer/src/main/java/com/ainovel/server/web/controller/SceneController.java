@@ -15,8 +15,13 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.ainovel.server.domain.model.Scene;
+import com.ainovel.server.domain.model.Scene.HistoryEntry;
+import com.ainovel.server.domain.model.SceneVersionDiff;
 import com.ainovel.server.service.SceneService;
 import com.ainovel.server.web.base.ReactiveBaseController;
+import com.ainovel.server.web.dto.SceneContentUpdateDto;
+import com.ainovel.server.web.dto.SceneRestoreDto;
+import com.ainovel.server.web.dto.SceneVersionCompareDto;
 
 import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Flux;
@@ -180,5 +185,49 @@ public class SceneController extends ReactiveBaseController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> deleteScenesByChapter(@PathVariable String chapterId) {
         return sceneService.deleteScenesByChapterId(chapterId);
+    }
+    
+    /**
+     * 更新场景内容并保存历史版本
+     * @param id 场景ID
+     * @param updateDto 更新数据传输对象
+     * @return 更新后的场景
+     */
+    @PutMapping("/{id}/content")
+    public Mono<Scene> updateSceneContent(@PathVariable String id, @RequestBody SceneContentUpdateDto updateDto) {
+        return sceneService.updateSceneContent(id, updateDto.getContent(), updateDto.getUserId(), updateDto.getReason());
+    }
+    
+    /**
+     * 获取场景的历史版本列表
+     * @param id 场景ID
+     * @return 历史版本列表
+     */
+    @GetMapping("/{id}/history")
+    public Mono<List<HistoryEntry>> getSceneHistory(@PathVariable String id) {
+        return sceneService.getSceneHistory(id);
+    }
+    
+    /**
+     * 恢复场景到指定的历史版本
+     * @param id 场景ID
+     * @param restoreDto 恢复数据传输对象
+     * @return 恢复后的场景
+     */
+    @PostMapping("/{id}/restore")
+    public Mono<Scene> restoreSceneVersion(@PathVariable String id, @RequestBody SceneRestoreDto restoreDto) {
+        return sceneService.restoreSceneVersion(id, restoreDto.getHistoryIndex(), 
+                restoreDto.getUserId(), restoreDto.getReason());
+    }
+    
+    /**
+     * 对比两个场景版本
+     * @param id 场景ID
+     * @param compareDto 对比数据传输对象
+     * @return 差异信息
+     */
+    @PostMapping("/{id}/compare")
+    public Mono<SceneVersionDiff> compareSceneVersions(@PathVariable String id, @RequestBody SceneVersionCompareDto compareDto) {
+        return sceneService.compareSceneVersions(id, compareDto.getVersionIndex1(), compareDto.getVersionIndex2());
     }
 } 

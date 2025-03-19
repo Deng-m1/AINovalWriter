@@ -16,9 +16,14 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.ainovel.server.domain.model.Novel;
 import com.ainovel.server.domain.model.Scene;
+import com.ainovel.server.domain.model.Scene.HistoryEntry;
 import com.ainovel.server.service.NovelService;
 import com.ainovel.server.service.SceneService;
 import com.ainovel.server.web.base.ReactiveBaseController;
+import com.ainovel.server.web.dto.SceneContentUpdateDto;
+import com.ainovel.server.web.dto.SceneRestoreDto;
+import com.ainovel.server.web.dto.SceneVersionCompareDto;
+import com.ainovel.server.web.dto.SceneVersionDiff;
 
 import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Flux;
@@ -278,5 +283,98 @@ public class NovelController extends ReactiveBaseController {
                 .map(Scene::getId)
                 .flatMap(sceneService::deleteScene)
                 .then();
+    }
+        // ============================== 场景版本控制相关API ==============================
+    
+    /**
+     * 更新场景内容并保存历史版本
+     * @param novelId 小说ID
+     * @param chapterId 章节ID
+     * @param sceneId 场景ID
+     * @param updateDto 更新数据传输对象
+     * @return 更新后的场景
+     */
+    @PutMapping("/{novelId}/chapters/{chapterId}/scenes/{sceneId}/content")
+    public Mono<Scene> updateChapterSceneContent(
+            @PathVariable String novelId, 
+            @PathVariable String chapterId, 
+            @PathVariable String sceneId,
+            @RequestBody SceneContentUpdateDto updateDto) {
+        return sceneService.findSceneById(sceneId)
+                .filter(scene -> scene.getNovelId().equals(novelId) && scene.getChapterId().equals(chapterId))
+                .switchIfEmpty(Mono.error(new RuntimeException("场景不存在或不属于指定的小说和章节")))
+                .flatMap(scene -> sceneService.updateSceneContent(sceneId, updateDto.getContent(), 
+                        updateDto.getUserId(), updateDto.getReason()));
+    }
+    
+    /**
+     * 获取场景的历史版本列表
+     * @param novelId 小说ID
+     * @param chapterId 章节ID
+     * @param sceneId 场景ID
+     * @return 历史版本列表
+     */
+    @GetMapping("/{novelId}/chapters/{chapterId}/scenes/{sceneId}/history")
+    public Mono<List<HistoryEntry>> getChapterSceneHistory(
+            @PathVariable String novelId, 
+            @PathVariable String chapterId, 
+            @PathVariable String sceneId) {
+        return sceneService.findSceneById(sceneId)
+                .filter(scene -> scene.getNovelId().equals(novelId) && scene.getChapterId().equals(chapterId))
+                .switchIfEmpty(Mono.error(new RuntimeException("场景不存在或不属于指定的小说和章节")))
+                .flatMap(scene -> sceneService.getSceneHistory(sceneId));
+    }
+    
+    /**
+     * 恢复场景到指定的历史版本
+     * @param novelId 小说ID
+     * @param chapterId 章节ID
+     * @param sceneId 场景ID
+     * @param restoreDto 恢复数据传输对象
+     * @return 恢复后的场景
+     */
+    @PostMapping("/{novelId}/chapters/{chapterId}/scenes/{sceneId}/restore")
+    public Mono<Scene> restoreChapterSceneVersion(
+            @PathVariable String novelId, 
+            @PathVariable String chapterId, 
+            @PathVariable String sceneId,
+            @RequestBody SceneRestoreDto restoreDto) {
+        return sceneService.findSceneById(sceneId)
+                .filter(scene -> scene.getNovelId().equals(novelId) && scene.getChapterId().equals(chapterId))
+                .switchIfEmpty(Mono.error(new RuntimeException("场景不存在或不属于指定的小说和章节")))
+                .flatMap(scene -> sceneService.restoreSceneVersion(sceneId, restoreDto.getHistoryIndex(), 
+                        restoreDto.getUserId(), restoreDto.getReason()));
+    }
+    
+    /**
+     * 对比两个场景版本
+     * @param novelId 小说ID
+     * @param chapterId 章节ID
+     * @param sceneId 场景ID
+     * @param compareDto 对比数据传输对象
+     * @return 差异信息
+     */
+    @PostMapping("/{novelId}/chapters/{chapterId}/scenes/{sceneId}/compare")
+    public Mono<SceneVersionDiff> compareChapterSceneVersions(
+            @PathVariable String novelId, 
+            @PathVariable String chapterId, 
+            @PathVariable String sceneId,
+            @RequestBody SceneVersionCompareDto compareDto) {
+        return sceneService.findSceneById(sceneId)
+                .filter(scene -> scene.getNovelId().equals(novelId) && scene.getChapterId().equals(chapterId))
+                .switchIfEmpty(Mono.error(new RuntimeException("场景不存在或不属于指定的小说和章节")))
+                .flatMap(scene -> {
+                    // 调用服务并转换返回类型
+                    return sceneService.compareSceneVersions(sceneId, compareDto.getVersionIndex1(), 
+                            compareDto.getVersionIndex2())
+                            .map(diff -> {
+                                // 将domain模型转换为DTO
+                                SceneVersionDiff dto = new SceneVersionDiff();
+                                dto.setOriginalContent(diff.getOriginalContent());
+                                dto.setNewContent(diff.getNewContent());
+                                dto.setDiff(diff.getDiff());
+                                return dto;
+                            });
+                });
     }
 } 

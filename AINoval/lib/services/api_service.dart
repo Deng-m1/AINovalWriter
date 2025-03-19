@@ -5,7 +5,6 @@ import 'package:ainoval/services/api_service/api_service_factory.dart';
 import 'package:ainoval/services/api_service/repositories/chat_repository.dart';
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/api_service/repositories/novel_repository.dart';
-import 'package:ainoval/services/api_service/base/api_exception.dart';
 
 /// API服务类
 /// 

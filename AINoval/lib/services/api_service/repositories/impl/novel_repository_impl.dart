@@ -1,5 +1,6 @@
 import 'package:ainoval/config/app_config.dart';
 import 'package:ainoval/models/novel_structure.dart';
+import 'package:ainoval/models/scene_version.dart';
 import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/services/api_service/base/mock_client.dart';
@@ -9,7 +10,16 @@ import 'package:ainoval/services/mock_data_service.dart';
 /// 小说仓库实现
 class NovelRepositoryImpl implements NovelRepository {
   
-  NovelRepositoryImpl({
+  /// 创建NovelRepositoryImpl单例
+  static final NovelRepositoryImpl _instance = NovelRepositoryImpl._internal();
+  
+  /// 工厂构造函数
+  factory NovelRepositoryImpl() {
+    return _instance;
+  }
+  
+  /// 内部构造函数
+  NovelRepositoryImpl._internal({
     ApiClient? apiClient,
     MockClient? mockClient,
     MockDataService? mockService,
@@ -22,6 +32,11 @@ class NovelRepositoryImpl implements NovelRepository {
   
   /// 获取当前用户ID
   String? get _currentUserId => AppConfig.userId;
+  
+  /// 工厂方法获取单例
+  static NovelRepositoryImpl getInstance() {
+    return _instance;
+  }
   
   /// 获取所有小说
   @override
@@ -296,117 +311,384 @@ class NovelRepositoryImpl implements NovelRepository {
     }
   }
   
-  /// 更新场景内容
+  /// 更新场景内容并保存历史版本
   @override
-  Future<Scene> updateSceneContent(
-    String novelId, 
-    String actId, 
-    String chapterId, 
-    String sceneId,
-    Scene scene
-  ) async {
-    // 如果使用模拟数据，直接更新
-    if (AppConfig.shouldUseMockData) {
-      _mockService.updateSceneContent(novelId, actId, chapterId, sceneId, scene);
-      return scene;
-    }
-    
-    try {
-      // 将前端模型转换为后端模型
-      final sceneJson = {
-        'id': scene.id,
-        'novelId': novelId,
-        'chapterId': chapterId,
-        'content': scene.content,
-        'summary': scene.summary.content,
-        'wordCount': scene.wordCount,
-        'title': '场景 ${scene.id}', // 添加标题
-      };
-      
-      // 使用新的API路径更新场景内容
-      final data = await _apiClient.put('/novels/$novelId/chapters/$chapterId/scenes/$sceneId', data: sceneJson);
-      return _convertToSceneModel(data);
-    } catch (e) {
-      print('更新场景内容失败: $e');
-      
-      // 如果更新失败，尝试创建场景
-      try {
-        final sceneJson = {
-          'id': scene.id,
-          'novelId': novelId,
-          'chapterId': chapterId,
-          'content': scene.content,
-          'summary': scene.summary.content,
-          'wordCount': scene.wordCount,
-          'title': '场景 ${scene.id}', // 添加标题
-        };
-        
-        final data = await _apiClient.post('/novels/$novelId/chapters/$chapterId/scenes', data: sceneJson);
-        return _convertToSceneModel(data);
-      } catch (e2) {
-        print('创建场景失败: $e2');
-        
-        // 如果API请求失败，更新模拟数据
-        _mockService.updateSceneContent(novelId, actId, chapterId, sceneId, scene);
-        return scene;
-      }
-    }
-  }
-  
-  /// 更新摘要内容
-  @override
-  Future<Summary> updateSummary(
-    String novelId, 
-    String actId, 
+  Future<Scene> updateSceneContentWithHistory(
+    String novelId,
     String chapterId,
     String sceneId,
-    Summary summary
+    String content,
+    String userId,
+    String reason
   ) async {
-    // 如果使用模拟数据，直接更新
+    // 如果使用模拟数据，直接使用模拟实现
     if (AppConfig.shouldUseMockData) {
-      _mockService.updateSummary(novelId, actId, chapterId, sceneId, summary);
-      return summary;
+      try {
+        // 获取原始场景
+        final novel = await fetchNovel(novelId);
+        
+        // 查找场景
+        Scene? originalScene;
+        String? actId;
+        
+        // 遍历查找场景
+        for (final act in novel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == chapterId) {
+              for (final scene in chapter.scenes) {
+                if (scene.id == sceneId) {
+                  originalScene = scene;
+                  actId = act.id;
+                  break;
+                }
+              }
+            }
+            if (originalScene != null) break;
+          }
+          if (originalScene != null) break;
+        }
+        
+        if (originalScene == null || actId == null) {
+          throw ApiException(404, '场景不存在');
+        }
+        
+        // 计算字数
+        final wordCount = content.trim().split(RegExp(r'\s+')).length;
+        
+        // 创建历史记录条目
+        final historyEntry = HistoryEntry(
+          content: originalScene.content,
+          updatedAt: DateTime.now(),
+          updatedBy: userId,
+          reason: reason,
+        );
+        
+        // 更新场景，添加历史记录
+        final updatedScene = originalScene.copyWith(
+          content: content,
+          wordCount: wordCount,
+          lastEdited: DateTime.now(),
+          version: originalScene.version + 1,
+          history: [...originalScene.history, historyEntry],
+        );
+        
+        // 更新场景
+        _mockService.updateSceneContent(
+          novelId, 
+          actId, 
+          chapterId, 
+          sceneId, 
+          updatedScene,
+        );
+        
+        return updatedScene;
+      } catch (e) {
+        print('更新场景内容失败: $e');
+        throw ApiException(500, '更新场景内容失败: $e');
+      }
     }
     
     try {
-      // 获取当前场景
-      final scene = await fetchSceneContent(novelId, actId, chapterId, sceneId);
-      
-      // 更新摘要
-      final updatedScene = await updateSceneContent(
-        novelId, 
-        actId, 
-        chapterId, 
-        sceneId,
-        scene.copyWith(summary: summary),
+      // 准备请求数据
+      final dto = SceneContentUpdateDto(
+        content: content,
+        userId: userId,
+        reason: reason,
       );
       
-      return updatedScene.summary;
+      // 发送API请求
+      final data = await _apiClient.post(
+        '/novels/$novelId/chapters/$chapterId/scenes/$sceneId/history',
+        data: dto.toJson(),
+      );
+      
+      // 解析响应
+      return Scene.fromJson(data);
     } catch (e) {
-      print('更新摘要失败: $e');
-      // 如果API请求失败，更新模拟数据
-      _mockService.updateSummary(novelId, actId, chapterId, sceneId, summary);
-      return summary;
+      print('更新场景内容失败: $e');
+      throw ApiException(500, '更新场景内容失败: $e');
     }
   }
   
-  /// 处理WebFlux流式响应数据，统一处理数据类型
-  dynamic _handleFluxResponse(dynamic data) {
-    if (data == null) return null;
-    
-    // 如果是列表类型，确保列表中的每个元素都是Map类型
-    if (data is List) {
-      return data;
-    } 
-    // 如果是Map类型，直接返回
-    else if (data is Map<String, dynamic>) {
-      return data;
-    } 
-    // 其他类型，记录警告并返回null
-    else {
-      print('警告：API返回了意外的数据类型: ${data.runtimeType}');
-      return null;
+  /// 获取场景的历史版本列表
+  @override
+  Future<List<SceneHistoryEntry>> getSceneHistory(
+    String novelId,
+    String chapterId,
+    String sceneId
+  ) async {
+    // 如果使用模拟数据，直接使用模拟实现
+    if (AppConfig.shouldUseMockData) {
+      try {
+        // 获取原始场景
+        final novel = await fetchNovel(novelId);
+        
+        // 查找场景
+        Scene? scene;
+        
+        // 遍历查找场景
+        for (final act in novel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == chapterId) {
+              for (final s in chapter.scenes) {
+                if (s.id == sceneId) {
+                  scene = s;
+                  break;
+                }
+              }
+            }
+            if (scene != null) break;
+          }
+          if (scene != null) break;
+        }
+        
+        if (scene == null) {
+          throw ApiException(404, '场景不存在');
+        }
+        
+        // 将内部HistoryEntry转换为API SceneHistoryEntry
+        return scene.history.map((entry) => SceneHistoryEntry(
+          content: entry.content,
+          updatedAt: entry.updatedAt,
+          updatedBy: entry.updatedBy,
+          reason: entry.reason,
+        )).toList();
+      } catch (e) {
+        print('获取场景历史版本失败: $e');
+        throw ApiException(500, '获取场景历史版本失败: $e');
+      }
     }
+    
+    try {
+      // 发送API请求
+      final data = await _apiClient.get(
+        '/novels/$novelId/chapters/$chapterId/scenes/$sceneId/history',
+      );
+      
+      // 解析响应
+      return (data as List).map((e) => SceneHistoryEntry.fromJson(e)).toList();
+    } catch (e) {
+      print('获取场景历史版本失败: $e');
+      throw ApiException(500, '获取场景历史版本失败: $e');
+    }
+  }
+  
+  /// 恢复场景到指定的历史版本
+  @override
+  Future<Scene> restoreSceneVersion(
+    String novelId,
+    String chapterId,
+    String sceneId,
+    int historyIndex,
+    String userId,
+    String reason
+  ) async {
+    // 如果使用模拟数据，直接使用模拟实现
+    if (AppConfig.shouldUseMockData) {
+      try {
+        // 获取原始场景
+        final novel = await fetchNovel(novelId);
+        
+        // 查找场景
+        Scene? originalScene;
+        String? actId;
+        
+        // 遍历查找场景
+        for (final act in novel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == chapterId) {
+              for (final scene in chapter.scenes) {
+                if (scene.id == sceneId) {
+                  originalScene = scene;
+                  actId = act.id;
+                  break;
+                }
+              }
+            }
+            if (originalScene != null) break;
+          }
+          if (originalScene != null) break;
+        }
+        
+        if (originalScene == null || actId == null) {
+          throw ApiException(404, '场景不存在');
+        }
+        
+        // 检查历史索引是否有效
+        if (historyIndex < 0 || historyIndex >= originalScene.history.length) {
+          throw ApiException(400, '无效的历史版本索引');
+        }
+        
+        // 获取指定的历史版本
+        final historyEntry = originalScene.history[historyIndex];
+        
+        // 如果历史版本没有内容，抛出异常
+        if (historyEntry.content == null) {
+          throw ApiException(400, '历史版本内容为空');
+        }
+        
+        // 创建新的历史记录条目（记录当前版本）
+        final newHistoryEntry = HistoryEntry(
+          content: originalScene.content,
+          updatedAt: DateTime.now(),
+          updatedBy: userId,
+          reason: '自动保存（恢复前）',
+        );
+        
+        // 计算恢复版本的字数
+        final wordCount = historyEntry.content!.trim().split(RegExp(r'\s+')).length;
+        
+        // 更新场景，添加历史记录
+        final updatedScene = originalScene.copyWith(
+          content: historyEntry.content!,
+          wordCount: wordCount,
+          lastEdited: DateTime.now(),
+          version: originalScene.version + 1,
+          history: [...originalScene.history, newHistoryEntry],
+        );
+        
+        // 更新场景
+        _mockService.updateSceneContent(
+          novelId, 
+          actId, 
+          chapterId, 
+          sceneId, 
+          updatedScene,
+        );
+        
+        return updatedScene;
+      } catch (e) {
+        print('恢复历史版本失败: $e');
+        throw ApiException(500, '恢复历史版本失败: $e');
+      }
+    }
+    
+    try {
+      // 准备请求数据
+      final dto = SceneRestoreDto(
+        historyIndex: historyIndex,
+        userId: userId,
+        reason: reason,
+      );
+      
+      // 发送API请求
+      final data = await _apiClient.post(
+        '/novels/$novelId/chapters/$chapterId/scenes/$sceneId/restore',
+        data: dto.toJson(),
+      );
+      
+      // 解析响应
+      return Scene.fromJson(data);
+    } catch (e) {
+      print('恢复历史版本失败: $e');
+      throw ApiException(500, '恢复历史版本失败: $e');
+    }
+  }
+  
+  /// 对比两个场景版本
+  @override
+  Future<SceneVersionDiff> compareSceneVersions(
+    String novelId,
+    String chapterId,
+    String sceneId,
+    int versionIndex1,
+    int versionIndex2
+  ) async {
+    // 如果使用模拟数据，直接使用模拟实现
+    if (AppConfig.shouldUseMockData) {
+      try {
+        // 获取原始场景
+        final novel = await fetchNovel(novelId);
+        
+        // 查找场景
+        Scene? scene;
+        
+        // 遍历查找场景
+        for (final act in novel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == chapterId) {
+              for (final s in chapter.scenes) {
+                if (s.id == sceneId) {
+                  scene = s;
+                  break;
+                }
+              }
+            }
+            if (scene != null) break;
+          }
+          if (scene != null) break;
+        }
+        
+        if (scene == null) {
+          throw ApiException(404, '场景不存在');
+        }
+        
+        // 检查历史索引是否有效
+        if (versionIndex1 < 0 || versionIndex1 >= scene.history.length ||
+            versionIndex2 < 0 || versionIndex2 >= scene.history.length) {
+          throw ApiException(400, '无效的历史版本索引');
+        }
+        
+        // 获取指定的历史版本
+        final content1 = scene.history[versionIndex1].content ?? '';
+        final content2 = scene.history[versionIndex2].content ?? '';
+        
+        // 计算差异（这里简化实现，实际应使用diff算法）
+        final diff = _generateSimpleDiff(content1, content2);
+        
+        return SceneVersionDiff(
+          originalContent: content1,
+          newContent: content2,
+          diff: diff,
+        );
+      } catch (e) {
+        print('比较版本差异失败: $e');
+        throw ApiException(500, '比较版本差异失败: $e');
+      }
+    }
+    
+    try {
+      // 准备请求数据
+      final dto = SceneVersionCompareDto(
+        versionIndex1: versionIndex1,
+        versionIndex2: versionIndex2,
+      );
+      
+      // 发送API请求
+      final data = await _apiClient.post(
+        '/novels/$novelId/chapters/$chapterId/scenes/$sceneId/compare',
+        data: dto.toJson(),
+      );
+      
+      // 解析响应
+      return SceneVersionDiff.fromJson(data);
+    } catch (e) {
+      print('比较版本差异失败: $e');
+      throw ApiException(500, '比较版本差异失败: $e');
+    }
+  }
+  
+  /// 生成简单的差异文本
+  String _generateSimpleDiff(String content1, String content2) {
+    final lines1 = content1.split('\n');
+    final lines2 = content2.split('\n');
+    
+    final diff = StringBuffer();
+    
+    // 添加差异标记
+    diff.writeln('@@ -1,${lines1.length} +1,${lines2.length} @@');
+    
+    // 添加删除的行
+    for (final line in lines1) {
+      diff.writeln('- $line');
+    }
+    
+    // 添加新增的行
+    for (final line in lines2) {
+      diff.writeln('+ $line');
+    }
+    
+    return diff.toString();
   }
   
   /// 将WebFlux响应转换为Novel列表
@@ -593,6 +875,119 @@ class NovelRepositoryImpl implements NovelRepository {
       // 其他情况返回当前时间
       print('未知的日期时间格式: $dateTimeValue (${dateTimeValue.runtimeType})');
       return DateTime.now();
+    }
+  }
+
+  /// 处理WebFlux流式响应数据，统一处理数据类型
+  dynamic _handleFluxResponse(dynamic data) {
+    if (data == null) return null;
+    
+    // 如果是列表类型，确保列表中的每个元素都是Map类型
+    if (data is List) {
+      return data;
+    } 
+    // 如果是Map类型，直接返回
+    else if (data is Map<String, dynamic>) {
+      return data;
+    }
+    // 其他类型，记录警告并返回null
+    else {
+      print('警告：API返回了意外的数据类型: ${data.runtimeType}');
+      return null;
+    }
+  }
+
+  /// 更新场景内容
+  @override
+  Future<Scene> updateSceneContent(
+    String novelId, 
+    String actId, 
+    String chapterId, 
+    String sceneId,
+    Scene scene
+  ) async {
+    // 如果使用模拟数据，直接更新
+    if (AppConfig.shouldUseMockData) {
+      _mockService.updateSceneContent(novelId, actId, chapterId, sceneId, scene);
+      return scene;
+    }
+    
+    try {
+      // 将前端模型转换为后端模型
+      final sceneJson = {
+        'id': scene.id,
+        'novelId': novelId,
+        'chapterId': chapterId,
+        'content': scene.content,
+        'summary': scene.summary.content,
+        'wordCount': scene.wordCount,
+        'title': '场景 ${scene.id}', // 添加标题
+      };
+      
+      // 使用新的API路径更新场景内容
+      final data = await _apiClient.put('/novels/$novelId/chapters/$chapterId/scenes/$sceneId', data: sceneJson);
+      return _convertToSceneModel(data);
+    } catch (e) {
+      print('更新场景内容失败: $e');
+      
+      // 如果更新失败，尝试创建场景
+      try {
+        final sceneJson = {
+          'id': scene.id,
+          'novelId': novelId,
+          'chapterId': chapterId,
+          'content': scene.content,
+          'summary': scene.summary.content,
+          'wordCount': scene.wordCount,
+          'title': '场景 ${scene.id}', // 添加标题
+        };
+        
+        final data = await _apiClient.post('/novels/$novelId/chapters/$chapterId/scenes', data: sceneJson);
+        return _convertToSceneModel(data);
+      } catch (e2) {
+        print('创建场景失败: $e2');
+        
+        // 如果API请求失败，更新模拟数据
+        _mockService.updateSceneContent(novelId, actId, chapterId, sceneId, scene);
+        return scene;
+      }
+    }
+  }
+
+  /// 更新摘要内容
+  @override
+  Future<Summary> updateSummary(
+    String novelId,
+    String actId, 
+    String chapterId,
+    String sceneId,
+    Summary summary
+  ) async {
+    // 如果使用模拟数据，直接更新
+    if (AppConfig.shouldUseMockData) {
+      _mockService.updateSummary(novelId, actId, chapterId, sceneId, summary);
+      return summary;
+    }
+    
+    try {
+      // 获取当前场景
+      final scene = await fetchSceneContent(novelId, actId, chapterId, sceneId);
+      
+      // 更新摘要
+      final updatedScene = await updateSceneContent(
+        novelId, 
+        actId, 
+        chapterId, 
+        sceneId,
+        scene.copyWith(summary: summary),
+      );
+      
+      return updatedScene.summary;
+    } catch (e) {
+      print('更新摘要失败: $e');
+      // 如果API请求失败，更新模拟数据
+      _mockService.updateSummary(novelId, actId, chapterId, sceneId, summary);
+      return summary;
     }
   }
 }
