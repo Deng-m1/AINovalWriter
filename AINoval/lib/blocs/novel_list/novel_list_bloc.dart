@@ -1,5 +1,5 @@
 import 'package:ainoval/models/novel_summary.dart';
-import 'package:ainoval/repositories/novel_repository.dart';
+import 'package:ainoval/services/api_service/repositories/novel_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -171,8 +171,17 @@ class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
   Future<void> _onLoadNovels(LoadNovels event, Emitter<NovelListState> emit) async {
     emit(NovelListLoading());
     try {
-      final novels = await repository.getNovels();
-      emit(NovelListLoaded(novels: novels));
+      final novels = await repository.fetchNovels();
+      // 转换为NovelSummary列表
+      final novelSummaries = novels.map((novel) => NovelSummary(
+        id: novel.id,
+        title: novel.title,
+        coverImagePath: novel.coverImagePath,
+        lastEditTime: novel.updatedAt,
+        wordCount: novel.wordCount,
+        completionPercentage: 0.0,
+      )).toList();
+      emit(NovelListLoaded(novels: novelSummaries));
     } catch (e) {
       emit(NovelListError(message: e.toString()));
     }
@@ -182,9 +191,18 @@ class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
     final currentState = state;
     if (currentState is NovelListLoaded) {
       try {
-        final searchResults = await repository.searchNovels(event.query);
+        final searchResults = await repository.searchNovelsByTitle(event.query);
+        // 转换为NovelSummary列表
+        final novelSummaries = searchResults.map((novel) => NovelSummary(
+          id: novel.id,
+          title: novel.title,
+          coverImagePath: novel.coverImagePath,
+          lastEditTime: novel.updatedAt,
+          wordCount: novel.wordCount,
+          completionPercentage: 0.0,
+        )).toList();
         emit(NovelListLoaded(
-          novels: searchResults,
+          novels: novelSummaries,
           searchQuery: event.query,
           sortOption: currentState.sortOption,
           filterOption: currentState.filterOption,
@@ -275,12 +293,23 @@ class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
   // 添加创建小说的处理方法
   Future<void> _onCreateNovel(CreateNovel event, Emitter<NovelListState> emit) async {
     try {
-      final newNovel = await repository.createNovel(event.title, seriesName: event.seriesName);
+      final newNovel = await repository.createNovel(event.title);
+      
+      // 将Novel转换为NovelSummary
+      final novelSummary = NovelSummary(
+        id: newNovel.id,
+        title: newNovel.title,
+        coverImagePath: newNovel.coverImagePath,
+        lastEditTime: newNovel.updatedAt,
+        wordCount: newNovel.wordCount,
+        seriesName: event.seriesName ?? '',
+        completionPercentage: 0.0,
+      );
       
       // 直接更新状态，添加新创建的小说
       final currentState = state;
       if (currentState is NovelListLoaded) {
-        final updatedNovels = List<NovelSummary>.from(currentState.novels)..add(newNovel);
+        final updatedNovels = List<NovelSummary>.from(currentState.novels)..add(novelSummary);
         emit(NovelListLoaded(
           novels: updatedNovels,
           searchQuery: currentState.searchQuery,

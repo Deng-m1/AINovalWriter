@@ -1,9 +1,11 @@
 import 'package:ainoval/models/editor_content.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
+import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/utils/mock_data_generator.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/chat_models.dart';
+
 
 /// 模拟数据服务，提供所有模拟数据
 class MockDataService {
@@ -32,7 +34,7 @@ class MockDataService {
         }
       }
       _isInitialized = true;
-      print('模拟数据服务缓存已初始化，共${_novelCache.length}个条目');
+      AppLogger.i('Services/mock_data_service', '模拟数据服务缓存已初始化，共${_novelCache.length}个条目');
     }
   }
   
@@ -51,22 +53,22 @@ class MockDataService {
     
     // 先尝试直接匹配
     if (_novelCache.containsKey(id)) {
-      print('从模拟数据中找到小说: $id');
+      AppLogger.i('Services/mock_data_service', '从模拟数据中找到小说: $id');
       return _novelCache[id];
     } 
     // 再尝试匹配不带前缀的ID
     else if (_novelCache.containsKey(normalizedId)) {
-      print('从模拟数据中找到小说(无前缀): $normalizedId');
+      AppLogger.i('Services/mock_data_service', '从模拟数据中找到小说(无前缀): $normalizedId');
       return _novelCache[normalizedId];
     }
     // 最后尝试匹配带前缀的ID
     else if (_novelCache.containsKey('novel-$normalizedId')) {
-      print('从模拟数据中找到小说(带前缀): novel-$normalizedId');
+      AppLogger.i('Services/mock_data_service', '从模拟数据中找到小说(带前缀): novel-$normalizedId');
       return _novelCache['novel-$normalizedId'];
     } 
     else if (_novelCache.isNotEmpty) {
       // 如果找不到匹配的小说，返回第一个
-      print('未找到匹配的小说，返回第一个模拟数据项');
+      AppLogger.i('Services/mock_data_service', '未找到匹配的小说，返回第一个模拟数据项');
       return _novelCache.values.first;
     }
     
@@ -82,7 +84,7 @@ class MockDataService {
       _novelCache['novel-${novel.id}'] = novel;
     }
     
-    print('已更新模拟数据中的小说: ${novel.id}');
+    AppLogger.i('Services/mock_data_service', '已更新模拟数据中的小说: ${novel.id}');
   }
   
   /// 创建新的模拟小说
@@ -121,7 +123,7 @@ class MockDataService {
         return chapter.scenes.first;
       }
     } catch (e) {
-      print('获取模拟场景内容失败: $e');
+      AppLogger.e('Services/mock_data_service', '获取模拟场景内容失败', e);
       return null;
     }
   }
@@ -130,14 +132,14 @@ class MockDataService {
   void updateSceneContent(String novelId, String actId, String chapterId, String sceneId, novel_models.Scene scene) {
     final novel = getNovel(novelId);
     if (novel == null) {
-      print('更新场景内容失败：找不到小说 $novelId');
+      AppLogger.e('Services/mock_data_service', '更新场景内容失败：找不到小说 $novelId');
       return;
     }
     
     // 查找对应的Act
     final actIndex = novel.acts.indexWhere((a) => a.id == actId);
     if (actIndex == -1) {
-      print('更新场景内容失败：找不到Act $actId');
+      AppLogger.e('Services/mock_data_service', '更新场景内容失败：找不到Act $actId');
       return;
     }
     
@@ -146,7 +148,7 @@ class MockDataService {
     // 查找对应的Chapter
     final chapterIndex = act.chapters.indexWhere((c) => c.id == chapterId);
     if (chapterIndex == -1) {
-      print('更新场景内容失败：找不到Chapter $chapterId');
+      AppLogger.e('Services/mock_data_service', '更新场景内容失败：找不到Chapter $chapterId');
       return;
     }
     
@@ -158,7 +160,7 @@ class MockDataService {
     
     if (sceneIndex == -1) {
       // 如果找不到Scene，则添加新Scene
-      print('找不到Scene $sceneId，添加新Scene');
+      AppLogger.i('Services/mock_data_service', '找不到Scene $sceneId，添加新Scene');
       updatedScenes = [...chapter.scenes, scene];
     } else {
       // 更新现有Scene
@@ -190,7 +192,7 @@ class MockDataService {
       _novelCache['novel-${novel.id}'] = updatedNovel;
     }
     
-    print('已更新模拟数据中的场景');
+    AppLogger.i('Services/mock_data_service', '已更新模拟数据中的场景');
   }
   
   /// 更新摘要内容
@@ -233,7 +235,7 @@ class MockDataService {
         _novelCache['novel-$novelId'] = _novelCache[novelId]!;
       }
       
-      print('已更新模拟数据中的摘要');
+      AppLogger.i('Services/mock_data_service', '已更新模拟数据中的摘要');
     }
   }
   
@@ -492,5 +494,21 @@ class MockDataService {
     }
     
     return novels;
+  }
+  
+  /// 根据场景ID获取场景
+  novel_models.Scene? getSceneById(String sceneId) {
+    for (final novel in _novelCache.values) {
+      for (final act in novel.acts) {
+        for (final chapter in act.chapters) {
+          for (final scene in chapter.scenes) {
+            if (scene.id == sceneId) {
+              return scene;
+            }
+          }
+        }
+      }
+    }
+    return null;
   }
 } 

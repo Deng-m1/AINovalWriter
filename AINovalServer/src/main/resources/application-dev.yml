@@ -32,9 +32,9 @@ logging:
     org.springframework.data.mongodb.core.ReactiveMongoTemplate: DEBUG
     org.springframework.data.mongodb.core.MongoTemplate: DEBUG
     org.springframework.data.mongodb.repository.query: DEBUG
-    org.springframework.web: warn
-    org.springframework.security: warn
-    reactor.netty: warn
+    org.springframework.web: DEBUG
+    org.springframework.security: DEBUG
+    reactor.netty: DEBUG
 
 management:
   endpoints:

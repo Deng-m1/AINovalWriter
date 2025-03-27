@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:ainoval/config/app_config.dart';
+import 'package:ainoval/utils/logger.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+
 
 /// 用户认证服务
 /// 
@@ -158,7 +160,7 @@ class AuthService {
       // 发送认证状态更新
       _authStateController.add(_currentState);
     } catch (e) {
-      print('登出失败: $e');
+      AppLogger.e('Services/auth_service', '登出失败', e);
     }
   }
   
@@ -216,7 +218,7 @@ class AuthService {
         return false;
       }
     } catch (e) {
-      print('刷新令牌失败: $e');
+      AppLogger.e('Services/auth_service', '刷新令牌失败', e);
       // 刷新令牌失败，清除认证状态
       await logout();
       return false;

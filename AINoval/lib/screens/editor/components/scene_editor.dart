@@ -1,9 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:ainoval/utils/logger.dart';
 
+/// 场景编辑器组件，用于编辑小说中的单个场景
+///
+/// [title] 场景标题
+/// [wordCount] 场景字数统计
+/// [isActive] 当前场景是否处于激活状态
+/// [actId] 所属篇章ID
+/// [chapterId] 所属章节ID
+/// [sceneId] 场景ID
+/// [isFirst] 是否为章节中的第一个场景
+/// [controller] 场景内容编辑控制器
+/// [summaryController] 场景摘要编辑控制器
+/// [editorBloc] 编辑器状态管理
 class SceneEditor extends StatefulWidget {
 
   const SceneEditor({
@@ -38,33 +52,27 @@ class _SceneEditorState extends State<SceneEditor> {
   final FocusNode _focusNode = FocusNode();
   Timer? _debounceTimer;
   bool _isFocused = false;
-  // 为编辑器创建一个GlobalKey
-  late final GlobalKey _editorKey;
+  // 为编辑器创建一个Key
+  late final Key _editorKey;
+  // 内容更新防抖定时器
+  Timer? _contentDebounceTimer;
 
   @override
   void initState() {
     super.initState();
-    // 初始化GlobalKey
+    // 修改初始化Key的方式，确保唯一性
     final String sceneId = widget.sceneId ?? 
         (widget.actId != null && widget.chapterId != null 
             ? '${widget.actId}_${widget.chapterId}' 
             : widget.title.replaceAll(' ', '_').toLowerCase());
-    _editorKey = GlobalObjectKey('editor_$sceneId');
+    // 使用ValueKey代替GlobalObjectKey
+    _editorKey = ValueKey('editor_$sceneId');
     
     // 监听焦点变化
     _focusNode.addListener(_onFocusChange);
     
-    // 如果当前场景是活动场景，自动请求焦点
-    if (widget.isActive) {
-      Future.microtask(() {
-        if (mounted && _focusNode.canRequestFocus) {
-          _focusNode.requestFocus();
-          setState(() {
-            _isFocused = true;
-          });
-        }
-      });
-    }
+    // 添加控制器内容监听器
+    widget.controller.document.changes.listen(_onDocumentChange);
   }
 
   void _onFocusChange() {
@@ -75,21 +83,45 @@ class _SceneEditorState extends State<SceneEditor> {
     }
   }
 
+  // 新增：监听文档变化
+  void _onDocumentChange(DocChange change) {
+    // 使用防抖动机制，避免频繁更新内容
+    _contentDebounceTimer?.cancel();
+    _contentDebounceTimer = Timer(const Duration(milliseconds: 1000), () { // 1秒防抖
+      _saveContent();
+    });
+  }
+
+  // 新增：保存内容的方法
+  void _saveContent() {
+     if (mounted && widget.actId != null && widget.chapterId != null && widget.sceneId != null) {
+        try {
+          final jsonStr = jsonEncode(widget.controller.document.toDelta().toJson());
+          widget.editorBloc.add(UpdateSceneContent(
+            novelId: widget.editorBloc.novelId,
+            actId: widget.actId!,
+            chapterId: widget.chapterId!,
+            sceneId: widget.sceneId!, // 使用 widget.sceneId
+            content: jsonStr,
+            shouldRebuild: false, // 通常不需要重建整个列表
+          ));
+        } catch (e, stackTrace) {
+          AppLogger.e('SceneEditor', '更新场景内容失败: ${widget.sceneId}', e, stackTrace);
+        }
+      }
+  }
+
   @override
   void dispose() {
     _focusNode.removeListener(_onFocusChange);
     _debounceTimer?.cancel();
+    _contentDebounceTimer?.cancel(); // 取消内容防抖定时器
     _focusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final String sceneId = widget.sceneId ?? 
-        (widget.actId != null && widget.chapterId != null 
-            ? '${widget.actId}_${widget.chapterId}' 
-            : widget.title.replaceAll(' ', '_').toLowerCase());
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -106,14 +138,14 @@ class _SceneEditorState extends State<SceneEditor> {
           children: [
             // 编辑器区域
             Expanded(
-              flex: 7, // 占据70%的宽度
-              child: _buildEditor(sceneId),
+              flex: 7, // 固定比例
+              child: _buildEditor(),
             ),
             
             // 摘要区域
             Expanded(
-              flex: 3, // 占据30%的宽度
-              child: _buildSummaryArea(sceneId),
+              flex: 3, // 固定比例
+              child: _buildSummaryArea(),
             ),
           ],
         ),
@@ -151,31 +183,35 @@ class _SceneEditorState extends State<SceneEditor> {
     );
   }
 
-  Widget _buildEditor(String sceneId) {
+  Widget _buildEditor() {
     return GestureDetector(
-      key: _editorKey, // 使用GlobalKey
+      key: _editorKey, // 使用ValueKey
       onTap: () {
-        // 如果有actId和chapterId，设置为活动章节
+        // 如果有actId和chapterId，设置为活动章节/场景
         if (widget.actId != null && widget.chapterId != null) {
-          // 设置活动章节
+          // 简化：只派发事件，让 Bloc 处理状态和焦点
           widget.editorBloc.add(SetActiveChapter(
             actId: widget.actId!, 
             chapterId: widget.chapterId!
           ));
           
-          // 如果有sceneId，设置为活动场景
           if (widget.sceneId != null) {
-            widget.editorBloc.add(SetActiveScene(
-              actId: widget.actId!,
-              chapterId: widget.chapterId!,
-              sceneId: widget.sceneId!
-            ));
+             widget.editorBloc.add(SetActiveScene(
+               actId: widget.actId!,
+               chapterId: widget.chapterId!,
+               sceneId: widget.sceneId!
+             ));
           }
-        }
-        
-        // 立即请求焦点
-        if (mounted && _focusNode.canRequestFocus) {
-          _focusNode.requestFocus();
+          // 不再手动请求焦点，依赖 isActive 和 QuillEditor 的 autoFocus
+          // if (mounted && _focusNode.canRequestFocus) {
+          //   _focusNode.requestFocus();
+          // }
+        } else {
+          // 如果没有 actId/chapterId，可能不需要特殊处理 onTap
+          // 或者如果这是某种特殊编辑器，则请求焦点
+           if (mounted && _focusNode.canRequestFocus) {
+             _focusNode.requestFocus();
+           }
         }
       },
       child: Container(
@@ -193,40 +229,24 @@ class _SceneEditorState extends State<SceneEditor> {
               ? Border.all(color: Colors.blue.shade200, width: 1.0)
               : null,
         ),
-        child: QuillEditor(
+        child: QuillEditor.basic(
           controller: widget.controller,
           focusNode: _focusNode,
           scrollController: ScrollController(),
-          configurations: const QuillEditorConfigurations(
-            scrollable: false, // 改为false，不需要内部滚动
-            autoFocus: false, // 不自动获取焦点
-            sharedConfigurations: QuillSharedConfigurations(
-              locale: Locale('zh', 'CN'),
-            ),
-            placeholder: 'Start writing, or type \'/\' for commands...',
+          config: QuillEditorConfig(
+            showCursor: true,
+            autoFocus: widget.isActive,
             expands: false,
-            padding: EdgeInsets.all(8),
-            customStyles: DefaultStyles(
-              paragraph: DefaultTextBlockStyle(
-                TextStyle(
-                  fontSize: 16,
-                  fontFamily: 'Serif',
-                  height: 1.5,
-                  color: Colors.black87,
-                ),
-                HorizontalSpacing(0, 0),
-                VerticalSpacing(0, 0),
-                VerticalSpacing(0, 0),
-                BoxDecoration(),
-              ),
-            ),
+            padding: EdgeInsets.zero,
+            scrollable: true,
+            placeholder: '开始写作...',
           ),
         ),
       ),
     );
   }
 
-  Widget _buildSummaryArea(String sceneId) {
+  Widget _buildSummaryArea() {
     return Container(
       margin: const EdgeInsets.only(left: 16),
       padding: const EdgeInsets.all(16),
@@ -288,12 +308,12 @@ class _SceneEditorState extends State<SceneEditor> {
               // 使用防抖动机制，避免频繁更新摘要
               _debounceTimer?.cancel();
               _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-                if (mounted && widget.actId != null && widget.chapterId != null) {
+                if (mounted && widget.actId != null && widget.chapterId != null && widget.sceneId != null) { // 确保 sceneId 存在
                   widget.editorBloc.add(UpdateSummary(
                     novelId: widget.editorBloc.novelId,
                     actId: widget.actId!,
                     chapterId: widget.chapterId!,
-                    sceneId: sceneId,
+                    sceneId: widget.sceneId!, // 使用 widget.sceneId
                     summary: value,
                     shouldRebuild: false,
                   ));
@@ -373,10 +393,10 @@ class _SceneDivider extends StatelessWidget {
 }
 
 class _SummaryActionButton extends StatelessWidget {
-
   const _SummaryActionButton({
     required this.icon,
     required this.label,
+    this.onPressed,
   });
   final IconData icon;
   final String label;
@@ -397,10 +417,10 @@ class _SummaryActionButton extends StatelessWidget {
 }
 
 class _ActionButton extends StatelessWidget {
-
   const _ActionButton({
     required this.icon,
     required this.label,
+    this.onPressed,
   });
   final IconData icon;
   final String label;

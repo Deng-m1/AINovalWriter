@@ -3,29 +3,34 @@ import 'dart:io';
 // 导入聊天相关的类
 import 'package:ainoval/blocs/auth/auth_bloc.dart';
 import 'package:ainoval/blocs/chat/chat_bloc.dart';
+import 'package:ainoval/blocs/editor_version_bloc.dart';
 import 'package:ainoval/blocs/novel_list/novel_list_bloc.dart';
 import 'package:ainoval/l10n/l10n.dart';
-import 'package:ainoval/repositories/chat_repository.dart';
-import 'package:ainoval/repositories/codex_repository.dart';
-import 'package:ainoval/repositories/novel_repository.dart';
 import 'package:ainoval/screens/auth/login_screen.dart';
 import 'package:ainoval/screens/novel_list/novel_list_screen.dart';
 import 'package:ainoval/services/api_service.dart';
+import 'package:ainoval/services/api_service/repositories/impl/chat_repository_impl.dart';
+import 'package:ainoval/services/api_service/repositories/impl/novel_repository_impl.dart';
 import 'package:ainoval/services/auth_service.dart' as auth_service;
 import 'package:ainoval/services/context_provider.dart';
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/services/websocket_service.dart';
 import 'package:ainoval/utils/app_theme.dart';
+import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 初始化日志系统
+  AppLogger.init();
   
   // 初始化Hive本地存储
   await Hive.initFlutter();
@@ -50,10 +55,7 @@ void main() async {
   await authService.init();
   
   // 创建NovelRepository
-  final novelRepository = NovelRepository(
-    apiService: apiService,
-    localStorageService: localStorageService,
-  );
+  final novelRepository = NovelRepositoryImpl();
   
   // 创建CodexRepository
   final codexRepository = CodexRepository();
@@ -65,11 +67,10 @@ void main() async {
   );
   
   // 创建ChatRepository
-  final chatRepository = ChatRepository(
-    apiService: apiService,
-    localStorageService: localStorageService,
-    webSocketService: webSocketService,
+  final chatRepository = ChatRepositoryImpl(
   );
+  
+  AppLogger.i('Main', '应用程序初始化完成，准备启动界面');
   
   runApp(
     MultiBlocProvider(
@@ -89,6 +90,12 @@ void main() async {
           create: (context) => ChatBloc(
             repository: chatRepository,
             contextProvider: contextProvider,
+          ),
+        ),
+        // 添加EditorVersionBloc提供者
+        BlocProvider<EditorVersionBloc>(
+          create: (context) => EditorVersionBloc(
+            novelRepository: NovelRepositoryImpl(),
           ),
         ),
       ],
@@ -120,9 +127,9 @@ Future<void> _createResourceDirectories() async {
       await iconsDir.create(recursive: true);
     }
     
-    print('资源文件夹创建成功');
+    AppLogger.i('ResourceDir', '资源文件夹创建成功');
   } catch (e) {
-    print('创建资源文件夹失败: $e');
+    AppLogger.e('ResourceDir', '创建资源文件夹失败', e);
   }
 }
 
