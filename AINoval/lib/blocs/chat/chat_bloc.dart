@@ -13,6 +13,9 @@ import '../../utils/logger.dart';
 import 'chat_event.dart';
 import 'chat_state.dart';
 import '../../config/app_config.dart';
+import '../ai_config/ai_config_bloc.dart';
+import '../../models/user_ai_model_config_model.dart';
+import 'package:collection/collection.dart';
 
 
 
@@ -22,7 +25,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     required this.repository, 
     required this.contextProvider,
     required this.authService,
+    required AiConfigBloc aiConfigBloc,
   }) : _userId = AppConfig.userId ?? '',
+       _aiConfigBloc = aiConfigBloc,
        super(ChatInitial()) {
     AppLogger.i('ChatBloc', 'Constructor called. Instance hash: ${identityHashCode(this)}');
     on<LoadChatSessions>(_onLoadChatSessions, transformer: restartable());
@@ -35,11 +40,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<DeleteChatSession>(_onDeleteChatSession);
     on<CancelOngoingRequest>(_onCancelRequest);
     on<UpdateChatContext>(_onUpdateChatContext);
+    on<UpdateChatModel>(_onUpdateChatModel);
   }
   final ChatRepository repository;
   final ContextProvider contextProvider;
   final AuthService authService;
   final String _userId;
+  final AiConfigBloc _aiConfigBloc;
   
   // 用于跟踪活动的流订阅，以便可以取消它们
   // StreamSubscription? _sessionsSubscription;
@@ -174,17 +181,35 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final session = await repository.getSession(_userId, event.sessionId);
       // 2. 获取上下文
       final context = await contextProvider.getContextForSession(session);
-      // 3. 发出初始 Activity 状态，标记正在加载历史
+      // 3. 解析选中的模型
+      UserAIModelConfigModel? selectedModel;
+      final aiState = _aiConfigBloc.state;
+      
+      if (aiState.configs.isNotEmpty) {
+          if (session.selectedModelConfigId != null) {
+              selectedModel = aiState.configs.firstWhereOrNull(
+                 (config) => config.id == session.selectedModelConfigId,
+              );
+          }
+          if (selectedModel == null) {
+              selectedModel = aiState.defaultConfig;
+          }
+      } else {
+         AppLogger.w('ChatBloc', '_onSelectChatSession: AiConfigBloc state does not have configs loaded.');
+      }
+
+      // 4. 发出初始 Activity 状态，标记正在加载历史
       emit(ChatSessionActive(
          session: session,
          context: context,
+         selectedModel: selectedModel,
          messages: const [], // 初始空列表
          isGenerating: false,
          isLoadingHistory: true, // 标记正在加载历史
       ));
       AppLogger.d('ChatBloc', '_onSelectChatSession emitted initial ChatSessionActive (loading history)');
 
-       // 4. 使用 await emit.forEach 加载消息历史
+       // 5. 使用 await emit.forEach 加载消息历史
       final List<ChatMessage> messages = [];
       // 假设 getMessageHistory 返回 Stream<ChatMessage>
       final messageStream = repository.getMessageHistory(_userId, event.sessionId);
@@ -206,7 +231,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           AppLogger.e('ChatBloc', 'Error loading message history stream', error, stackTrace);
           // 在 onError 时，发出包含错误信息的状态，并停止加载历史
           final currentState = state;
-          final errorMessage = '加载消息历史失败: ${ApiExceptionHelper.fromException(error, "加载历史出错").message}';
+          final errorMessage = '加载消息历史失败: ${_formatApiError(error, "加载历史出错")}';
           if (currentState is ChatSessionActive && currentState.session.id == event.sessionId) {
               if (!isClosed && !emit.isDone) {
                 return currentState.copyWith(
@@ -243,7 +268,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     } catch (e, stackTrace) {
        AppLogger.e('ChatBloc', '[Event Error] _onSelectChatSession (initial get failed).', e, stackTrace);
        if (!isClosed && !emit.isDone) {
-          final errorMessage = '加载会话失败: ${ApiExceptionHelper.fromException(e, "加载会话信息出错").message}';
+          final errorMessage = '加载会话失败: ${_formatApiError(e, "加载会话信息出错")}';
           emit(ChatError(message: errorMessage));
        }
     }
@@ -252,31 +277,31 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   
   Future<void> _onSendMessage(SendMessage event, Emitter<ChatState> emit) async {
     if (state is ChatSessionActive) {
-      final currentState = state as ChatSessionActive;
-      
-      final userMessage = ChatMessage(
-        id: const Uuid().v4(),
-        sessionId: currentState.session.id,
-        role: MessageRole.user,
-        content: event.content,
-        timestamp: DateTime.now(),
-        status: MessageStatus.sent,
-      );
-      
+    final currentState = state as ChatSessionActive;
+
+    final userMessage = ChatMessage(
+      id: const Uuid().v4(),
+      sessionId: currentState.session.id,
+      role: MessageRole.user,
+      content: event.content,
+      timestamp: DateTime.now(),
+      status: MessageStatus.sent,
+    );
+    
       ChatMessage? placeholderMessage;
 
       try {
          placeholderMessage = ChatMessage(
-           id: const Uuid().v4(),
-           sessionId: currentState.session.id,
-           role: MessageRole.assistant,
+            id: const Uuid().v4(),
+         sessionId: currentState.session.id,
+         role: MessageRole.assistant,
            content: '',
-           timestamp: DateTime.now(),
+         timestamp: DateTime.now(),
            status: MessageStatus.pending,
-         );
-        
+       );
+
         // 在发起请求前，先更新UI，添加用户消息和占位符
-        emit(currentState.copyWith(
+       emit(currentState.copyWith(
           messages: [...currentState.messages, userMessage, placeholderMessage],
           isGenerating: true,
           error: null, // 清除之前的错误（如果有）
@@ -305,7 +330,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                         isGenerating: false, // 即使出错也要停止生成状态
                         error: ApiExceptionHelper.fromException(e, "发送消息失败").message, // 使用辅助方法
                     ));
-                } else {
+               } else {
                      // 如果 placeholder 不在列表里（理论上不应该发生，除非状态更新逻辑有问题）
                      AppLogger.w('ChatBloc', '未找到ID为 ${placeholderMessage.id} 的占位符消息标记错误');
                      emit(errorState.copyWith(
@@ -313,7 +338,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                         error: ApiExceptionHelper.fromException(e, "发送消息失败").message, // 使用辅助方法
                     ));
                 }
-            } else {
+               } else {
                  // 如果 placeholder 尚未创建就出错
                  emit(errorState.copyWith(
                     isGenerating: false,
@@ -482,145 +507,268 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   // 修改：处理流式响应的辅助方法，接收 placeholderId
+  // 使用 await emit.forEach 重构
   Future<void> _handleStreamedResponse(Emitter<ChatState> emit, String placeholderId, String userContent) async {
-       StreamSubscription? responseSubscription;
-       StringBuffer contentBuffer = StringBuffer();
-       ChatMessage? finalMessageData;
+    // --- Initial state check ---
+    if (state is! ChatSessionActive) {
+      AppLogger.e('ChatBloc', '_handleStreamedResponse called while not in ChatSessionActive state');
+      // Cannot proceed without active state, emit error if possible
+      // Emitter might be closed here already if called incorrectly, so check
+      if (!emit.isDone) {
+        try {
+          emit(ChatError(message: '内部错误: 无法在非活动会话中处理流'));
+        } catch (e) { AppLogger.e('ChatBloc', 'Failed to emit error state', e); }
+      }
+      return;
+    }
+    // Capture initial state specifics
+    final initialState = state as ChatSessionActive;
+    final currentSessionId = initialState.session.id;
+    final initialRole = MessageRole.assistant;
 
-       // 确保我们在 ChatSessionActive 状态下开始
-       if (state is! ChatSessionActive) {
-           AppLogger.e('ChatBloc', '_handleStreamedResponse called while not in ChatSessionActive state');
-           throw Exception("Cannot handle stream response outside of active session.");
-           // 或者可以直接 return 或发出错误状态
-       }
-       final currentSessionId = (state as ChatSessionActive).session.id;
+    StringBuffer contentBuffer = StringBuffer();
 
-       final stream = repository.streamMessage(
-           userId: _userId,
-           sessionId: currentSessionId,
-           content: userContent,
-       );
+    try {
+      final stream = repository.streamMessage(
+        userId: _userId,
+        sessionId: currentSessionId,
+        content: userContent,
+        // Pass configId if needed:
+        // configId: initialState.selectedModel?.id,
+      );
 
-       responseSubscription = stream.listen(
-         (chunk) {
-            // 检查状态是否仍然是同一个活动会话
-            if (state is! ChatSessionActive || (state as ChatSessionActive).session.id != currentSessionId || emit.isDone) {
-                 AppLogger.w('ChatBloc', 'Stream chunk received, but state changed or BLoC closed. Cancelling.');
-                 responseSubscription?.cancel();
-                 return;
+      // --- Use await emit.forEach ---
+      await emit.forEach<ChatMessage>(
+        stream,
+        onData: (chunk) {
+          // --- Per-chunk state validation ---
+          // Get the absolute latest state *inside* onData
+          final currentState = state;
+          // Check if state is still valid *for this operation*
+          if (currentState is! ChatSessionActive || currentState.session.id != currentSessionId) {
+            AppLogger.w('ChatBloc', 'emit.forEach onData: State changed during stream processing. Stopping.');
+            // Throwing an error here will exit emit.forEach and go to the outer catch block
+            throw StateError('Chat session changed during streaming');
+          }
+          // --- State is valid, proceed ---
+
+          contentBuffer.write(chunk.content);
+
+          final latestMessages = List<ChatMessage>.from(currentState.messages);
+          final aiMessageIndex = latestMessages.indexWhere((msg) => msg.id == placeholderId);
+
+          if (aiMessageIndex != -1) {
+            final updatedStreamingMessage = ChatMessage(
+              id: placeholderId, // Keep placeholder ID
+              role: initialRole,
+              content: contentBuffer.toString(),
+              timestamp: DateTime.now(),
+              status: MessageStatus.streaming,
+              sessionId: currentSessionId,
+              userId: _userId,
+              novelId: currentState.session.novelId,
+              metadata: chunk.metadata ?? latestMessages[aiMessageIndex].metadata, // Merge metadata?
+              actions: chunk.actions ?? latestMessages[aiMessageIndex].actions,     // Merge actions?
+            );
+            latestMessages[aiMessageIndex] = updatedStreamingMessage;
+
+            // Return the *new state* to be emitted by forEach
+            return currentState.copyWith(
+              messages: latestMessages,
+              isGenerating: true, // Still generating
+            );
+          } else {
+            AppLogger.w('ChatBloc', '_handleStreamedResponse: 未找到ID为 $placeholderId 的占位符进行流式更新');
+            // Cannot continue if placeholder lost, throw error to exit
+            throw StateError('Placeholder message lost during streaming');
+          }
+        },
+        onError: (error, stackTrace) {
+          // This onError is for the *stream itself* having an error
+          AppLogger.e('ChatBloc', 'Stream error in emit.forEach', error, stackTrace);
+          final currentState = state; // Get state at the time of error
+          final errorMessage = ApiExceptionHelper.fromException(error, "流处理失败").message;
+          if (currentState is ChatSessionActive && currentState.session.id == currentSessionId) {
+            // Return the error state to be emitted by forEach
+            return currentState.copyWith(
+              messages: _markPlaceholderAsError(currentState.messages, placeholderId, contentBuffer.toString(), errorMessage),
+              isGenerating: false,
+              error: errorMessage,
+              clearError: false,
+            );
+          }
+          // If state changed before stream error, return a generic error state
+          return ChatError(message: errorMessage);
+        },
+      );
+
+      // ---- Stream finished successfully (await emit.forEach completed without error) ----
+      // Get final state AFTER the loop finishes
+      final finalState = state;
+      if (finalState is ChatSessionActive && finalState.session.id == currentSessionId) {
+          final latestMessages = List<ChatMessage>.from(finalState.messages);
+          final aiMessageIndex = latestMessages.indexWhere((msg) => msg.id == placeholderId);
+
+          if (aiMessageIndex != -1) {
+               final finalMessage = ChatMessage(
+                   id: placeholderId, // Keep placeholder ID
+                   role: initialRole,
+                   content: contentBuffer.toString(), // Final content
+                   timestamp: DateTime.now(), // Final timestamp
+                   status: MessageStatus.sent, // Final status: sent
+                   sessionId: currentSessionId,
+                   userId: _userId,
+                   novelId: finalState.session.novelId,
+                   // Use latest known metadata/actions before finalizing
+                   metadata: latestMessages[aiMessageIndex].metadata,
+                   actions: latestMessages[aiMessageIndex].actions,
+               );
+               latestMessages[aiMessageIndex] = finalMessage;
+
+               // Emit the final state explicitly after the loop
+               emit(finalState.copyWith(
+                   messages: latestMessages,
+                   isGenerating: false, // Generation complete
+                   clearError: true, // Clear any previous non-fatal errors shown during streaming
+               ));
+          } else {
+               AppLogger.w('ChatBloc', '_handleStreamedResponse (onDone): 未找到ID为 $placeholderId 进行最终更新');
+               if (finalState.isGenerating) {
+                    emit(finalState.copyWith(isGenerating: false)); // Ensure generating stops
+               }
+          }
+      } else {
+           AppLogger.w('ChatBloc', 'Stream completed, but state changed or invalid. Final update skipped.');
+              // If the state changed BUT we were generating, make sure to stop it
+             if (state is ChatSessionActive && (state as ChatSessionActive).isGenerating) {
+                emit((state as ChatSessionActive).copyWith(isGenerating: false));
+             } else if (state is! ChatSessionActive) { 
+                // This case is tricky, maybe emit ChatError or just log
+                AppLogger.e('ChatBloc', 'Stream completed, state is not Active, but maybe was generating? State: ${state.runtimeType}');
+             }
+      }
+
+    } catch (error, stackTrace) {
+        // Catches errors from:
+        // - Initial repository.streamMessage call
+        // - Errors re-thrown from the stream's `onError` that emit.forEach catches
+        // - The StateErrors thrown in `onData` if state changes or placeholder is lost
+        AppLogger.e('ChatBloc', 'Error during _handleStreamedResponse processing loop', error, stackTrace);
+        // Check emitter status *before* attempting to emit
+        if (!emit.isDone) {
+            final currentState = state; // Get state at the time of catch
+            final errorMessage = (error is StateError)
+                 ? "内部错误: ${error.message}" // Keep StateError messages distinct
+                 : ApiExceptionHelper.fromException(error, "处理流响应失败").message;
+
+            if (currentState is ChatSessionActive && currentState.session.id == currentSessionId) {
+                 // Attempt to emit the error state for the correct session
+                 emit(currentState.copyWith(
+                     messages: _markPlaceholderAsError(currentState.messages, placeholderId, contentBuffer.toString(), errorMessage),
+                     isGenerating: false, // Stop generation on error
+                     error: errorMessage,
+                     clearError: false,
+                 ));
+            } else {
+                 // If state changed before catch, emit generic error
+                  AppLogger.w('ChatBloc', 'Caught error, but state changed. Emitting generic ChatError.');
+                 emit(ChatError(message: errorMessage));
             }
-            final latestState = state as ChatSessionActive; // 重新获取最新状态
+        } else {
+            AppLogger.w('ChatBloc', 'Caught error, but emitter is done. Cannot emit error state.');
+        }
+    } finally {
+       // No explicit subscription cleanup needed with emit.forEach
+       AppLogger.d('ChatBloc', '_handleStreamedResponse finished processing for placeholder $placeholderId');
+        // Ensure `isGenerating` is false if the process ends unexpectedly without explicit state update
+        // This is a safety net.
+        if (state is ChatSessionActive && (state as ChatSessionActive).isGenerating && (state as ChatSessionActive).session.id == currentSessionId) {
+            AppLogger.w('ChatBloc', '_handleStreamedResponse finally: State still shows isGenerating. Forcing to false.');
+            if (!emit.isDone) {
+               emit((state as ChatSessionActive).copyWith(isGenerating: false));
+            }
+        }
+    }
+  }
 
-             if (finalMessageData == null) {
-                 finalMessageData = chunk;
-             }
-             contentBuffer.write(chunk.content);
-
-             final latestMessages = List<ChatMessage>.from(latestState.messages);
-             final aiMessageIndex = latestMessages.indexWhere((msg) => msg.id == placeholderId);
-
-             if (aiMessageIndex != -1) {
-                 latestMessages[aiMessageIndex] = latestMessages[aiMessageIndex].copyWith(
-                     content: contentBuffer.toString(),
-                     // **注意: MessageStatus.streaming 需要添加到你的枚举中**
-                     status: MessageStatus.pending, // 使用 pending 直到完成，或者添加 streaming 状态
-                     // 如果有 streaming 状态: status: MessageStatus.streaming,
-                 );
-                 emit(latestState.copyWith(
-                     messages: latestMessages,
-                     isGenerating: true, // 仍在生成中
-                 ));
-             } else {
-                AppLogger.w('ChatBloc', '_handleStreamedResponse: 未找到ID为 $placeholderId 的占位符进行流式更新');
-                responseSubscription?.cancel();
-             }
-         },
-         onDone: () {
-             AppLogger.i('ChatBloc', 'AI响应流完成');
-             // 检查状态是否仍然是同一个活动会话
-             if (state is! ChatSessionActive || (state as ChatSessionActive).session.id != currentSessionId || emit.isDone) {
-                  AppLogger.w('ChatBloc', 'Stream done, but state changed or BLoC closed. Ignoring final update.');
-                  return;
-             }
-             final latestState = state as ChatSessionActive; // 重新获取最新状态
-
-
-             final latestMessages = List<ChatMessage>.from(latestState.messages);
-             final aiMessageIndex = latestMessages.indexWhere((msg) => msg.id == placeholderId);
-
-             if (aiMessageIndex != -1) {
-                 latestMessages[aiMessageIndex] = (finalMessageData ?? latestMessages[aiMessageIndex]).copyWith(
-                   id: finalMessageData?.id ?? placeholderId,
-                   content: contentBuffer.toString(),
-                   timestamp: DateTime.now(),
-                   status: MessageStatus.sent,
-                 );
-                 emit(latestState.copyWith(
-                     messages: latestMessages,
-                     isGenerating: false, // 生成完成
-                 ));
-             } else {
-                 AppLogger.w('ChatBloc', '_handleStreamedResponse (onDone): 未找到ID为 $placeholderId 的占位符进行最终更新');
-                 // 即使找不到，也确保 isGenerating 设为 false
-                  if (latestState.isGenerating) {
-                     emit(latestState.copyWith(isGenerating: false));
-                 }
-             }
-             // responseSubscription?.cancel(); // listen 会在 onDone 后自动取消
-         },
-         onError: (e, stackTrace) {
-             AppLogger.e('ChatBloc', 'Handling onError - Instance hash: ${identityHashCode(this)}', e, stackTrace);
-             final isEmitterDone = emit.isDone;
-             AppLogger.d('ChatBloc', 'onError check: emit.isDone = $isEmitterDone - Instance hash: ${identityHashCode(this)}');
-
-             // --- 修改开始: 简化错误处理和 emit 尝试 ---
-             if (!isEmitterDone) {
-                 try {
-                     final currentState = state; // 获取当前状态
-                     AppLogger.i('ChatBloc', 'onError: Emitter IS NOT done. Current state: ${currentState.runtimeType}. Attempting emit...');
-                     final errorMessage = ApiExceptionHelper.fromException(e, "流处理失败").message;
-
-                     if (currentState is ChatSessionActive) {
-                         // 准备一个更新后的状态，确保 isGenerating 为 false
-                         final errorState = currentState.copyWith(
-                             isGenerating: false,
-                             error: errorMessage,
-                             // 尝试更新消息列表中的占位符为错误
-                             messages: _markPlaceholderAsError(currentState.messages, placeholderId, contentBuffer.toString(), errorMessage),
-                         );
-                         emit(errorState);
-                         AppLogger.i('ChatBloc', 'onError: Successfully emitted ChatSessionActive with isGenerating=false.');
-                     } else {
-                         // 如果当前不是活动会话，发出通用错误
-                         emit(ChatError(message: errorMessage));
-                         AppLogger.i('ChatBloc', 'onError: Successfully emitted ChatError.');
-                     }
-                 } catch (emitError, emitStackTrace) {
-                     // 捕获 emit 调用本身可能抛出的异常
-                     AppLogger.e('ChatBloc', 'onError: FAILED TO EMIT state even though emit.isDone was false initially!', emitError, emitStackTrace);
-                 }
-             } else {
-                 AppLogger.w('ChatBloc', 'onError: Emitter IS done. Cannot emit state. Instance hash: ${identityHashCode(this)}');
-             }
-             // --- 修改结束 ---
-         },
-       );
-     }
-
-  // --- 添加辅助方法: 将占位符消息标记为错误 ---
+  // 辅助方法: 将占位符消息标记为错误 (确保使用 MessageStatus.error)
   List<ChatMessage> _markPlaceholderAsError(List<ChatMessage> messages, String placeholderId, String bufferedContent, String errorMessage) {
       final listCopy = List<ChatMessage>.from(messages);
       final errorIndex = listCopy.indexWhere((msg) => msg.id == placeholderId);
       if (errorIndex != -1) {
-          listCopy[errorIndex] = listCopy[errorIndex].copyWith(
+          final existingMessage = listCopy[errorIndex];
+          listCopy[errorIndex] = existingMessage.copyWith(
               content: bufferedContent.isNotEmpty
                    ? '$bufferedContent\n\n[错误: $errorMessage]'
                    : '[错误: $errorMessage]',
-              status: MessageStatus.error, // 确保你有 MessageStatus.error 枚举值
+              status: MessageStatus.error, // Mark as error
+              timestamp: DateTime.now(), // Update timestamp
           );
       } else {
            AppLogger.w('ChatBloc', '_markPlaceholderAsError: 未找到ID为 $placeholderId 的占位符标记错误');
       }
       return listCopy;
+  }
+
+  Future<void> _onUpdateChatModel(UpdateChatModel event, Emitter<ChatState> emit) async {
+    final currentState = state;
+    if (currentState is ChatSessionActive && currentState.session.id == event.sessionId) {
+      UserAIModelConfigModel? newSelectedModel;
+      final aiState = _aiConfigBloc.state;
+
+      // 1. Find the new model object from AiConfigBloc state
+      if (aiState.configs.isNotEmpty) {
+          newSelectedModel = aiState.configs.firstWhereOrNull(
+              (config) => config.id == event.modelConfigId,
+          );
+      }
+
+      if (newSelectedModel == null) {
+          // 添加日志记录找不到模型的具体ID
+          AppLogger.w('ChatBloc', '_onUpdateChatModel: Model config with ID ${event.modelConfigId} not found in AiConfigBloc state.');
+          // --- 添加这行日志来查看 AiConfigBloc 的当前状态 ---
+          AppLogger.d('ChatBloc', 'Current AiConfigState: Status=${aiState.status}, Config IDs=[${aiState.configs.map((c) => c.id).join(', ')}], DefaultConfig ID=${aiState.defaultConfig?.id}');
+          // --------------------------------------------------
+          emit(currentState.copyWith(error: '选择的模型配置未找到或未加载', clearError: false));
+          return;
+      }
+
+      try {
+          // 2. Update the backend session
+          await repository.updateSession(
+            userId: _userId,
+            sessionId: event.sessionId,
+            updates: {'selectedModelConfigId': event.modelConfigId}
+          );
+
+          // 3. Update the session object in the state
+          final updatedSession = currentState.session.copyWith(
+            selectedModelConfigId: event.modelConfigId,
+            lastUpdatedAt: DateTime.now(),
+          );
+
+          // 4. Emit the new state with updated session and selectedModel
+          emit(currentState.copyWith(
+            session: updatedSession,
+            selectedModel: newSelectedModel,
+            clearError: true,
+          ));
+          AppLogger.i('ChatBloc','_onUpdateChatModel successful for session ${event.sessionId}, new model ${event.modelConfigId}');
+
+      } catch (e, stackTrace) {
+          AppLogger.e('ChatBloc','_onUpdateChatModel failed to update repository', e, stackTrace);
+          emit(currentState.copyWith(
+              error: '更新模型失败: ${_formatApiError(e, "更新模型失败")}',
+              clearError: false,
+          ));
+      }
+    } else {
+         AppLogger.w('ChatBloc', '_onUpdateChatModel called with non-matching state or session ID.');
+    }
+  }
+
+  // 添加一个辅助方法来格式化错误（如果 ApiExceptionHelper 不可用）
+  String _formatApiError(Object error, [String defaultPrefix = '操作失败']) {
+     return '$defaultPrefix: ${error.toString()}';
   }
 }

@@ -135,10 +135,11 @@ class ChatRepositoryImpl implements ChatRepository {
     required String sessionId,
     required String content,
     Map<String, dynamic>? metadata,
+    String? configId,
   }) async {
     try {
       AppLogger.i('ChatRepositoryImpl',
-          '发送消息: userId=$userId, sessionId=$sessionId, contentLength=${content.length}');
+          '发送消息: userId=$userId, sessionId=$sessionId, configId=$configId, contentLength=${content.length}');
       final messageResponse = await apiClient.sendAiChatMessage(
         userId: userId,
         sessionId: sessionId,
@@ -165,9 +166,10 @@ class ChatRepositoryImpl implements ChatRepository {
     required String sessionId,
     required String content,
     Map<String, dynamic>? metadata,
+    String? configId,
   }) {
     AppLogger.i('ChatRepositoryImpl',
-        '开始流式消息: userId=$userId, sessionId=$sessionId');
+        '开始流式消息: userId=$userId, sessionId=$sessionId, configId=$configId');
     // 直接返回 ApiClient 的流
      try {
         return apiClient.streamAiChatMessage(

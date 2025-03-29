@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:ainoval/config/app_config.dart' hide LogLevel;
 import 'package:ainoval/models/chat_models.dart';
+import 'package:ainoval/models/user_ai_model_config_model.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:dio/dio.dart';
@@ -100,7 +101,7 @@ class ApiClient {
     }
   }
 
-  /// 辅助方法：处理字节流，解码，解析 SSE，并生成指定类型的流
+  /// 辅助方法：处理字节流，解码，解析 SSE 或单行 JSON 数组，并生成指定类型的流
   Stream<T> _processStream<T>({
       required Future<Stream<List<int>>> byteStreamFuture,
       required T Function(Map<String, dynamic>) fromJson,
@@ -108,69 +109,82 @@ class ApiClient {
   }) {
     final controller = StreamController<T>();
 
-    byteStreamFuture.then((byteStream) {
-        // 直接将 utf8.decoder 绑定到字节流，得到 Stream<String>
+    byteStreamFuture.then((byteStream) async {
         final stringStream = utf8.decoder.bind(byteStream);
 
-        // 然后对 Stream<String> 应用 LineSplitter
-        stringStream
-            .transform(const LineSplitter()) // 对字符串流按行分割
-            .listen(
-              (rawLine) {
-                try {
-                  final line = rawLine.trim();
+        await for (final rawLine in stringStream.transform(const LineSplitter())) {
+            try {
+                final line = rawLine.trim();
 
-                  if (line.startsWith('data:')) {
+                if (line.isEmpty) {
+                    continue;
+                }
+
+                if (line.startsWith('data:')) {
                     final eventData = line.substring(5).trim();
                     if (eventData.isNotEmpty && eventData != '[DONE]') {
-                      final json = jsonDecode(eventData);
-                      final item = fromJson(json);
-                      AppLogger.v('ApiClient', '[$logContext] 解析流式数据: ${item.runtimeType}');
-                      if (!controller.isClosed) {
-                        controller.add(item);
-                      }
+                        final json = jsonDecode(eventData);
+                        if (json is Map<String, dynamic>) {
+                            final item = fromJson(json);
+                            AppLogger.v('ApiClient', '[$logContext] 解析 SSE 数据: ${item.runtimeType}');
+                            if (!controller.isClosed) {
+                                controller.add(item);
+                            }
+                        } else {
+                             AppLogger.w('ApiClient', '[$logContext] SSE 数据不是有效的 JSON 对象: $eventData');
+                        }
                     } else if (eventData == '[DONE]') {
-                      AppLogger.i('ApiClient', '[$logContext] 收到流结束标记 [DONE]');
+                        AppLogger.i('ApiClient', '[$logContext] 收到 SSE 流结束标记 [DONE]');
                     }
-                  } else if (line.isEmpty) {
-                    // 忽略完全是空白的行（原始行 trim 后为空）
-                  } else {
-                    AppLogger.v('ApiClient', '[$logContext] 忽略非数据行: "$rawLine"');
-                  }
-                } catch (e, stackTrace) {
-                  AppLogger.e('ApiClient', '[$logContext] 解析流式响应行失败: "$rawLine"', e, stackTrace);
-                   if (!controller.isClosed) {
-                     // 考虑是否要在解析单行失败时关闭整个流
-                     // controller.addError(e, stackTrace); // 可以只发送错误而不关闭
-                   }
+                } else if (line.startsWith('[') && line.endsWith(']')) {
+                    AppLogger.v('ApiClient', '[$logContext] 检测到单行 JSON 数组，尝试解析，长度: ${line.length}');
+                    final decodedList = jsonDecode(line);
+                    if (decodedList is List) {
+                        int count = 0;
+                        for (final itemJson in decodedList) {
+                           await Future.delayed(Duration.zero);
+
+                            if (controller.isClosed) break;
+
+                            if (itemJson is Map<String, dynamic>) {
+                                try {
+                                    final item = fromJson(itemJson);
+                                    AppLogger.v('ApiClient', '[$logContext] 解析 JSON 数组元素 ${++count}: ${item.runtimeType}');
+                                    if (!controller.isClosed) {
+                                        controller.add(item);
+                                    }
+                                } catch (e, stackTrace) {
+                                    AppLogger.e('ApiClient', '[$logContext] 从 JSON 数组元素转换失败: $itemJson', e, stackTrace);
+                                }
+                            } else {
+                                AppLogger.w('ApiClient', '[$logContext] JSON 数组中的元素不是 Map: $itemJson');
+                            }
+                        }
+                        AppLogger.i('ApiClient', '[$logContext] 成功处理 ${count} 个 JSON 数组元素');
+                    } else {
+                       AppLogger.w('ApiClient', '[$logContext] 解析为 JSON 但不是列表: "$line"');
+                    }
+                } else {
+                    AppLogger.v('ApiClient', '[$logContext] 忽略非 SSE 且非 JSON 数组的行: "$line"');
                 }
-              },
-              onDone: () {
-                AppLogger.i('ApiClient', '[$logContext] 流式字节流处理完成');
-                if (!controller.isClosed) {
-                    controller.close();
-                }
-              },
-              onError: (error, stackTrace) {
-                AppLogger.e('ApiClient', '[$logContext] 流处理错误', error, stackTrace);
-                if (!controller.isClosed) {
-                    controller.addError(ApiException(-1, '[$logContext] 流处理失败: ${error.toString()}'), stackTrace);
-                    controller.close();
-                }
-              },
-              cancelOnError: true,
-            );
-      }).catchError((error, stackTrace) {
-         AppLogger.e('ApiClient', '[$logContext] 获取流式字节流失败', error, stackTrace);
+            } catch (e, stackTrace) {
+                AppLogger.e('ApiClient', '[$logContext] 解析流式响应行失败: "$rawLine"', e, stackTrace);
+            }
+             if (controller.isClosed) break;
+        }
+         AppLogger.i('ApiClient', '[$logContext] 流式字符串处理完成');
          if (!controller.isClosed) {
-             // ---------- 修改开始 ----------
-             // 传递原始 ApiException（如果它是），否则包装
+            controller.close();
+         }
+
+      }).catchError((error, stackTrace) {
+         AppLogger.e('ApiClient', '[$logContext] 获取或解码流式字节流失败', error, stackTrace);
+         if (!controller.isClosed) {
              final apiError = (error is ApiException)
                  ? error
-                 : ApiException(-1, '[$logContext] 启动流式请求失败: ${error.toString()}');
-             controller.addError(apiError, stackTrace); // 使用 apiError
-             // ---------- 修改结束 ----------
-             controller.close(); // 关闭控制器表示流结束（虽然是错误结束）
+                 : ApiException(-1, '[$logContext] 启动或解码流式请求失败: ${error.toString()}');
+             controller.addError(apiError, stackTrace);
+             controller.close();
          }
       });
 
@@ -562,6 +576,225 @@ class ApiClient {
          AppLogger.e('ApiClient', '获取用户会话数量失败 (UserID: $userId)', e);
          rethrow;
      }
+  }
+
+  //==== 用户 AI 模型配置相关接口 (新) ====//
+  final String _userAIConfigBasePath = '/user-ai-configs';
+
+  /// 获取系统支持的 AI 提供商列表
+  Future<List<String>> listAIProviders() async {
+    final path = '$_userAIConfigBasePath/providers/list';
+    try {
+      // 后端返回 Flux<String>，在 Dio 拦截器/转换器中转为 List<dynamic>
+      final responseData = await post(path);
+      if (responseData is List) {
+        // 确保列表中的每个元素都转换为 String
+        final providers = responseData.map((item) => item.toString()).toList();
+        return providers;
+      } else {
+        AppLogger.e('ApiClient', 'listAIProviders 响应格式错误: $responseData');
+        throw ApiException(-1, '获取可用提供商列表响应格式错误');
+      }
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取可用 AI 提供商列表失败', e);
+      rethrow; // post 方法已经处理了 DioException
+    }
+  }
+
+  /// 获取指定 AI 提供商支持的模型列表
+  Future<List<String>> listAIModelsForProvider({required String provider}) async {
+    final path = '$_userAIConfigBasePath/providers/models/list';
+    final body = {'provider': provider};
+    try {
+      final responseData = await post(path, data: body);
+       if (responseData is List) {
+        final models = responseData.map((item) => item.toString()).toList();
+        return models;
+      } else {
+        AppLogger.e('ApiClient', 'listAIModelsForProvider 响应格式错误: $responseData');
+        throw ApiException(-1, '获取模型列表响应格式错误');
+      }
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取提供商 $provider 的模型列表失败', e);
+      rethrow;
+    }
+  }
+
+  /// 添加新的用户 AI 模型配置
+  Future<UserAIModelConfigModel> addAIConfiguration({
+    required String userId,
+    required String provider,
+    required String modelName,
+    String? alias,
+    required String apiKey,
+    String? apiEndpoint,
+  }) async {
+    final path = '$_userAIConfigBasePath/users/$userId/create';
+    final body = <String, dynamic>{
+      'provider': provider,
+      'modelName': modelName,
+      'apiKey': apiKey, // API Key 由后端处理加密
+      if (alias != null) 'alias': alias,
+      if (apiEndpoint != null) 'apiEndpoint': apiEndpoint,
+    };
+    try {
+      final responseData = await post(path, data: body);
+      if (responseData is Map<String, dynamic>) {
+        return UserAIModelConfigModel.fromJson(responseData);
+      } else {
+         AppLogger.e('ApiClient', 'addAIConfiguration 响应格式错误: $responseData');
+         throw ApiException(-1, '添加配置响应格式错误');
+      }
+    } catch (e) {
+      AppLogger.e('ApiClient', '添加 AI 配置失败 for user $userId', e);
+      rethrow;
+    }
+  }
+
+  /// 列出用户所有的 AI 模型配置
+  Future<List<UserAIModelConfigModel>> listAIConfigurations({
+    required String userId,
+    bool? validatedOnly,
+  }) async {
+    final path = '$_userAIConfigBasePath/users/$userId/list';
+    final body = <String, dynamic>{};
+    if (validatedOnly != null) {
+      body['validatedOnly'] = validatedOnly;
+    }
+    try {
+      // 如果 body 为空，data 应该传 null
+      final responseData = await post(path, data: body.isEmpty ? null : body);
+      if (responseData is List) {
+         final configs = responseData
+            .map((json) => UserAIModelConfigModel.fromJson(json as Map<String, dynamic>))
+            .toList();
+         return configs;
+      } else {
+          AppLogger.e('ApiClient', 'listAIConfigurations 响应格式错误: $responseData');
+          throw ApiException(-1, '列出配置响应格式错误');
+      }
+    } catch (e) {
+      AppLogger.e('ApiClient', '列出 AI 配置失败 for user $userId', e);
+      rethrow;
+    }
+  }
+
+  /// 获取指定 ID 的用户 AI 模型配置
+  Future<UserAIModelConfigModel> getAIConfigurationById({
+    required String userId,
+    required String configId,
+  }) async {
+    final path = '$_userAIConfigBasePath/users/$userId/get/$configId';
+    try {
+      // POST with no body
+      final responseData = await post(path);
+       if (responseData is Map<String, dynamic>) {
+        return UserAIModelConfigModel.fromJson(responseData);
+      } else {
+          AppLogger.e('ApiClient', 'getAIConfigurationById 响应格式错误 ($userId/$configId): $responseData');
+          throw ApiException(-1, '获取配置详情响应格式错误');
+      }
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取 AI 配置失败 ($userId / $configId)', e);
+      rethrow;
+    }
+  }
+
+  /// 更新指定 ID 的用户 AI 模型配置
+  Future<UserAIModelConfigModel> updateAIConfiguration({
+    required String userId,
+    required String configId,
+    String? alias,
+    String? apiKey,
+    String? apiEndpoint,
+  }) async {
+    final path = '$_userAIConfigBasePath/users/$userId/update/$configId';
+    final body = <String, dynamic>{};
+    if (alias != null) body['alias'] = alias;
+    if (apiKey != null) body['apiKey'] = apiKey; // 明文发送
+    if (apiEndpoint != null) body['apiEndpoint'] = apiEndpoint;
+
+    // 前端仓库层应该已经做了空检查，但以防万一
+    if (body.isEmpty) {
+       AppLogger.w('ApiClient', '尝试更新配置但没有提供字段 ($userId/$configId)');
+       // 可以选择抛出错误或返回当前配置（需要额外调用 get）
+       // 这里选择继续发送请求，让后端处理或返回错误
+       // throw ApiException(-1, 'Update called with no fields to update');
+    }
+
+    try {
+      final responseData = await post(path, data: body);
+       if (responseData is Map<String, dynamic>) {
+        return UserAIModelConfigModel.fromJson(responseData);
+      } else {
+          AppLogger.e('ApiClient', 'updateAIConfiguration 响应格式错误 ($userId/$configId): $responseData');
+          throw ApiException(-1, '更新配置响应格式错误');
+      }
+    } catch (e) {
+      AppLogger.e('ApiClient', '更新 AI 配置失败 ($userId / $configId)', e);
+      rethrow;
+    }
+  }
+
+  /// 删除指定 ID 的用户 AI 模型配置
+  Future<void> deleteAIConfiguration({
+    required String userId,
+    required String configId,
+  }) async {
+    final path = '$_userAIConfigBasePath/users/$userId/delete/$configId';
+    try {
+      // POST with no body. Expect 204 No Content for success.
+      // Dio's post method should handle 204 correctly (doesn't throw by default).
+      // The response.data might be null or empty string for 204.
+      await post(path);
+      // 不需要检查返回值，如果 post 没抛异常就认为成功
+    } catch (e) {
+      AppLogger.e('ApiClient', '删除 AI 配置失败 ($userId / $configId)', e);
+      // 如果是 404 Not Found 等，post 会抛出 ApiException
+      rethrow;
+    }
+  }
+
+  /// 手动触发指定配置的 API Key 验证
+  Future<UserAIModelConfigModel> validateAIConfiguration({
+    required String userId,
+    required String configId,
+  }) async {
+    final path = '$_userAIConfigBasePath/users/$userId/validate/$configId';
+    try {
+      // POST with no body
+      final responseData = await post(path);
+       if (responseData is Map<String, dynamic>) {
+        return UserAIModelConfigModel.fromJson(responseData);
+      } else {
+          AppLogger.e('ApiClient', 'validateAIConfiguration 响应格式错误 ($userId/$configId): $responseData');
+          throw ApiException(-1, '验证配置响应格式错误');
+      }
+    } catch (e) {
+      AppLogger.e('ApiClient', '验证 AI 配置失败 ($userId / $configId)', e);
+      rethrow;
+    }
+  }
+
+   /// 设置指定配置为用户的默认模型
+  Future<UserAIModelConfigModel> setDefaultAIConfiguration({
+    required String userId,
+    required String configId,
+  }) async {
+    final path = '$_userAIConfigBasePath/users/$userId/set-default/$configId';
+    try {
+      // POST with no body
+      final responseData = await post(path);
+       if (responseData is Map<String, dynamic>) {
+        return UserAIModelConfigModel.fromJson(responseData);
+      } else {
+           AppLogger.e('ApiClient', 'setDefaultAIConfiguration 响应格式错误 ($userId/$configId): $responseData');
+           throw ApiException(-1, '设置默认配置响应格式错误');
+      }
+    } catch (e) {
+      AppLogger.e('ApiClient', '设置默认 AI 配置失败 ($userId / $configId)', e);
+      rethrow;
+    }
   }
 
   //==== 旧的聊天相关接口 ====//

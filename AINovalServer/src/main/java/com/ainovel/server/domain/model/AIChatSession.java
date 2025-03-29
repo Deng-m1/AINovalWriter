@@ -47,7 +47,7 @@ public class AIChatSession {
     private Map<String, Object> metadata;
 
     // 使用的AI模型配置
-    private String modelName;
+    private String selectedModelConfigId;
 
     // 会话状态（ACTIVE, ARCHIVED等）
     private String status;

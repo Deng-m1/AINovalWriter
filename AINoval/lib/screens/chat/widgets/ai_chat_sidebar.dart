@@ -7,9 +7,11 @@ import '../../../blocs/chat/chat_bloc.dart';
 import '../../../blocs/chat/chat_event.dart';
 import '../../../blocs/chat/chat_state.dart';
 import '../../../models/chat_models.dart';
+import '../../../models/user_ai_model_config_model.dart'; // Import the model config
 import 'chat_message_bubble.dart'; // 引入 ChatMessageBubble
 import 'chat_input.dart'; // 引入 ChatInput
 import 'typing_indicator.dart'; // 引入 TypingIndicator
+
 
 
 /// AI聊天侧边栏组件，用于在编辑器右侧显示聊天功能
@@ -373,6 +375,10 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
   
   // 构建聊天视图
   Widget _buildChatView(BuildContext context, ChatSessionActive state) {
+    // --- 获取当前会话选择的模型 ---
+    // 现在可以直接从 state 获取 selectedModel
+    final UserAIModelConfigModel? currentChatModel = state.selectedModel;
+
     return Column(
       children: [
         // 显示历史加载指示器
@@ -391,7 +397,6 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
           child: ListView.builder(
             controller: _scrollController,
             padding: const EdgeInsets.all(16),
-            // itemCount 保持不变
             itemCount: state.messages.length + (state.isGenerating && !state.isLoadingHistory ? 1 : 0), // 只有在非加载历史时才显示打字指示器
             itemBuilder: (context, index) {
               // 打字指示器逻辑保持不变，并增加 isLoadingHistory 判断
@@ -410,14 +415,25 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
             },
           ),
         ),
-        // ChatInput 逻辑保持不变
+        // --- 修改 ChatInput ---
         ChatInput(
-              controller: _messageController,
-              onSend: _sendMessage,
-              isGenerating: state.isGenerating,
-              onCancel: () {
-                  context.read<ChatBloc>().add(const CancelOngoingRequest());
-              },
+          controller: _messageController,
+          onSend: _sendMessage,
+          isGenerating: state.isGenerating,
+          onCancel: () {
+            context.read<ChatBloc>().add(const CancelOngoingRequest());
+          },
+          initialModel: currentChatModel, // 将当前会话模型传给 ChatInput
+          onModelSelected: (selectedModel) {
+            if (selectedModel != null && selectedModel.id != currentChatModel?.id) {
+              // 使用正确的事件类
+              context.read<ChatBloc>().add(UpdateChatModel(
+                  sessionId: state.session.id,
+                  modelConfigId: selectedModel.id,
+              ));
+              AppLogger.i('AIChatSidebar', 'Model selected event dispatched: ${selectedModel.id} for session ${state.session.id}');
+            }
+          },
         ),
       ],
     );

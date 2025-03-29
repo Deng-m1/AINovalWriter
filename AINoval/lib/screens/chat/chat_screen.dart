@@ -6,6 +6,7 @@ import '../../blocs/chat/chat_bloc.dart';
 import '../../blocs/chat/chat_event.dart';
 import '../../blocs/chat/chat_state.dart';
 import '../../models/chat_models.dart';
+import '../../models/user_ai_model_config_model.dart';
 import '../../utils/logger.dart';
 import 'widgets/chat_input.dart';
 import 'widgets/chat_message_bubble.dart';
@@ -333,6 +334,10 @@ class _ChatScreenState extends State<ChatScreen> {
   
   // 构建聊天视图 - 修改以处理 isLoadingHistory
   Widget _buildChatView(ChatSessionActive state) {
+    // --- 获取当前会话选择的模型 ---
+    // 现在可以直接从 state 获取 selectedModel
+    final UserAIModelConfigModel? currentChatModel = state.selectedModel;
+
     return Row(
       children: [
         // 聊天主界面
@@ -354,16 +359,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  // itemCount 保持不变
                   itemCount: state.messages.length + (state.isGenerating && !state.isLoadingHistory ? 1 : 0),
                   itemBuilder: (context, index) {
-                    // 打字指示器逻辑保持不变
                     if (state.isGenerating && !state.isLoadingHistory && index == state.messages.length) {
                       return const TypingIndicator();
                     }
 
                     final message = state.messages[index];
-                    // ChatMessageBubble 逻辑保持不变
                     return ChatMessageBubble(
                       message: message,
                       onActionSelected: _executeAction,
@@ -372,13 +374,24 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
 
-              // 输入框逻辑保持不变
+              // --- 修改 ChatInput ---
               ChatInput(
                 controller: _messageController,
                 onSend: _sendMessage,
                 isGenerating: state.isGenerating,
                 onCancel: () {
                   context.read<ChatBloc>().add(const CancelOngoingRequest());
+                },
+                initialModel: currentChatModel, // 将当前会话模型传给 ChatInput
+                onModelSelected: (selectedModel) {
+                  if (selectedModel != null && selectedModel.id != currentChatModel?.id) {
+                     // 使用正确的事件类
+                    context.read<ChatBloc>().add(UpdateChatModel(
+                        sessionId: state.session.id,
+                        modelConfigId: selectedModel.id,
+                    ));
+                     AppLogger.i('ChatScreen', 'Model selected event dispatched: ${selectedModel.id} for session ${state.session.id}');
+                  }
                 },
               ),
             ],

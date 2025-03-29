@@ -4,10 +4,8 @@ import 'dart:convert';
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
-import 'package:ainoval/models/novel_structure.dart';
 import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/screens/chat/widgets/ai_chat_sidebar.dart';
-import 'package:ainoval/screens/chat/widgets/chat_sidebar.dart';
 import 'package:ainoval/screens/editor/components/editor_app_bar.dart';
 import 'package:ainoval/screens/editor/components/editor_main_area.dart';
 // 导入拆分后的组件
@@ -21,6 +19,10 @@ import 'package:ainoval/utils/logger.dart';
 
 import 'package:flutter_quill/flutter_quill.dart' hide EditorState;
 import 'package:ainoval/services/api_service/repositories/impl/editor_repository_impl.dart';
+import 'package:ainoval/screens/ai_config/ai_config_management_screen.dart'; // 导入管理屏幕
+import 'package:ainoval/config/app_config.dart'; // <<< Import AppConfig
+import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart'; // <<< Import Repository Interface
+import 'package:ainoval/screens/settings/settings_panel.dart'; // <<< Import SettingsPanel
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({
@@ -38,11 +40,7 @@ class _EditorScreenState extends State<EditorScreen>
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
   Timer? _debounceTimer;
-  late final EditorBloc _editorBloc = EditorBloc(
-    repository: EditorRepositoryImpl(),
-    novelId: widget.novel.id,
-  );
-
+  late final EditorBloc _editorBloc;
   late TabController _tabController;
 
   final Map<String, QuillController> _sceneControllers = {};
@@ -52,21 +50,23 @@ class _EditorScreenState extends State<EditorScreen>
   final Map<String, TextEditingController> _sceneSummaryControllers = {};
 
   bool _isAIChatSidebarVisible = false;
+  bool _isSettingsPanelVisible = false; // <<< 添加状态变量
+
+  String? _currentUserId; // <<< Store userId
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
 
-    _editorBloc.add(const LoadEditorContent());
-  }
+    _editorBloc = EditorBloc(
+      repository: EditorRepositoryImpl(),
+      novelId: widget.novel.id,
+    )..add(const LoadEditorContent());
 
-  void _initializeAllControllers(novel_models.Novel novel) {
-    AppLogger.i('Screens/editor/editor_screen', '初始化所有控制器');
-    _clearAllControllers();
-    _createControllersForNovel(novel);
-    if (mounted) {
-      setState(() {});
+    _currentUserId = AppConfig.userId;
+    if (_currentUserId == null) {
+      AppLogger.e('EditorScreen', 'User ID is null. Some features might be limited.');
     }
   }
 
@@ -243,8 +243,10 @@ class _EditorScreenState extends State<EditorScreen>
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
-    return BlocProvider.value(
-      value: _editorBloc,
+    return MultiBlocProvider(
+       providers: [
+         BlocProvider.value(value: _editorBloc),
+       ],
       child: BlocConsumer<EditorBloc, EditorState>(
         listener: (context, state) {
           if (state is EditorError) {
@@ -299,6 +301,9 @@ class _EditorScreenState extends State<EditorScreen>
       BuildContext context, EditorLoaded state, AppLocalizations l10n) {
     final fallbackController = _getFallbackController(state);
 
+    // <<< Get userId, provide default or handle error if null >>>
+    final userIdForPanel = _currentUserId;
+
     return Scaffold(
       body: Stack(
         children: [
@@ -310,6 +315,13 @@ class _EditorScreenState extends State<EditorScreen>
                 onOpenAIChat: () {
                   setState(() {
                     _isAIChatSidebarVisible = true;
+                    _isSettingsPanelVisible = false; // 关闭设置面板
+                  });
+                },
+                onOpenSettings: () { // <<< 添加打开设置的回调
+                  setState(() {
+                    _isSettingsPanelVisible = true;
+                    _isAIChatSidebarVisible = false; // 关闭聊天侧边栏
                   });
                 },
               ),
@@ -326,9 +338,17 @@ class _EditorScreenState extends State<EditorScreen>
                       onChatPressed: () {
                         setState(() {
                           _isAIChatSidebarVisible = !_isAIChatSidebarVisible;
+                          if (_isAIChatSidebarVisible) _isSettingsPanelVisible = false; // 打开聊天时关闭设置
                         });
                       },
                       isChatActive: _isAIChatSidebarVisible,
+                      onAiConfigPressed: () { // <<< 修改此回调
+                        setState(() {
+                          _isSettingsPanelVisible = !_isSettingsPanelVisible;
+                           if (_isSettingsPanelVisible) _isAIChatSidebarVisible = false; // 打开设置时关闭聊天
+                        });
+                      },
+                      isSettingsActive: _isSettingsPanelVisible, // <<< 传递设置面板状态
                     ),
                     EditorToolbar(
                       controller: fallbackController,
@@ -382,6 +402,31 @@ class _EditorScreenState extends State<EditorScreen>
                 ),
               ),
             ),
+           // --- 设置面板 ---
+           if (_isSettingsPanelVisible) // <<< Uncomment settings panel
+             Positioned.fill(
+               child: GestureDetector( // Use Positioned.fill and add background overlay
+                 onTap: () => setState(() => _isSettingsPanelVisible = false),
+                 child: Container(
+                   color: Colors.black.withOpacity(0.5), // Darker overlay
+                   child: Center(
+                     child: GestureDetector( // Prevent closing when clicking the panel itself
+                       onTap: () {},
+                       child: userIdForPanel == null
+                            ? _buildLoginRequiredPanel(context) // Show message if not logged in
+                            : SettingsPanel( // <<< Pass userId and provide BLoC
+                                userId: userIdForPanel,
+                                onClose: () {
+                                  setState(() {
+                                    _isSettingsPanelVisible = false;
+                                  });
+                                },
+                              ),
+                     ),
+                   ),
+                 ),
+               ),
+             ),
         ],
       ),
       floatingActionButton: state.isSaving
@@ -418,6 +463,48 @@ class _EditorScreenState extends State<EditorScreen>
     );
   }
 
+  // Helper widget to show when user is not logged in
+  Widget _buildLoginRequiredPanel(BuildContext context) {
+    return Material(
+      elevation: 4.0,
+      borderRadius: BorderRadius.circular(12.0),
+      child: Container(
+        width: 400, // Smaller width for message
+        height: 200, // Smaller height for message
+        padding: const EdgeInsets.all(24.0),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(12.0),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.lock_outline, size: 40, color: Theme.of(context).colorScheme.error),
+            const SizedBox(height: 16),
+            Text(
+              '需要登录', // TODO: Localize
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '请先登录以访问和管理 AI 配置。', // TODO: Localize
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () { 
+                 // TODO: Implement navigation to login screen
+                 setState(() => _isSettingsPanelVisible = false); // Close panel for now
+              },
+              child: const Text('前往登录'), // TODO: Localize
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
   QuillController _getFallbackController(EditorLoaded state) {
     if (state.activeActId != null &&
         state.activeChapterId != null &&
@@ -440,66 +527,6 @@ class _EditorScreenState extends State<EditorScreen>
     }
     AppLogger.e('Screens/editor/editor_screen', '没有可用的控制器，返回基础控制器');
     return QuillController.basic();
-  }
-
-  Widget _buildCodexTab() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: TextField(
-            decoration: InputDecoration(
-              hintText: '搜索条目...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 8),
-            ),
-          ),
-        ),
-        Expanded(
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.book_outlined, size: 48, color: Colors.grey),
-                const SizedBox(height: 16),
-                const Text(
-                  'Codex为空',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Codex存储有关您的故事世界的信息',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () {},
-                  child: const Text('创建新条目'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSnippetsTab() {
-    return const Center(
-      child: Text('Snippets功能将在未来版本中推出'),
-    );
-  }
-
-  Widget _buildChatsTab() {
-    return ChatSidebar(
-      novelId: widget.novel.id,
-    );
   }
 
   Widget _buildSettingsScreen(
@@ -560,71 +587,6 @@ class _EditorScreenState extends State<EditorScreen>
       return Document.fromJson([
         {'insert': '\n'}
       ]);
-    }
-  }
-
-  RenderObject? _findChapterElement(String chapterId) {
-    try {
-      final firstChapter = _editorBloc.state is EditorLoaded
-          ? (_editorBloc.state as EditorLoaded).novel.acts.isNotEmpty
-              ? (_editorBloc.state as EditorLoaded)
-                      .novel
-                      .acts
-                      .first
-                      .chapters
-                      .isNotEmpty
-                  ? (_editorBloc.state as EditorLoaded)
-                      .novel
-                      .acts
-                      .first
-                      .chapters
-                      .first
-                  : null
-              : null
-          : null;
-
-      if (firstChapter != null) {
-        return null;
-      }
-      return null;
-    } catch (e) {
-      AppLogger.e('Screens/editor/editor_screen', '查找章节元素失败', e);
-      return null;
-    }
-  }
-
-  double _calculateChapterPosition(RenderObject chapterElement) {
-    try {
-      final RenderBox renderBox = chapterElement as RenderBox;
-      final position = renderBox.localToGlobal(Offset.zero);
-
-      final chapterCenter = position.dy + (renderBox.size.height / 2);
-
-      final viewportHeight = _scrollController.position.viewportDimension;
-      final viewportCenter = viewportHeight / 2;
-
-      return _scrollController.offset + (chapterCenter - viewportCenter);
-    } catch (e) {
-      AppLogger.e('Screens/editor/editor_screen', '计算章节位置失败', e);
-      return _scrollController.position.maxScrollExtent;
-    }
-  }
-
-  void _requestFocusToNewChapter(String actId, String chapterId) {
-    try {
-      AppLogger.i('Screens/editor/editor_screen',
-          '已设置活动章节: actId=$actId, chapterId=$chapterId');
-
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (mounted) {
-          _editorBloc.add(SetActiveChapter(
-            actId: actId,
-            chapterId: chapterId,
-          ));
-        }
-      });
-    } catch (e) {
-      AppLogger.e('Screens/editor/editor_screen', '请求焦点到新章节失败', e);
     }
   }
 }

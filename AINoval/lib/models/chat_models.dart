@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 
 import '../utils/date_time_parser.dart';
 
@@ -8,14 +9,15 @@ class ChatSession {
   ChatSession({
     required this.id,
     required this.title,
+    String? selectedModelConfigId,
     required this.createdAt,
     required this.lastUpdatedAt,
     required this.novelId,
     this.chapterId,
-    this.modelName,
     this.status,
     this.messageCount,
-  });
+    this.metadata,
+  }) : selectedModelConfigId = selectedModelConfigId;
   
   // 从JSON转换方法
   factory ChatSession.fromJson(Map<String, dynamic> json) {
@@ -33,47 +35,51 @@ class ChatSession {
       // 使用 sessionId 作为 id，并提供一个默认空字符串以防万一
       id: safeString('sessionId'),
       title: safeString('title', '无标题会话'),
+      selectedModelConfigId: json['selectedModelConfigId'] as String?,
       createdAt: parseBackendDateTime(json['createdAt']),
       lastUpdatedAt: parseBackendDateTime(json['updatedAt']),
       novelId: safeString('novelId'),
       chapterId: json['chapterId'] as String?,
-      modelName: json['modelName'] as String?,
       status: json['status'] as String?,
       messageCount: (json['messageCount'] as num?)?.toInt() ?? 0,
+      metadata: json['metadata'] as Map<String, dynamic>?,
     );
   }
   final String id;
   final String title;
+  final String? selectedModelConfigId;
   final DateTime createdAt;
   final DateTime lastUpdatedAt;
   final String novelId;
   final String? chapterId;
-  final String? modelName;
   final String? status;
   final int? messageCount;
+  final Map<String, dynamic>? metadata;
   
   // 复制方法，用于创建会话的副本
   ChatSession copyWith({
     String? id,
     String? title,
+    String? selectedModelConfigId,
     DateTime? createdAt,
     DateTime? lastUpdatedAt,
     String? novelId,
     String? chapterId,
-    String? modelName,
     String? status,
     int? messageCount,
+    Map<String, dynamic>? metadata,
   }) {
     return ChatSession(
       id: id ?? this.id,
       title: title ?? this.title,
+      selectedModelConfigId: selectedModelConfigId ?? this.selectedModelConfigId,
       createdAt: createdAt ?? this.createdAt,
       lastUpdatedAt: lastUpdatedAt ?? this.lastUpdatedAt,
       novelId: novelId ?? this.novelId,
       chapterId: chapterId ?? this.chapterId,
-      modelName: modelName ?? this.modelName,
       status: status ?? this.status,
       messageCount: messageCount ?? this.messageCount,
+      metadata: metadata ?? this.metadata,
     );
   }
   
@@ -82,14 +88,46 @@ class ChatSession {
     return {
       'id': id,
       'title': title,
+      'selectedModelConfigId': selectedModelConfigId,
       'createdAt': createdAt.toIso8601String(),
       'lastUpdatedAt': lastUpdatedAt.toIso8601String(),
       'novelId': novelId,
       'chapterId': chapterId,
-      'modelName': modelName,
       'status': status,
       'messageCount': messageCount,
+      'metadata': metadata,
     };
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is ChatSession &&
+        other.id == id &&
+        other.title == title &&
+        other.selectedModelConfigId == selectedModelConfigId &&
+        other.createdAt == createdAt &&
+        other.lastUpdatedAt == lastUpdatedAt &&
+        other.novelId == novelId &&
+        other.chapterId == chapterId &&
+        other.status == status &&
+        other.messageCount == messageCount &&
+        other.metadata == metadata;
+  }
+
+  @override
+  int get hashCode {
+    return id.hashCode ^
+        title.hashCode ^
+        selectedModelConfigId.hashCode ^
+        createdAt.hashCode ^
+        lastUpdatedAt.hashCode ^
+        novelId.hashCode ^
+        chapterId.hashCode ^
+        status.hashCode ^
+        messageCount.hashCode ^
+        metadata.hashCode;
   }
 }
 
@@ -112,6 +150,15 @@ class ChatMessage {
   
   // 从JSON转换方法
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    // --- Helper for safe string parsing ---
+    String safeString(String key, [String defaultValue = '']) {
+        final value = json[key];
+        if (value is String) return value;
+        // Log or handle non-string/null cases if needed
+        // AppLogger.w('ChatMessage.fromJson', 'Expected String for key "$key", but got ${value?.runtimeType}. Using default.');
+        return defaultValue;
+    }
+
     List<MessageAction>? parsedActions;
     if (json['metadata'] != null && json['metadata']['actions'] is List) {
        parsedActions = (json['metadata']['actions'] as List)
@@ -119,19 +166,30 @@ class ChatMessage {
            .toList();
     }
 
+    // --- Handle potentially null 'id' safely ---
+    // Provide a temporary unique default if 'id' is null.
+    // The Bloc logic will prioritize its own placeholder ID anyway.
+    final messageId = safeString('id', 'temp_chunk_${const Uuid().v4()}');
+
     return ChatMessage(
-      id: json['id'] as String,
+      id: messageId, // Use the safe ID
       role: MessageRole.values.firstWhere(
-        (e) => e.name == (json['role'] as String?)?.toLowerCase(),
-        orElse: () => MessageRole.system,
+        // Use safeString for role
+        (e) => e.name == safeString('role', MessageRole.system.name).toLowerCase(),
+        orElse: () => MessageRole.system, // Fallback
       ),
-      content: json['content'] as String,
-      timestamp: parseBackendDateTime(json['createdAt']),
+      // Use safeString for content, important for potentially empty chunks
+      content: safeString('content'),
+      // Assume parseBackendDateTime handles the list format or null
+      // Provide a fallback default DateTime if key is missing or parsing fails
+      timestamp: parseBackendDateTime(json['createdAt'] ?? DateTime.now()),
       status: MessageStatus.values.firstWhere(
-        (e) => e.name == (json['status'] as String?)?.toLowerCase(),
-        orElse: () => MessageStatus.sent,
+        // Use safeString for status
+        (e) => e.name == safeString('status', MessageStatus.sent.name).toLowerCase(),
+        orElse: () => MessageStatus.sent, // Fallback
       ),
       actions: parsedActions,
+      // These fields allow null, direct access is relatively safe but casting is good practice
       sessionId: json['sessionId'] as String?,
       userId: json['userId'] as String?,
       novelId: json['novelId'] as String?,

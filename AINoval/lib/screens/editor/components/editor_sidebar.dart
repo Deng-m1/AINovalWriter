@@ -8,10 +8,12 @@ class EditorSidebar extends StatefulWidget {
     required this.novel,
     required this.tabController,
     this.onOpenAIChat,
+    this.onOpenSettings,
   });
   final NovelSummary novel;
   final TabController tabController;
   final VoidCallback? onOpenAIChat;
+  final VoidCallback? onOpenSettings;
 
   @override
   State<EditorSidebar> createState() => _EditorSidebarState();
@@ -91,9 +93,7 @@ class _EditorSidebarState extends State<EditorSidebar> {
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 20),
-            onPressed: () {
-              // 打开设置
-            },
+            onPressed: widget.onOpenSettings,
           ),
         ],
       ),

@@ -1,155 +1,105 @@
 import 'package:ainoval/theme/text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:ainoval/screens/ai_config/ai_config_management_screen.dart';
+import 'package:ainoval/screens/ai_config/widgets/ai_model_selector.dart';
+import 'package:intl/intl.dart'; // For date formatting
 
 class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final String novelTitle;
+  final int wordCount;
+  final bool isSaving;
+  final DateTime? lastSaveTime;
+  final VoidCallback onBackPressed;
+  final VoidCallback onChatPressed;
+  final bool isChatActive;
+  final VoidCallback onAiConfigPressed;
+  final bool isSettingsActive;
 
   const EditorAppBar({
     super.key,
     required this.novelTitle,
     required this.wordCount,
     required this.isSaving,
-    this.lastSaveTime,
+    required this.lastSaveTime,
     required this.onBackPressed,
-    this.onChatPressed,
-    this.isChatActive = false,
+    required this.onChatPressed,
+    required this.isChatActive,
+    required this.onAiConfigPressed,
+    required this.isSettingsActive,
   });
-  final String novelTitle;
-  final int wordCount;
-  final bool isSaving;
-  final DateTime? lastSaveTime;
-  final VoidCallback onBackPressed;
-  final VoidCallback? onChatPressed;
-  final bool isChatActive;
-
-  @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
   @override
   Widget build(BuildContext context) {
-    return AppBar(
-      backgroundColor: Colors.white,
-      elevation: 0,
-      leading: _buildLeadingButton(),
-      title: _buildTitle(),
-      actions: _buildActions(context),
-    );
-  }
+    final theme = Theme.of(context);
+    // Use MaterialLocalizations for standard tooltips like back button
+    final materialL10n = MaterialLocalizations.of(context);
 
-  Widget _buildLeadingButton() {
-    return IconButton(
-      icon: const Icon(Icons.arrow_back, color: Colors.black54),
-      onPressed: onBackPressed,
-    );
-  }
-
-  Widget _buildTitle() {
-    return Row(
-      children: [
-        Text(
-          novelTitle,
-          style: AppTextStyles.titleStyle,
-        ),
-        const SizedBox(width: 8),
-        const Icon(Icons.keyboard_arrow_right, size: 16, color: Colors.black54),
-      ],
-    );
-  }
-
-  List<Widget> _buildActions(BuildContext context) {
-    final List<Widget> actions = [];
-    
-    // 添加导航按钮
-    actions.add(Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: _buildNavButtons(),
-    ));
-    
-    // 添加字数统计
-    actions.add(_WordCountIndicator(wordCount: wordCount));
-    
-    // 添加间隔
-    actions.add(const SizedBox(width: 8));
-    
-    // 添加格式按钮
-    actions.add(IconButton(
-      icon: const Icon(Icons.text_format, color: Colors.black54),
-      tooltip: '格式',
-      onPressed: () {},
-    ));
-    
-    // 添加焦点按钮
-    actions.add(IconButton(
-      icon: const Icon(Icons.center_focus_strong, color: Colors.black54),
-      tooltip: '焦点模式',
-      onPressed: () {},
-    ));
-    
-    // 添加保存状态指示器
-    if (isSaving) {
-      actions.add(const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8),
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-          ),
-        ),
-      ));
-    } else if (lastSaveTime != null) {
-      actions.add(Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Tooltip(
-          message: AppLocalizations.of(context)!.saved,
-          child: Icon(
-            Icons.check_circle,
-            color: Colors.green.shade300,
-          ),
-        ),
-      ));
+    String lastSaveText = '从未保存';
+    if (lastSaveTime != null) {
+      final formatter = DateFormat('HH:mm:ss');
+      lastSaveText = '上次保存: ${formatter.format(lastSaveTime!.toLocal())}';
     }
-    
-    return actions;
-  }
-  
-  Widget _buildNavButtons() {
-    return Row(
-      children: [
-        // Plan 按钮
-        _NavButton(
-          label: 'Plan',
-          icon: Icons.map_outlined,
-          isActive: false,
-          onPressed: () {},
+    if (isSaving) {
+      lastSaveText = '正在保存...';
+    }
+
+    return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        tooltip: materialL10n.backButtonTooltip, // Use standard tooltip
+        onPressed: onBackPressed,
+      ),
+      title: Text(novelTitle),
+      actions: [
+        // Word Count and Save Status
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '$wordCount 字',
+                style: theme.textTheme.bodySmall,
+              ),
+              Text(
+                lastSaveText,
+                style: theme.textTheme.labelSmall?.copyWith(color: Colors.grey),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(width: 8),
-        // Write 按钮 (激活状态)
-        _NavButton(
-          label: 'Write',
-          icon: Icons.edit_outlined,
-          isActive: true,
-          onPressed: () {},
+
+        // AI Config/Settings Button
+        IconButton(
+          icon: const Icon(Icons.settings_outlined),
+          tooltip: '设置', // Consistent tooltip
+          style: IconButton.styleFrom(
+            backgroundColor: isSettingsActive ? theme.colorScheme.primaryContainer : null,
+          ),
+          onPressed: onAiConfigPressed,
         ),
-        const SizedBox(width: 8),
-        // Chat 按钮
-        _NavButton(
-          label: 'Chat',
-          icon: Icons.chat_outlined,
-          isActive: isChatActive,
-          onPressed: onChatPressed ?? () {},
+
+        // Chat Button
+        IconButton(
+          icon: const Icon(Icons.chat_bubble_outline),
+          tooltip: '打开/关闭 AI 聊天', // TODO: Localize
+          style: IconButton.styleFrom(
+            backgroundColor: isChatActive ? theme.colorScheme.primaryContainer : null,
+          ),
+          onPressed: onChatPressed,
         ),
-        const SizedBox(width: 8),
-        // Review 按钮
-        _NavButton(
-          label: 'Review',
-          icon: Icons.rate_review_outlined,
-          isActive: false,
-          onPressed: () {},
-        ),
+        const SizedBox(width: 8), // Add some padding at the end
       ],
+      elevation: 1, // Add subtle elevation
+      backgroundColor: theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface,
+      foregroundColor: theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface,
     );
   }
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 }
 
 class _NavButton extends StatelessWidget {

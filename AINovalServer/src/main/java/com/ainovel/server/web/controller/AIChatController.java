@@ -117,9 +117,9 @@ public class AIChatController extends ReactiveBaseController {
      * 流式发送消息并获取响应
      *
      * @param sessionMessageDto 包含用户ID、会话ID、消息内容和元数据的DTO
-     * @return 流式AI响应消息
+     * @return 流式AI响应消息 (SSE)
      */
-    @PostMapping("/messages/stream")
+    @PostMapping(value = "/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<AIChatMessage> streamMessage(@RequestBody SessionMessageDto sessionMessageDto) {
         return aiChatService.streamMessage(
                 sessionMessageDto.getUserId(),
