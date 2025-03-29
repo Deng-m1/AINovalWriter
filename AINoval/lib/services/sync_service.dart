@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:ainoval/config/app_config.dart';
-import 'package:ainoval/services/api_service.dart';
+import 'package:ainoval/services/api_service/base/api_client.dart';
+import 'package:ainoval/services/api_service/base/api_exception.dart';
+
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
+
 
 /// 数据同步服务
 /// 
@@ -17,7 +20,7 @@ class SyncService {
     required this.localStorageService,
   });
   
-  final ApiService apiService;
+  final ApiClient apiService;
   final LocalStorageService localStorageService;
   
   // 同步状态流
@@ -166,7 +169,7 @@ class SyncService {
         }
         
         AppLogger.i('SyncService', '同步小说: ${localNovel.title}($novelId)');
-        await apiService.updateNovel(localNovel);
+        await apiService.updateNovel(localNovel.toJson());
         
         await localStorageService.clearSyncFlagByType('novel', novelId);
         AppLogger.d('SyncService', '小说同步完成: $novelId');
@@ -203,8 +206,8 @@ class SyncService {
         }
         
         AppLogger.i('SyncService', '同步场景: $sceneKey');
-        await apiService.updateSceneContent(
-          novelId, actId, chapterId, sceneId, localScene);
+        final sceneData = localScene.toJson();
+        await apiService.updateScene(sceneData);
         
         await localStorageService.clearSyncFlagByType('scene', sceneKey);
         AppLogger.d('SyncService', '场景同步完成: $sceneKey');
@@ -230,17 +233,16 @@ class SyncService {
         
         final novelId = parts[0];
         final chapterId = parts[1];
-        final sceneId = parts.length > 2 ? parts[2] : '';
         
         final localContent = await localStorageService.getEditorContent(
-          novelId, chapterId, sceneId);
+          novelId, chapterId, '');
         if (localContent == null) {
           AppLogger.w('SyncService', '本地编辑器内容不存在: $contentKey');
           continue;
         }
         
         AppLogger.i('SyncService', '同步编辑器内容: $contentKey');
-        await apiService.saveEditorContent(localContent);
+        await apiService.saveEditorContent(novelId, chapterId, localContent.toJson());
         
         await localStorageService.clearSyncFlagByType('editor', contentKey);
         AppLogger.d('SyncService', '编辑器内容同步完成: $contentKey');
@@ -277,10 +279,10 @@ class SyncService {
         // Only call update if there are actual updates to send
         if (updates.isNotEmpty) {
              // If updateSession requires userId, pass it: userId: currentUserId,
-        await apiService.updateSession(
-               userId: await _getCurrentUserId(), // Get userId if needed by API
-          sessionId: session.id,
-               updates: updates,
+             await apiService.updateAiChatSession(
+                userId: await _getCurrentUserId(), // Get userId if needed by API
+                sessionId: session.id,
+                updates: updates,
              );
         } // Else: Session might be marked for sync without local changes, skip API call?
 
@@ -330,7 +332,7 @@ class SyncService {
           try {
              AppLogger.d('SyncService', '尝试发送消息: localId=$localId, sessionId=$sessionId');
              // Call the actual API to send the message
-             await apiService.sendMessage(
+             await apiService.sendAiChatMessage(
                 userId: userIdToSend,
                 sessionId: sessionId,
                 content: content,
@@ -384,7 +386,7 @@ class SyncService {
       if (localNovel == null) return false;
       
       // 上传到服务器
-      await apiService.updateNovel(localNovel);
+      await apiService.updateNovel(localNovel.toJson());
       
       // 标记为已同步
       await localStorageService.clearSyncFlagByType('novel', novelId);
@@ -416,8 +418,8 @@ class SyncService {
       if (localScene == null) return false;
       
       // 上传到服务器
-      await apiService.updateSceneContent(
-        novelId, actId, chapterId, sceneId, localScene);
+      final sceneData = localScene.toJson();
+      await apiService.updateScene(sceneData);
       
       // 标记为已同步
       final sceneKey = '${novelId}_${actId}_${chapterId}_$sceneId';
@@ -435,7 +437,7 @@ class SyncService {
   Future<bool> syncEditorContent(
     String novelId, 
     String chapterId, 
-    String sceneId
+    String sceneId // 注意： apiClient.saveEditorContent 不接收 sceneId
   ) async {
     if (!_currentState.isOnline) {
       _updateSyncState(error: '无网络连接，无法同步');
@@ -445,14 +447,14 @@ class SyncService {
     try {
       // 获取本地编辑器内容
       final localContent = await localStorageService.getEditorContent(
-        novelId, chapterId, sceneId);
+        novelId, chapterId, ''); // 传递空的 sceneId 或适配
       if (localContent == null) return false;
       
       // 上传到服务器
-      await apiService.saveEditorContent(localContent);
+      await apiService.saveEditorContent(novelId, chapterId, localContent.toJson()); 
       
       // 标记为已同步
-      final contentKey = '${novelId}_${chapterId}_$sceneId';
+      final contentKey = '${novelId}_$chapterId'; // 调整 key
       await localStorageService.clearSyncFlagByType('editor', contentKey);
       
       return true;
@@ -484,9 +486,9 @@ class SyncService {
       final Map<String, dynamic> updates = {'title': session.title};
 
       if (updates.isNotEmpty) {
-      await apiService.updateSession(
+         await apiService.updateAiChatSession(
             userId: await _getCurrentUserId(), // 如果 API 需要，获取 userId
-        sessionId: session.id,
+            sessionId: session.id,
             updates: updates,
          );
          AppLogger.d('SyncService', '单个聊天会话元数据 API 更新调用完成: $sessionId');
@@ -509,109 +511,7 @@ class SyncService {
   }
   
   /// 解决冲突 (需要根据聊天数据的具体冲突场景来完善)
-  Future<bool> resolveConflict(
-    String type,
-    String id,
-    bool useLocal // true 表示保留本地版本，false 表示使用远程版本
-  ) async {
-    if (!_currentState.isOnline) {
-       _updateSyncState(error: '无网络连接，无法解决冲突');
-       return false;
-    }
-    AppLogger.i('SyncService', '开始解决冲突: 类型=$type, ID=$id, 使用本地版本=$useLocal');
-    try {
-      switch (type) {
-        case 'novel':
-          if (useLocal) {
-            // 使用本地版本覆盖远程版本
-            AppLogger.d('SyncService', '冲突解决 ($type/$id): 使用本地版本。');
-            return syncNovel(id);
-          } else {
-            // 使用远程版本覆盖本地版本
-            AppLogger.d('SyncService', '冲突解决 ($type/$id): 使用远程版本。');
-            final remoteNovel = await apiService.fetchNovel(id);
-            await localStorageService.saveNovel(remoteNovel); // 保存远程版本到本地
-            await localStorageService.clearSyncFlagByType('novel', id); // 清除同步标记
-            AppLogger.i('SyncService', '冲突解决 ($type/$id): 远程版本已覆盖本地。');
-            return true;
-          }
-        
-        case 'scene':
-          final parts = id.split('_'); // sceneKey 格式: novelId_actId_chapterId_sceneId
-          if (parts.length != 4) {
-             AppLogger.e('SyncService', '冲突解决 ($type/$id): 无效的场景键格式');
-             return false;
-          }
-          final novelId = parts[0], actId = parts[1], chapterId = parts[2], sceneId = parts[3];
-          
-          if (useLocal) {
-            // 使用本地版本覆盖远程版本
-             AppLogger.d('SyncService', '冲突解决 ($type/$id): 使用本地版本。');
-            return syncScene(novelId, actId, chapterId, sceneId);
-          } else {
-            // 使用远程版本覆盖本地版本
-            AppLogger.d('SyncService', '冲突解决 ($type/$id): 使用远程版本。');
-            final remoteScene = await apiService.fetchSceneContent(
-              novelId, actId, chapterId, sceneId);
-            await localStorageService.saveSceneContent( // 保存远程版本到本地
-              novelId, actId, chapterId, sceneId, remoteScene);
-            await localStorageService.clearSyncFlagByType('scene', id); // 清除同步标记
-            AppLogger.i('SyncService', '冲突解决 ($type/$id): 远程版本已覆盖本地。');
-            return true;
-          }
-        
-        case 'editor': // 假设编辑器内容冲突
-           final parts = id.split('_'); // contentKey 格式: novelId_chapterId[_sceneId]
-           if (parts.length < 2) {
-              AppLogger.e('SyncService', '冲突解决 ($type/$id): 无效的编辑器内容键格式');
-              return false;
-           }
-           final novelId = parts[0], chapterId = parts[1];
-           final sceneId = parts.length > 2 ? parts[2] : ''; // 可能没有 sceneId
 
-          if (useLocal) {
-             // 使用本地版本覆盖远程版本
-             AppLogger.d('SyncService', '冲突解决 ($type/$id): 使用本地版本。');
-             return syncEditorContent(novelId, chapterId, sceneId);
-          } else {
-             // 使用远程版本覆盖本地版本
-             AppLogger.d('SyncService', '冲突解决 ($type/$id): 使用远程版本。');
-             // 注意：API 假定是 getEditorContent，需要确认是否有对应的 fetch 接口
-             // 假设 getEditorContent 可以从 API 获取最新内容
-             final remoteContent = await apiService.getEditorContent(novelId, chapterId, sceneId);
-             await localStorageService.saveEditorContent(remoteContent); // 保存远程版本到本地
-             await localStorageService.clearSyncFlagByType('editor', id); // 清除同步标记
-             AppLogger.i('SyncService', '冲突解决 ($type/$id): 远程版本已覆盖本地。');
-             return true;
-          }
-
-         case 'chat_session': // 聊天会话元数据冲突
-           if (useLocal) {
-              // 使用本地版本覆盖远程版本（仅元数据）
-              AppLogger.d('SyncService', '冲突解决 ($type/$id): 使用本地版本。');
-              return syncChatSession(id); // syncChatSession 会上传本地元数据
-           } else {
-              // 使用远程版本覆盖本地版本（仅元数据）
-              AppLogger.d('SyncService', '冲突解决 ($type/$id): 使用远程版本。');
-              final remoteSession = await apiService.getSession(await _getCurrentUserId(), id); // 从 API 获取会话详情
-              await localStorageService.updateChatSession(remoteSession, needsSync: false); // 保存远程版本，不标记再同步
-              await localStorageService.clearSyncFlagByType('chat_session', id); // 清除同步标记
-              AppLogger.i('SyncService', '冲突解决 ($type/$id): 远程版本已覆盖本地。');
-              return true;
-           }
-
-        // 注意：待发送消息队列通常不涉及冲突解决，发送成功即移除。
-
-        default:
-          AppLogger.w('SyncService', '未知的冲突类型: $type');
-          return false;
-      }
-    } catch (e, stackTrace) { // 捕获解决冲突过程中的所有错误
-      AppLogger.e('SyncService', '解决冲突失败 ($type/$id)', e, stackTrace);
-      _updateSyncState(error: '解决冲突失败: $e');
-      return false;
-    }
-  }
   
   /// 关闭服务，释放资源
   void dispose() {

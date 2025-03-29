@@ -35,6 +35,7 @@ abstract class ChatRepository {
     required String sessionId,
     required String content,
     Map<String, dynamic>? metadata,
+    String? configId,
   });
   
   /// 流式发送消息并获取响应
@@ -44,6 +45,7 @@ abstract class ChatRepository {
     required String sessionId,
     required String content,
     Map<String, dynamic>? metadata,
+    String? configId,
   });
   
   /// 获取会话消息历史
@@ -60,4 +62,6 @@ abstract class ChatRepository {
   
   /// 获取用户会话数量
   Future<int> countUserSessions(String userId);
+
+
 }

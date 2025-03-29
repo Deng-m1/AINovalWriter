@@ -7,7 +7,6 @@ import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 
 class ChapterSection extends StatefulWidget {
-
   const ChapterSection({
     super.key,
     required this.title,
@@ -30,7 +29,8 @@ class _ChapterSectionState extends State<ChapterSection> {
   late TextEditingController _chapterTitleController;
   late debouncer.Debouncer _debouncer;
   // 为章节创建一个ValueKey，确保唯一性
-  late final Key _chapterKey = ValueKey('chapter_${widget.actId}_${widget.chapterId}');
+  late final Key _chapterKey =
+      ValueKey('chapter_${widget.actId}_${widget.chapterId}');
 
   @override
   void initState() {
@@ -56,69 +56,71 @@ class _ChapterSectionState extends State<ChapterSection> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final theme = Theme.of(context);
+    return Column(
       key: _chapterKey, // 使用ValueKey
-      onTap: () {
-        // 点击Chapter时设置为活动Chapter
-        AppLogger.i('Editor', 'Chapter被点击: actId=${widget.actId}, chapterId=${widget.chapterId}');
-        // 不检查当前状态，直接触发事件
-        widget.editorBloc.add(SetActiveChapter(
-          actId: widget.actId,
-          chapterId: widget.chapterId,
-        ));
-      },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Chapter标题
-          Padding(
-            padding: const EdgeInsets.fromLTRB(0, 40, 0, 16),
-            child: Row(
-              children: [
-                // 可编辑的文本字段
-                Expanded(
-                  child: EditableTitle(
-                    initialText: widget.title,
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
-                    onChanged: (value) {
-                      try {
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Chapter标题
+        Padding(
+          // 调整间距
+          padding: const EdgeInsets.fromLTRB(0, 8, 0, 24), // 调整上下间距
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center, // 垂直居中对齐
+            children: [
+              // 可编辑的文本字段
+              Expanded(
+                child: EditableTitle(
+                  // 保持 EditableTitle
+                  initialText: widget.title,
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    // 使用主题标题样式
+                    fontWeight: FontWeight.w600, // 加粗
+                    color: Colors.black,
+                  ),
+                  onChanged: (value) {
+                    // 使用防抖更新
+                    _debouncer.run(() {
+                      if (mounted) {
                         widget.editorBloc.add(UpdateChapterTitle(
                           actId: widget.actId,
                           chapterId: widget.chapterId,
                           title: value,
                         ));
-                      } catch (e) {
-                        AppLogger.e('ChapterSection', '更新章节标题失败', e);
                       }
-                    },
-                  ),
+                    });
+                  },
                 ),
-                IconButton(
-                  icon: const Icon(Icons.more_vert, size: 20),
-                  onPressed: () {},
-                  tooltip: 'Actions',
-                  color: Colors.grey.shade700,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8), // 增加间距
+              // 更多操作按钮 (PopupMenuButton 待实现)
+              IconButton(
+                icon: const Icon(Icons.more_vert, size: 20),
+                onPressed: () {
+                  // TODO: 实现 Chapter 的更多操作菜单（重命名、删除、移动等）
+                },
+                tooltip: 'Chapter Actions',
+                color: Colors.grey.shade600,
+                splashRadius: 20,
+              ),
+            ],
           ),
+        ),
 
-          // 场景列表
-          ...widget.scenes,
+        // 场景列表
+        // 通过 Column 自动排列，间距由 SceneEditor 的 margin 控制
+        Column(children: widget.scenes),
 
-          // 添加新场景按钮
-          _AddSceneButton(
-            actId: widget.actId,
-            chapterId: widget.chapterId,
-            editorBloc: widget.editorBloc,
-          ),
-        ],
-      ),
+        // 添加新场景按钮
+        _AddSceneButton(
+          actId: widget.actId,
+          chapterId: widget.chapterId,
+          editorBloc: widget.editorBloc,
+        ),
+      ],
     );
+    // GestureDetector 已移除，因为 Column 覆盖了区域
+    // onTap 在 SceneEditor 内部处理
   }
 }
 
@@ -136,37 +138,42 @@ class _AddSceneButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16.0),
-        child: TextButton.icon(
+        padding: const EdgeInsets.symmetric(vertical: 24.0), // 调整间距
+        child: OutlinedButton.icon(
+          // 改为 OutlinedButton
           onPressed: () {
             // 生成不带前缀的纯数字ID，以确保与后端一致
             final newSceneId = DateTime.now().millisecondsSinceEpoch.toString();
-            AppLogger.i('Editor', '添加新Scene按钮被点击: actId=$actId, chapterId=$chapterId, sceneId=$newSceneId');
-            
-            // 先设置活动章节，确保状态正确
-            editorBloc.add(SetActiveChapter(
+            AppLogger.i('Editor',
+                '添加新Scene按钮被点击: actId=$actId, chapterId=$chapterId, sceneId=$newSceneId');
+
+            // 触发添加新Scene事件
+            editorBloc.add(AddNewScene(
+              novelId: editorBloc.novelId,
               actId: actId,
-              chapterId: chapterId
+              chapterId: chapterId,
+              sceneId: newSceneId,
             ));
-            
-            // 延迟一帧后再添加场景，确保活动章节状态已更新
-            Future.microtask(() {
-              // 触发添加新Scene事件
-              editorBloc.add(AddNewScene(
-                novelId: editorBloc.novelId,
-                actId: actId,
-                chapterId: chapterId,
-                sceneId: newSceneId,
-              ));
-            });
           },
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add, size: 18),
           label: const Text('New Scene'),
-          style: TextButton.styleFrom(
+          style: OutlinedButton.styleFrom(
             foregroundColor: Colors.grey.shade700,
-          ),
+            side: BorderSide(color: Colors.grey.shade300),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ).copyWith(overlayColor: MaterialStateProperty.resolveWith<Color?>(
+            (Set<MaterialState> states) {
+              if (states.contains(MaterialState.hovered)) {
+                return Colors.grey.shade100;
+              }
+              return null;
+            },
+          )),
         ),
       ),
     );
   }
-} 
+}

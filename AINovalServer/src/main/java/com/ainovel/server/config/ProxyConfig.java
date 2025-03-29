@@ -9,6 +9,7 @@ import org.springframework.context.event.EventListener;
 
 import com.ainovel.server.service.ai.AIModelProvider;
 
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -16,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Configuration
+@Data
 public class ProxyConfig {
 
     @Value("${proxy.enabled:false}")

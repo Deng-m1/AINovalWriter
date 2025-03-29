@@ -49,6 +49,8 @@ public class SiliconFlowLangChain4jModelProvider extends LangChain4jModelProvide
                     .apiKey(apiKey)
                     .modelName(modelName)
                     .baseUrl(baseUrl)
+                    .logRequests(true)
+                    .logResponses(true)
                     .timeout(Duration.ofSeconds(60))
                     .build();
             
@@ -57,6 +59,8 @@ public class SiliconFlowLangChain4jModelProvider extends LangChain4jModelProvide
                     .apiKey(apiKey)
                     .modelName(modelName)
                     .baseUrl(baseUrl)
+                    .logRequests(true)
+                    .logResponses(true)
                     .timeout(Duration.ofSeconds(60))
                     .build();
             

@@ -11,7 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:uuid/uuid.dart';
 
-
 class EditorMainArea extends StatefulWidget {
   const EditorMainArea({
     super.key,
@@ -48,24 +47,32 @@ class _EditorMainAreaState extends State<EditorMainArea> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final veryLightGrey = Colors.grey.shade100; // 使用更浅的灰色或自定义颜色 #F8F9FA
+    // 或者 Color(0xFFF8F9FA);
+
     return Container(
-      color: Colors.grey.shade50, // 更改背景色为浅灰色，增强对比度
+      // 1. 使用更柔和的背景色
+      color: veryLightGrey,
       child: SingleChildScrollView(
         controller: widget.scrollController,
         child: Center(
-          child: Container(
-            width: 1100, // 增加宽度以容纳内容和摘要
-            padding: const EdgeInsets.symmetric(
-                horizontal: 40, vertical: 20), // 添加垂直内边距
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 动态构建Acts
-                ...widget.novel.acts.map((act) => _buildActSection(act)),
+          child: ConstrainedBox(
+            // 3. 限制内容最大宽度
+            constraints: const BoxConstraints(maxWidth: 1100), // 保持或调整最大宽度
+            child: Padding(
+              // 调整内边距，增加呼吸空间
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 动态构建Acts
+                  ...widget.novel.acts.map((act) => _buildActSection(act)),
 
-                // 添加新Act按钮
-                _AddActButton(editorBloc: widget.editorBloc),
-              ],
+                  // 添加新Act按钮
+                  _AddActButton(editorBloc: widget.editorBloc),
+                ],
+              ),
             ),
           ),
         ),
@@ -74,40 +81,59 @@ class _EditorMainAreaState extends State<EditorMainArea> {
   }
 
   Widget _buildActSection(novel_models.Act act) {
-    return ActSection(
-      title: act.title,
-      chapters: act.chapters
-          .map((chapter) => _buildChapterSection(act.id, chapter))
-          .toList(),
-      actId: act.id,
-      editorBloc: widget.editorBloc,
+    // 在每个 ActSection 外添加垂直间距
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 48.0), // 增加 Act 之间的间距
+      child: ActSection(
+        title: act.title,
+        chapters: act.chapters
+            .map((chapter) => _buildChapterSection(act.id, chapter))
+            .toList(),
+        actId: act.id,
+        editorBloc: widget.editorBloc,
+      ),
     );
   }
 
   Widget _buildChapterSection(String actId, novel_models.Chapter chapter) {
+    // 在每个 ChapterSection 外添加垂直间距
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 32.0), // 增加 Chapter 之间的间距
+      child: _buildChapterContent(actId, chapter), // 将内容提取到新方法
+    );
+  }
+
+  // 新方法：构建章节内容，包括空状态或场景列表
+  Widget _buildChapterContent(String actId, novel_models.Chapter chapter) {
     if (chapter.scenes.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 16.0),
         child: Center(
           child: Column(
             children: [
-              Text('章节 "${chapter.title}" 还没有场景。'),
-              const SizedBox(height: 8),
+              Text(
+                '章节 "${chapter.title}" 还没有场景。',
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 16), // 增加间距
               ElevatedButton.icon(
                 onPressed: () {
-                  // 生成一个新的唯一 ID
-                  final newSceneId = const Uuid().v4(); 
+                  final newSceneId = const Uuid().v4();
                   widget.editorBloc.add(AddNewScene(
                     novelId: widget.editorBloc.novelId,
                     actId: actId,
                     chapterId: chapter.id,
-                    sceneId: newSceneId, // 传递新生成的 ID
+                    sceneId: newSceneId,
                   ));
                 },
-                icon: const Icon(Icons.add),
+                icon: const Icon(Icons.add, size: 18), // 调整图标大小
                 label: const Text('添加第一个场景'),
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8), // 添加圆角
+                  ),
                 ),
               ),
             ],
@@ -141,16 +167,18 @@ class _EditorMainAreaState extends State<EditorMainArea> {
             ]),
             selection: const TextSelection.collapsed(offset: 0),
           );
-          widget.sceneSummaryControllers[sceneId] = TextEditingController(text: '');
+          widget.sceneSummaryControllers[sceneId] =
+              TextEditingController(text: '');
         }
       }
 
       return SceneEditor(
-        title: '${chapter.title} · Scene ${index + 1}',
-        wordCount: '${scene.wordCount} Words',
+        key: ValueKey('scene_${actId}_${chapter.id}_${scene.id}'), // 使用唯一的 key
+        title: 'Scene ${index + 1}', // 简化标题，章节标题在 ChapterSection 显示
+        wordCount: '${scene.wordCount} 字', // 本地化或调整显示
         isActive: widget.activeActId == actId &&
-                  widget.activeChapterId == chapter.id &&
-                  widget.activeSceneId == scene.id,
+            widget.activeChapterId == chapter.id &&
+            widget.activeSceneId == scene.id,
         actId: actId,
         chapterId: chapter.id,
         sceneId: scene.id,
@@ -184,7 +212,7 @@ class _EditorMainAreaState extends State<EditorMainArea> {
     } catch (e) {
       AppLogger.e('EditorMainArea', '解析文档内容失败: $content', e);
     }
-    
+
     return Document.fromJson([
       {'insert': '\n'}
     ]);
@@ -200,14 +228,20 @@ class _AddActButton extends StatelessWidget {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 16.0),
-        child: TextButton.icon(
+        child: OutlinedButton.icon(
+          // 改为 OutlinedButton 样式
           onPressed: () {
             editorBloc.add(const AddNewAct(title: '新Act'));
           },
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add, size: 18),
           label: const Text('New Act'),
-          style: TextButton.styleFrom(
+          style: OutlinedButton.styleFrom(
             foregroundColor: Colors.grey.shade700,
+            side: BorderSide(color: Colors.grey.shade300), // 更柔和的边框
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         ),
       ),

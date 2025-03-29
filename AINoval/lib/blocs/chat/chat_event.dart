@@ -25,18 +25,18 @@ class CreateChatSession extends ChatEvent {
     required this.title,
     required this.novelId,
     this.chapterId,
+    this.metadata,
   });
   final String title;
   final String novelId;
   final String? chapterId;
-
+  final Map<String, dynamic>? metadata;
   @override
   List<Object?> get props => [title, novelId, chapterId];
 }
 
 // 选择聊天会话
 class SelectChatSession extends ChatEvent {
-
   const SelectChatSession({required this.sessionId});
   final String sessionId;
 
@@ -46,12 +46,14 @@ class SelectChatSession extends ChatEvent {
 
 // 发送消息
 class SendMessage extends ChatEvent {
-
-  const SendMessage({required this.content});
   final String content;
+  final String? configId; // <<< Add configId field
+
+  // <<< Modify existing constructor
+  const SendMessage({required this.content, this.configId});
 
   @override
-  List<Object?> get props => [content];
+  List<Object?> get props => [content, configId]; // <<< Add configId to props
 }
 
 // 加载更多消息
@@ -94,6 +96,14 @@ class CancelOngoingRequest extends ChatEvent {
   const CancelOngoingRequest();
 }
 
+
+class UpdateActiveChatConfig extends ChatEvent {
+   final String? configId;
+   const UpdateActiveChatConfig({required this.configId});
+   @override
+   List<Object?> get props => [configId];
+}
+
 // 更新聊天上下文
 class UpdateChatContext extends ChatEvent {
 
@@ -102,4 +112,21 @@ class UpdateChatContext extends ChatEvent {
 
   @override
   List<Object?> get props => [context];
+}
+
+// 更新聊天模型
+class UpdateChatModel extends ChatEvent {
+  final String sessionId;
+  final String modelConfigId; // Pass the ID, Bloc will resolve the model
+
+  const UpdateChatModel({
+    required this.sessionId,
+    required this.modelConfigId,
+  });
+
+  @override
+  List<Object?> get props => [sessionId, modelConfigId];
 } 
+
+
+
