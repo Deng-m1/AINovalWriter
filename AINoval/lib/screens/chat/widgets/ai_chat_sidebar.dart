@@ -12,6 +12,7 @@ import 'chat_input.dart'; // 引入 ChatInput
 import 'typing_indicator.dart'; // 引入 TypingIndicator
 
 
+
 /// AI聊天侧边栏组件，用于在编辑器右侧显示聊天功能
 class AIChatSidebar extends StatefulWidget {
   const AIChatSidebar({

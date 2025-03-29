@@ -87,7 +87,6 @@ public class NovelController extends ReactiveBaseController {
      */
     @PostMapping("/update-with-scenes")
     public Mono<NovelWithScenesDto> updateNovelWithScenes(@RequestBody NovelWithScenesDto novelWithScenesDto) {
-
         Novel novel = novelWithScenesDto.getNovel();
         // 从 Map 中获取所有场景列表，并将它们合并成一个大的 List
         List<Scene> scenes = novelWithScenesDto.getScenesByChapter().values().stream()

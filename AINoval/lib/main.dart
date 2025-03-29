@@ -107,6 +107,12 @@ void main() async {
             novelRepository: NovelRepositoryImpl(),
           ),
         ),
+        // 添加EditorVersionBloc提供者
+        BlocProvider<EditorVersionBloc>(
+          create: (context) => EditorVersionBloc(
+            novelRepository: NovelRepositoryImpl(),
+          ),
+        ),
       ],
       child: MyApp(authService: authService),
     ),
