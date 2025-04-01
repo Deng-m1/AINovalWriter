@@ -310,29 +310,32 @@ class _SelectionToolbarState extends State<SelectionToolbar> {
     required String tooltip,
     required VoidCallback onPressed,
   }) {
-    return Tooltip(
-      message: tooltip,
-      preferBelow: false,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(4),
-        hoverColor: Colors.white10,
-        splashColor: Colors.white24,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: icon != null
-              ? Icon(
-                  icon,
-                  color: Colors.white,
-                  size: 18,
-                )
-              : Text(
-                  text ?? '',
-                  style: const TextStyle(
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Tooltip(
+        message: tooltip,
+        preferBelow: false,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(4),
+          hoverColor: Colors.white10,
+          splashColor: Colors.white24,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: icon != null
+                ? Icon(
+                    icon,
                     color: Colors.white,
-                    fontSize: 14,
+                    size: 18,
+                  )
+                : Text(
+                    text ?? '',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
                   ),
-                ),
+          ),
         ),
       ),
     );
@@ -352,20 +355,23 @@ class _SelectionToolbarState extends State<SelectionToolbar> {
     AppLogger.v(
         'SelectionToolbar', '按钮 ${attribute.key} 状态: isActive=$isActive');
 
-    return Tooltip(
-      message: tooltip,
-      preferBelow: false,
-      child: InkWell(
-        onTap: () => _applyAttribute(attribute),
-        borderRadius: BorderRadius.circular(4),
-        hoverColor: Colors.white10,
-        splashColor: Colors.white24,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: Icon(
-            icon,
-            color: isActive ? Colors.lightBlueAccent : Colors.white,
-            size: 18,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Tooltip(
+        message: tooltip,
+        preferBelow: false,
+        child: InkWell(
+          onTap: () => _applyAttribute(attribute),
+          borderRadius: BorderRadius.circular(4),
+          hoverColor: Colors.white10,
+          splashColor: Colors.white24,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Icon(
+              icon,
+              color: isActive ? Colors.lightBlueAccent : Colors.white,
+              size: 18,
+            ),
           ),
         ),
       ),
@@ -378,24 +384,27 @@ class _SelectionToolbarState extends State<SelectionToolbar> {
     required String tooltip,
     required PopupMenuItemBuilder<String> itemBuilder,
   }) {
-    return Tooltip(
-      message: tooltip,
-      preferBelow: false,
-      child: PopupMenuButton<String>(
-        tooltip: '',
-        color: Colors.grey.shade800,
-        elevation: 4,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Tooltip(
+        message: tooltip,
+        preferBelow: false,
+        child: PopupMenuButton<String>(
+          tooltip: '',
+          color: Colors.grey.shade800,
+          elevation: 4,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          position: PopupMenuPosition.under,
+          icon: Icon(
+            icon,
+            color: Colors.white,
+            size: 18,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          itemBuilder: itemBuilder,
         ),
-        position: PopupMenuPosition.under,
-        icon: Icon(
-          icon,
-          color: Colors.white,
-          size: 18,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        itemBuilder: itemBuilder,
       ),
     );
   }
