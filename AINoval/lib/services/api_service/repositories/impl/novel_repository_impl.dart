@@ -153,10 +153,11 @@ class NovelRepositoryImpl implements NovelRepository {
         'title': novel.title,
         'coverImage': novel.coverImagePath,
         // 确保包含作者信息
-        'author': novel.author?.toJson() ?? {
-          'id': AppConfig.userId ?? '',
-          'username': AppConfig.username ?? 'user'
-        },
+        'author': novel.author?.toJson() ??
+            {
+              'id': AppConfig.userId ?? '',
+              'username': AppConfig.username ?? 'user'
+            },
         'structure': {
           'acts': novel.acts
               .map((act) => {
@@ -169,7 +170,9 @@ class NovelRepositoryImpl implements NovelRepository {
                               'title': chapter.title,
                               'order': chapter.order,
                               // 确保发送 scenes 以便后端处理
-                              'scenes': chapter.scenes.map((scene) => scene.toJson()).toList(),
+                              'scenes': chapter.scenes
+                                  .map((scene) => scene.toJson())
+                                  .toList(),
                             })
                         .toList(),
                   })
@@ -219,7 +222,8 @@ class NovelRepositoryImpl implements NovelRepository {
       // 如果获取失败，特别是404，可能场景尚未创建，返回一个空场景
       if (e is ApiException && e.statusCode == 404) {
         AppLogger.w(
-            'Services/api_service/repositories/impl/novel_repository_impl', '场景 $sceneId 未找到，返回空场景');
+            'Services/api_service/repositories/impl/novel_repository_impl',
+            '场景 $sceneId 未找到，返回空场景');
         return Scene.createDefault(sceneId);
       }
       AppLogger.e(
@@ -379,33 +383,38 @@ class NovelRepositoryImpl implements NovelRepository {
   /// 将后端Novel模型转换为前端Novel模型
   Novel _convertToNovelModel(Map<String, dynamic> json) {
     // 检查是否为NovelWithScenesDto格式
-    bool isNovelWithScenesDto = json.containsKey('novel') && json.containsKey('scenesByChapter');
-    
+    bool isNovelWithScenesDto =
+        json.containsKey('novel') && json.containsKey('scenesByChapter');
+
     // 如果是NovelWithScenesDto格式，提取novel部分
-    Map<String, dynamic> novelData = isNovelWithScenesDto ? json['novel'] as Map<String, dynamic> : json;
-    Map<String, List<dynamic>>? scenesByChapter = isNovelWithScenesDto 
-        ? (json['scenesByChapter'] as Map<String, dynamic>).map((key, value) => 
-            MapEntry(key, value as List<dynamic>))
+    Map<String, dynamic> novelData =
+        isNovelWithScenesDto ? json['novel'] as Map<String, dynamic> : json;
+    Map<String, List<dynamic>>? scenesByChapter = isNovelWithScenesDto
+        ? (json['scenesByChapter'] as Map<String, dynamic>)
+            .map((key, value) => MapEntry(key, value as List<dynamic>))
         : null;
-    
+
     // 提取结构信息
     final structure = novelData['structure'] as Map<String, dynamic>? ?? {};
     final acts = (structure['acts'] as List?)?.map((actJson) {
           final act = actJson as Map<String, dynamic>;
           final chapters = (act['chapters'] as List?)?.map((chapterJson) {
                 final chapter = chapterJson as Map<String, dynamic>;
-                
+
                 // 章节ID
                 final chapterId = chapter['id'];
-                
+
                 // 如果是NovelWithScenesDto格式且有该章节的场景数据，添加场景
                 List<Scene> scenes = [];
-                if (isNovelWithScenesDto && scenesByChapter != null && scenesByChapter.containsKey(chapterId)) {
+                if (isNovelWithScenesDto &&
+                    scenesByChapter != null &&
+                    scenesByChapter.containsKey(chapterId)) {
                   scenes = scenesByChapter[chapterId]!
-                      .map((sceneJson) => Scene.fromJson(sceneJson as Map<String, dynamic>))
+                      .map((sceneJson) =>
+                          Scene.fromJson(sceneJson as Map<String, dynamic>))
                       .toList();
                 }
-                
+
                 return Chapter(
                   id: chapterId,
                   title: chapter['title'],

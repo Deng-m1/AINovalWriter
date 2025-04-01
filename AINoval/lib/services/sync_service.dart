@@ -9,55 +9,54 @@ import 'package:ainoval/utils/logger.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 
-
 /// 数据同步服务
-/// 
+///
 /// 负责在本地数据和远程API之间同步数据，支持离线模式和冲突解决
 class SyncService {
-  
   SyncService({
     required this.apiService,
     required this.localStorageService,
   });
-  
+
   final ApiClient apiService;
   final LocalStorageService localStorageService;
-  
+
   // 同步状态流
   final _syncStateController = StreamController<SyncState>.broadcast();
   Stream<SyncState> get syncStateStream => _syncStateController.stream;
-  
+
   // 当前同步状态
   SyncState _currentState = SyncState.idle();
   SyncState get currentState => _currentState;
-  
+
   // 网络连接监听器
   StreamSubscription? _connectivitySubscription;
-  
+
   // 自动同步定时器
   Timer? _autoSyncTimer;
-  
+
   /// 初始化同步服务
   Future<void> init() async {
     AppLogger.i('SyncService', '初始化同步服务');
-    
+
     // 监听网络连接状态
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((result) {
+    _connectivitySubscription =
+        Connectivity().onConnectivityChanged.listen((result) {
       final isOnline = result != ConnectivityResult.none;
       AppLogger.d('SyncService', '网络连接状态变化: ${isOnline ? "在线" : "离线"}');
       _handleConnectivityChange(isOnline);
     });
-    
+
     // 检查当前网络状态
     final connectivityResult = await Connectivity().checkConnectivity();
     final isOnline = connectivityResult != ConnectivityResult.none;
     AppLogger.d('SyncService', '当前网络状态: ${isOnline ? "在线" : "离线"}');
     _handleConnectivityChange(isOnline);
-    
+
     // 设置自动同步定时器
     _setupAutoSync();
   }
-  
+
   /// 设置自动同步
   void _setupAutoSync() {
     AppLogger.i('SyncService', '设置自动同步定时器，每5分钟同步一次');
@@ -69,20 +68,20 @@ class SyncService {
       }
     });
   }
-  
+
   /// 处理网络连接变化
   void _handleConnectivityChange(bool isOnline) {
     // Store the previous online state before updating
-    final wasOffline = !_currentState.isOnline; 
+    final wasOffline = !_currentState.isOnline;
     _updateSyncState(isOnline: isOnline);
-    
+
     // Trigger sync only when coming back online
-    if (isOnline && wasOffline) { 
+    if (isOnline && wasOffline) {
       AppLogger.i('SyncService', '网络恢复，开始同步数据');
       syncAll(); // syncAll will now also handle pending messages
     }
   }
-  
+
   /// 更新同步状态
   void _updateSyncState({
     bool? isOnline,
@@ -96,27 +95,28 @@ class SyncService {
       error: error,
       progress: progress ?? _currentState.progress,
     );
-    
+
     _syncStateController.add(_currentState);
     AppLogger.v('SyncService', '同步状态更新: $_currentState');
   }
-  
+
   /// 同步所有数据
   Future<bool> syncAll() async {
     if (_currentState.isSyncing) {
       AppLogger.w('SyncService', '同步已在进行中，跳过本次同步');
       return false;
     }
-    
+
     if (!_currentState.isOnline) {
       AppLogger.w('SyncService', '无网络连接，无法同步');
       _updateSyncState(error: '无网络连接，无法同步');
       return false;
     }
-    
+
     try {
       AppLogger.i('SyncService', '开始全量数据同步');
-      _updateSyncState(isSyncing: true, progress: 0.0, error: null); // Clear previous error
+      _updateSyncState(
+          isSyncing: true, progress: 0.0, error: null); // Clear previous error
 
       // --- Sync Pending Messages First ---
       AppLogger.d('SyncService', '开始同步待发送消息');
@@ -127,50 +127,50 @@ class SyncService {
       AppLogger.d('SyncService', '开始同步小说数据');
       await _syncNovels();
       _updateSyncState(progress: 0.3);
-      
+
       AppLogger.d('SyncService', '开始同步场景内容');
       await _syncScenes();
       _updateSyncState(progress: 0.5);
-      
+
       AppLogger.d('SyncService', '开始同步编辑器内容');
       await _syncEditorContents();
       _updateSyncState(progress: 0.7);
-      
+
       // Sync Chat Session METADATA (title, etc.)
       AppLogger.d('SyncService', '开始同步聊天会话元数据');
       await _syncChatSessions(); // This now only syncs metadata
       _updateSyncState(progress: 0.9); // Example progress
-      
+
       // --- Final step, maybe sync user profile or other settings ---
-       _updateSyncState(progress: 1.0); // Example finish
-      
+      _updateSyncState(progress: 1.0); // Example finish
+
       AppLogger.i('SyncService', '全量数据同步完成');
       _updateSyncState(isSyncing: false, error: null); // Clear error on success
       return true;
     } catch (e, stackTrace) {
       AppLogger.e('SyncService', '同步失败', e, stackTrace);
-       // Preserve isOnline state, set error
+      // Preserve isOnline state, set error
       _updateSyncState(isSyncing: false, error: '同步失败: $e');
       return false;
     }
   }
-  
+
   /// 同步小说数据
   Future<void> _syncNovels() async {
     try {
       final syncList = await localStorageService.getSyncList('novel');
       AppLogger.d('SyncService', '需要同步的小说数量: ${syncList.length}');
-      
+
       for (final novelId in syncList) {
         final localNovel = await localStorageService.getNovel(novelId);
         if (localNovel == null) {
           AppLogger.w('SyncService', '本地小说不存在: $novelId');
           continue;
         }
-        
+
         AppLogger.i('SyncService', '同步小说: ${localNovel.title}($novelId)');
         await apiService.updateNovel(localNovel.toJson());
-        
+
         await localStorageService.clearSyncFlagByType('novel', novelId);
         AppLogger.d('SyncService', '小说同步完成: $novelId');
       }
@@ -179,36 +179,36 @@ class SyncService {
       throw SyncException('同步小说数据失败: $e');
     }
   }
-  
+
   /// 同步场景内容
   Future<void> _syncScenes() async {
     try {
       final syncList = await localStorageService.getSyncList('scene');
       AppLogger.d('SyncService', '需要同步的场景数量: ${syncList.length}');
-      
+
       for (final sceneKey in syncList) {
         final parts = sceneKey.split('_');
         if (parts.length != 4) {
           AppLogger.w('SyncService', '无效的场景键格式: $sceneKey');
           continue;
         }
-        
+
         final novelId = parts[0];
         final actId = parts[1];
         final chapterId = parts[2];
         final sceneId = parts[3];
-        
+
         final localScene = await localStorageService.getSceneContent(
-          novelId, actId, chapterId, sceneId);
+            novelId, actId, chapterId, sceneId);
         if (localScene == null) {
           AppLogger.w('SyncService', '本地场景不存在: $sceneKey');
           continue;
         }
-        
+
         AppLogger.i('SyncService', '同步场景: $sceneKey');
         final sceneData = localScene.toJson();
         await apiService.updateScene(sceneData);
-        
+
         await localStorageService.clearSyncFlagByType('scene', sceneKey);
         AppLogger.d('SyncService', '场景同步完成: $sceneKey');
       }
@@ -217,33 +217,34 @@ class SyncService {
       throw SyncException('同步场景内容失败: $e');
     }
   }
-  
+
   /// 同步编辑器内容
   Future<void> _syncEditorContents() async {
     try {
       final syncList = await localStorageService.getSyncList('editor');
       AppLogger.d('SyncService', '需要同步的编辑器内容数量: ${syncList.length}');
-      
+
       for (final contentKey in syncList) {
         final parts = contentKey.split('_');
         if (parts.length < 2) {
           AppLogger.w('SyncService', '无效的编辑器内容键格式: $contentKey');
           continue;
         }
-        
+
         final novelId = parts[0];
         final chapterId = parts[1];
-        
-        final localContent = await localStorageService.getEditorContent(
-          novelId, chapterId, '');
+
+        final localContent =
+            await localStorageService.getEditorContent(novelId, chapterId, '');
         if (localContent == null) {
           AppLogger.w('SyncService', '本地编辑器内容不存在: $contentKey');
           continue;
         }
-        
+
         AppLogger.i('SyncService', '同步编辑器内容: $contentKey');
-        await apiService.saveEditorContent(novelId, chapterId, localContent.toJson());
-        
+        await apiService.saveEditorContent(
+            novelId, chapterId, localContent.toJson());
+
         await localStorageService.clearSyncFlagByType('editor', contentKey);
         AppLogger.d('SyncService', '编辑器内容同步完成: $contentKey');
       }
@@ -252,7 +253,7 @@ class SyncService {
       throw SyncException('同步编辑器内容失败: $e');
     }
   }
-  
+
   /// 同步聊天会话元数据 (No longer sends full message history)
   Future<void> _syncChatSessions() async {
     // This method now only syncs session metadata like title, updatedAt
@@ -262,33 +263,34 @@ class SyncService {
 
       // No need for userId here if updateSession API only updates metadata
       // If updateSession *requires* userId, get it once:
-      // final String currentUserId = await _getCurrentUserId(); 
-      
+      // final String currentUserId = await _getCurrentUserId();
+
       for (final session in sessions) {
         AppLogger.i('SyncService', '同步聊天会话元数据: ${session.id}');
-        
+
         // Construct updates payload - only include fields managed locally
         // that need syncing (like title if user can rename offline)
         final Map<String, dynamic> updates = {
           'title': session.title,
           // Include lastUpdatedAt from local session to inform server?
-          // 'updatedAt': session.lastUpdatedAt.toIso8601String(), 
+          // 'updatedAt': session.lastUpdatedAt.toIso8601String(),
           // Or maybe server handles updatedAt automatically on update?
         };
 
         // Only call update if there are actual updates to send
         if (updates.isNotEmpty) {
-             // If updateSession requires userId, pass it: userId: currentUserId,
-             await apiService.updateAiChatSession(
-                userId: await _getCurrentUserId(), // Get userId if needed by API
-                sessionId: session.id,
-                updates: updates,
-             );
+          // If updateSession requires userId, pass it: userId: currentUserId,
+          await apiService.updateAiChatSession(
+            userId: await _getCurrentUserId(), // Get userId if needed by API
+            sessionId: session.id,
+            updates: updates,
+          );
         } // Else: Session might be marked for sync without local changes, skip API call?
 
         // REMOVED: Loop sending messages using getMessagesForSession
 
-        await localStorageService.clearSyncFlagByType('chat_session', session.id); 
+        await localStorageService.clearSyncFlagByType(
+            'chat_session', session.id);
         AppLogger.d('SyncService', '聊天会话元数据同步完成: ${session.id}');
       }
     } catch (e, stackTrace) {
@@ -298,99 +300,110 @@ class SyncService {
       // _updateSyncState(error: '部分同步失败: 聊天会话元数据'); // Be careful not to overwrite fatal errors
     }
   }
-  
+
   /// --- New Method: Sync Pending Chat Messages ---
   Future<void> _syncPendingMessages() async {
     try {
-       final pendingMessages = await localStorageService.getPendingMessages();
-       if (pendingMessages.isEmpty) {
-          AppLogger.d('SyncService', '没有待发送的消息。');
-          return;
-       }
-       
-       AppLogger.i('SyncService', '开始处理 ${pendingMessages.length} 条待发送消息。');
-       final String currentUserId = await _getCurrentUserId(); // Get User ID once
+      final pendingMessages = await localStorageService.getPendingMessages();
+      if (pendingMessages.isEmpty) {
+        AppLogger.d('SyncService', '没有待发送的消息。');
+        return;
+      }
 
-       for (final messageData in pendingMessages) {
-          final localId = messageData['localId'] as String?;
-          final sessionId = messageData['sessionId'] as String?;
-          final content = messageData['content'] as String?;
-          final metadata = messageData['metadata'] as Map<String, dynamic>?;
-          // Important: Use the userId stored with the message if available,
-          // otherwise use currentUserId. This handles cases where sync might
-          // happen after user logout/login, though ideally pending messages
-          // should be cleared on logout.
-          final userIdToSend = messageData['userId'] as String? ?? currentUserId; 
+      AppLogger.i('SyncService', '开始处理 ${pendingMessages.length} 条待发送消息。');
+      final String currentUserId =
+          await _getCurrentUserId(); // Get User ID once
 
-          if (localId == null || sessionId == null || content == null) {
-             AppLogger.e('SyncService', '待发送消息数据不完整，跳过: $messageData');
-             // Optionally remove corrupted data
-             // if (localId != null) await localStorageService.removePendingMessage(localId);
-             continue;
+      for (final messageData in pendingMessages) {
+        final localId = messageData['localId'] as String?;
+        final sessionId = messageData['sessionId'] as String?;
+        final content = messageData['content'] as String?;
+        final metadata = messageData['metadata'] as Map<String, dynamic>?;
+        // Important: Use the userId stored with the message if available,
+        // otherwise use currentUserId. This handles cases where sync might
+        // happen after user logout/login, though ideally pending messages
+        // should be cleared on logout.
+        final userIdToSend = messageData['userId'] as String? ?? currentUserId;
+
+        if (localId == null || sessionId == null || content == null) {
+          AppLogger.e('SyncService', '待发送消息数据不完整，跳过: $messageData');
+          // Optionally remove corrupted data
+          // if (localId != null) await localStorageService.removePendingMessage(localId);
+          continue;
+        }
+
+        try {
+          AppLogger.d(
+              'SyncService', '尝试发送消息: localId=$localId, sessionId=$sessionId');
+          // Call the actual API to send the message
+          await apiService.sendAiChatMessage(
+            userId: userIdToSend,
+            sessionId: sessionId,
+            content: content,
+            metadata: metadata,
+          );
+
+          // If sendMessage succeeds, remove from local pending queue
+          await localStorageService.removePendingMessage(localId);
+          AppLogger.i('SyncService', '成功发送并移除待发送消息: localId=$localId');
+
+          // OPTIONAL: Add the successfully sent message to the local history cache
+          // This requires constructing a proper ChatMessage object from the response
+          // or assuming success and creating one locally. This is complex.
+          // It might be simpler to rely on fetching history later.
+        } on ApiException catch (apiError, stack) {
+          // Catch specific API errors
+          AppLogger.e(
+              'SyncService',
+              '发送待处理消息失败 (API Error $localId): ${apiError.message}',
+              apiError,
+              stack);
+          // Decide if error is temporary or permanent.
+          // For now, leave in queue and retry later.
+          // If 4xx error, maybe remove from queue?
+          if (apiError.statusCode >= 400 &&
+              apiError.statusCode < 500 &&
+              apiError.statusCode != 401 &&
+              apiError.statusCode != 429) {
+            AppLogger.w('SyncService',
+                '接收到客户端错误 (${apiError.statusCode})，可能移除待发送消息 $localId');
+            // Consider removing permanently failed message
+            // await localStorageService.removePendingMessage(localId);
           }
-
-          try {
-             AppLogger.d('SyncService', '尝试发送消息: localId=$localId, sessionId=$sessionId');
-             // Call the actual API to send the message
-             await apiService.sendAiChatMessage(
-                userId: userIdToSend,
-                sessionId: sessionId,
-                content: content,
-                metadata: metadata,
-             );
-
-             // If sendMessage succeeds, remove from local pending queue
-             await localStorageService.removePendingMessage(localId);
-             AppLogger.i('SyncService', '成功发送并移除待发送消息: localId=$localId');
-
-             // OPTIONAL: Add the successfully sent message to the local history cache
-             // This requires constructing a proper ChatMessage object from the response
-             // or assuming success and creating one locally. This is complex.
-             // It might be simpler to rely on fetching history later.
-
-          } on ApiException catch (apiError, stack) { // Catch specific API errors
-             AppLogger.e('SyncService', '发送待处理消息失败 (API Error $localId): ${apiError.message}', apiError, stack);
-             // Decide if error is temporary or permanent.
-             // For now, leave in queue and retry later.
-             // If 4xx error, maybe remove from queue?
-             if (apiError.statusCode >= 400 && apiError.statusCode < 500 && apiError.statusCode != 401 && apiError.statusCode != 429) {
-                AppLogger.w('SyncService', '接收到客户端错误 (${apiError.statusCode})，可能移除待发送消息 $localId');
-                 // Consider removing permanently failed message
-                 // await localStorageService.removePendingMessage(localId);
-             }
-          } catch (e, stackTrace) { // Catch other errors
-             AppLogger.e('SyncService', '发送待处理消息时发生未知错误 ($localId)', e, stackTrace);
-             // Leave in queue for retry
-          }
-       }
-       AppLogger.i('SyncService', '处理待发送消息完成。');
-
+        } catch (e, stackTrace) {
+          // Catch other errors
+          AppLogger.e(
+              'SyncService', '发送待处理消息时发生未知错误 ($localId)', e, stackTrace);
+          // Leave in queue for retry
+        }
+      }
+      AppLogger.i('SyncService', '处理待发送消息完成。');
     } catch (e, stackTrace) {
-        // Error fetching or processing the queue itself
-       AppLogger.e('SyncService', '处理待发送消息队列时出错', e, stackTrace);
-       // Don't throw, allow other sync tasks. Update state?
-       // _updateSyncState(error: '部分同步失败: 待发送消息');
+      // Error fetching or processing the queue itself
+      AppLogger.e('SyncService', '处理待发送消息队列时出错', e, stackTrace);
+      // Don't throw, allow other sync tasks. Update state?
+      // _updateSyncState(error: '部分同步失败: 待发送消息');
     }
   }
-  
+
   /// 同步单个小说
   Future<bool> syncNovel(String novelId) async {
     if (!_currentState.isOnline) {
       _updateSyncState(error: '无网络连接，无法同步');
       return false;
     }
-    
+
     try {
       // 获取本地小说
       final localNovel = await localStorageService.getNovel(novelId);
       if (localNovel == null) return false;
-      
+
       // 上传到服务器
       await apiService.updateNovel(localNovel.toJson());
-      
+
       // 标记为已同步
       await localStorageService.clearSyncFlagByType('novel', novelId);
-      
+
       return true;
     } catch (e) {
       AppLogger.e('Services/sync_service', '同步小说失败', e);
@@ -398,33 +411,29 @@ class SyncService {
       return false;
     }
   }
-  
+
   /// 同步单个场景
   Future<bool> syncScene(
-    String novelId, 
-    String actId, 
-    String chapterId, 
-    String sceneId
-  ) async {
+      String novelId, String actId, String chapterId, String sceneId) async {
     if (!_currentState.isOnline) {
       _updateSyncState(error: '无网络连接，无法同步');
       return false;
     }
-    
+
     try {
       // 获取本地场景
       final localScene = await localStorageService.getSceneContent(
-        novelId, actId, chapterId, sceneId);
+          novelId, actId, chapterId, sceneId);
       if (localScene == null) return false;
-      
+
       // 上传到服务器
       final sceneData = localScene.toJson();
       await apiService.updateScene(sceneData);
-      
+
       // 标记为已同步
       final sceneKey = '${novelId}_${actId}_${chapterId}_$sceneId';
       await localStorageService.clearSyncFlagByType('scene', sceneKey);
-      
+
       return true;
     } catch (e) {
       AppLogger.e('Services/sync_service', '同步场景失败', e);
@@ -432,31 +441,30 @@ class SyncService {
       return false;
     }
   }
-  
+
   /// 同步单个编辑器内容
-  Future<bool> syncEditorContent(
-    String novelId, 
-    String chapterId, 
-    String sceneId // 注意： apiClient.saveEditorContent 不接收 sceneId
-  ) async {
+  Future<bool> syncEditorContent(String novelId, String chapterId,
+      String sceneId // 注意： apiClient.saveEditorContent 不接收 sceneId
+      ) async {
     if (!_currentState.isOnline) {
       _updateSyncState(error: '无网络连接，无法同步');
       return false;
     }
-    
+
     try {
       // 获取本地编辑器内容
       final localContent = await localStorageService.getEditorContent(
-        novelId, chapterId, ''); // 传递空的 sceneId 或适配
+          novelId, chapterId, ''); // 传递空的 sceneId 或适配
       if (localContent == null) return false;
-      
+
       // 上传到服务器
-      await apiService.saveEditorContent(novelId, chapterId, localContent.toJson()); 
-      
+      await apiService.saveEditorContent(
+          novelId, chapterId, localContent.toJson());
+
       // 标记为已同步
       final contentKey = '${novelId}_$chapterId'; // 调整 key
       await localStorageService.clearSyncFlagByType('editor', contentKey);
-      
+
       return true;
     } catch (e) {
       AppLogger.e('Services/sync_service', '同步编辑器内容失败', e);
@@ -464,7 +472,7 @@ class SyncService {
       return false;
     }
   }
-  
+
   /// 同步单个聊天会话元数据 (不再发送消息历史)
   Future<bool> syncChatSession(String sessionId) async {
     // 此方法现在只应同步元数据，或触发特定会话的待发送消息同步（如果需要）
@@ -473,27 +481,28 @@ class SyncService {
       _updateSyncState(error: '无网络连接，无法同步');
       return false;
     }
-    
+
     try {
       final session = await localStorageService.getChatSession(sessionId);
       if (session == null) {
-         AppLogger.w('SyncService', '尝试同步单个会话元数据，但本地未找到: $sessionId');
-         await localStorageService.clearSyncFlagByType('chat_session', sessionId); // 清除无效标记
-         return false; // 无法同步不存在的会话
+        AppLogger.w('SyncService', '尝试同步单个会话元数据，但本地未找到: $sessionId');
+        await localStorageService.clearSyncFlagByType(
+            'chat_session', sessionId); // 清除无效标记
+        return false; // 无法同步不存在的会话
       }
 
       // 同步元数据 (例如: title)
       final Map<String, dynamic> updates = {'title': session.title};
 
       if (updates.isNotEmpty) {
-         await apiService.updateAiChatSession(
-            userId: await _getCurrentUserId(), // 如果 API 需要，获取 userId
-            sessionId: session.id,
-            updates: updates,
-         );
-         AppLogger.d('SyncService', '单个聊天会话元数据 API 更新调用完成: $sessionId');
+        await apiService.updateAiChatSession(
+          userId: await _getCurrentUserId(), // 如果 API 需要，获取 userId
+          sessionId: session.id,
+          updates: updates,
+        );
+        AppLogger.d('SyncService', '单个聊天会话元数据 API 更新调用完成: $sessionId');
       } else {
-         AppLogger.d('SyncService', '单个聊天会话 ${session.id} 没有需要同步的元数据更新');
+        AppLogger.d('SyncService', '单个聊天会话 ${session.id} 没有需要同步的元数据更新');
       }
 
       // ======== 移除: 不再通过 getMessagesForSession 循环发送消息 ========
@@ -502,17 +511,17 @@ class SyncService {
       await localStorageService.clearSyncFlagByType('chat_session', sessionId);
       AppLogger.i('SyncService', '单个聊天会话元数据同步处理完成: $sessionId');
       return true;
-    } catch (e, stackTrace) { // 捕获所有可能的错误
+    } catch (e, stackTrace) {
+      // 捕获所有可能的错误
       AppLogger.e('SyncService', '同步单个聊天会话元数据失败 ($sessionId)', e, stackTrace);
       _updateSyncState(error: '同步单个聊天会话元数据失败: $e');
       // 同步失败，暂时不清除标记，留待下次重试
       return false;
     }
   }
-  
+
   /// 解决冲突 (需要根据聊天数据的具体冲突场景来完善)
 
-  
   /// 关闭服务，释放资源
   void dispose() {
     _syncStateController.close(); // 关闭状态流
@@ -536,12 +545,11 @@ class SyncService {
 
 /// 同步状态类
 class SyncState {
-  
   SyncState({
     required this.isOnline, // 网络是否连接
     required this.isSyncing, // 是否正在同步中
-    this.error,             // 同步错误信息，null表示无错误
-    this.progress = 0.0,    // 同步进度 (0.0 到 1.0)
+    this.error, // 同步错误信息，null表示无错误
+    this.progress = 0.0, // 同步进度 (0.0 到 1.0)
   });
 
   /// 空闲状态 (默认在线)
@@ -551,7 +559,7 @@ class SyncState {
       isSyncing: false,
     );
   }
-  
+
   /// 同步中状态
   factory SyncState.syncing({double progress = 0.0}) {
     return SyncState(
@@ -560,7 +568,7 @@ class SyncState {
       progress: progress,
     );
   }
-  
+
   /// 离线状态
   factory SyncState.offline() {
     return SyncState(
@@ -568,7 +576,7 @@ class SyncState {
       isSyncing: false, // 离线时不能同步
     );
   }
-  
+
   /// 错误状态 (允许指定当时的网络状态)
   factory SyncState.error(String errorMessage, {bool online = true}) {
     return SyncState(
@@ -584,17 +592,16 @@ class SyncState {
 
   @override
   String toString() {
-     // 提供更清晰的状态描述
-     return 'SyncState(在线: $isOnline, 同步中: $isSyncing, 进度: ${progress.toStringAsFixed(2)}, 错误: ${error ?? "无"})';
+    // 提供更清晰的状态描述
+    return 'SyncState(在线: $isOnline, 同步中: $isSyncing, 进度: ${progress.toStringAsFixed(2)}, 错误: ${error ?? "无"})';
   }
 }
 
 /// 同步异常类
 class SyncException implements Exception {
-  
   SyncException(this.message);
   final String message; // 异常信息
-  
+
   @override
   String toString() => 'SyncException: $message';
-} 
+}

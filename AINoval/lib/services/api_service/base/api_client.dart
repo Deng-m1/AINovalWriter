@@ -79,12 +79,14 @@ class ApiClient {
   /// 基础流式POST请求方法
   ///
   /// 返回原始字节流 Stream<List<int>>
-  Future<Stream<List<int>>> postStream(String path, {dynamic data, Options? options}) async {
+  Future<Stream<List<int>>> postStream(String path,
+      {dynamic data, Options? options}) async {
     try {
       final response = await _dio.post<ResponseBody>(
         path,
         data: data,
-        options: (options ?? Options()).copyWith(responseType: ResponseType.stream),
+        options:
+            (options ?? Options()).copyWith(responseType: ResponseType.stream),
       );
       if (response.data != null) {
         return response.data!.stream;
@@ -97,96 +99,109 @@ class ApiClient {
       throw _handleDioError(e);
     } catch (e) {
       AppLogger.e('ApiClient', 'postStream 执行出错，路径: $path', e);
-       throw ApiException(-1, '执行流式请求时发生意外错误: ${e.toString()}');
+      throw ApiException(-1, '执行流式请求时发生意外错误: ${e.toString()}');
     }
   }
 
   /// 辅助方法：处理字节流，解码，解析 SSE 或单行 JSON 数组，并生成指定类型的流
   Stream<T> _processStream<T>({
-      required Future<Stream<List<int>>> byteStreamFuture,
-      required T Function(Map<String, dynamic>) fromJson,
-      required String logContext,
+    required Future<Stream<List<int>>> byteStreamFuture,
+    required T Function(Map<String, dynamic>) fromJson,
+    required String logContext,
   }) {
     final controller = StreamController<T>();
 
     byteStreamFuture.then((byteStream) async {
-        final stringStream = utf8.decoder.bind(byteStream);
+      final stringStream = utf8.decoder.bind(byteStream);
 
-        await for (final rawLine in stringStream.transform(const LineSplitter())) {
-            try {
-                final line = rawLine.trim();
+      await for (final rawLine
+          in stringStream.transform(const LineSplitter())) {
+        try {
+          final line = rawLine.trim();
 
-                if (line.isEmpty) {
-                    continue;
+          if (line.isEmpty) {
+            continue;
+          }
+
+          if (line.startsWith('data:')) {
+            final eventData = line.substring(5).trim();
+            if (eventData.isNotEmpty && eventData != '[DONE]') {
+              final json = jsonDecode(eventData);
+              if (json is Map<String, dynamic>) {
+                final item = fromJson(json);
+                AppLogger.v('ApiClient',
+                    '[$logContext] 解析 SSE 数据: ${item.runtimeType}');
+                if (!controller.isClosed) {
+                  controller.add(item);
                 }
-
-                if (line.startsWith('data:')) {
-                    final eventData = line.substring(5).trim();
-                    if (eventData.isNotEmpty && eventData != '[DONE]') {
-                        final json = jsonDecode(eventData);
-                        if (json is Map<String, dynamic>) {
-                            final item = fromJson(json);
-                            AppLogger.v('ApiClient', '[$logContext] 解析 SSE 数据: ${item.runtimeType}');
-                            if (!controller.isClosed) {
-                                controller.add(item);
-                            }
-                        } else {
-                             AppLogger.w('ApiClient', '[$logContext] SSE 数据不是有效的 JSON 对象: $eventData');
-                        }
-                    } else if (eventData == '[DONE]') {
-                        AppLogger.i('ApiClient', '[$logContext] 收到 SSE 流结束标记 [DONE]');
-                    }
-                } else if (line.startsWith('[') && line.endsWith(']')) {
-                    AppLogger.v('ApiClient', '[$logContext] 检测到单行 JSON 数组，尝试解析，长度: ${line.length}');
-                    final decodedList = jsonDecode(line);
-                    if (decodedList is List) {
-                        int count = 0;
-                        for (final itemJson in decodedList) {
-                           await Future.delayed(Duration.zero);
-
-                            if (controller.isClosed) break;
-
-                            if (itemJson is Map<String, dynamic>) {
-                                try {
-                                    final item = fromJson(itemJson);
-                                    AppLogger.v('ApiClient', '[$logContext] 解析 JSON 数组元素 ${++count}: ${item.runtimeType}');
-                                    if (!controller.isClosed) {
-                                        controller.add(item);
-                                    }
-                                } catch (e, stackTrace) {
-                                    AppLogger.e('ApiClient', '[$logContext] 从 JSON 数组元素转换失败: $itemJson', e, stackTrace);
-                                }
-                            } else {
-                                AppLogger.w('ApiClient', '[$logContext] JSON 数组中的元素不是 Map: $itemJson');
-                            }
-                        }
-                        AppLogger.i('ApiClient', '[$logContext] 成功处理 ${count} 个 JSON 数组元素');
-                    } else {
-                       AppLogger.w('ApiClient', '[$logContext] 解析为 JSON 但不是列表: "$line"');
-                    }
-                } else {
-                    AppLogger.v('ApiClient', '[$logContext] 忽略非 SSE 且非 JSON 数组的行: "$line"');
-                }
-            } catch (e, stackTrace) {
-                AppLogger.e('ApiClient', '[$logContext] 解析流式响应行失败: "$rawLine"', e, stackTrace);
+              } else {
+                AppLogger.w('ApiClient',
+                    '[$logContext] SSE 数据不是有效的 JSON 对象: $eventData');
+              }
+            } else if (eventData == '[DONE]') {
+              AppLogger.i('ApiClient', '[$logContext] 收到 SSE 流结束标记 [DONE]');
             }
-             if (controller.isClosed) break;
-        }
-         AppLogger.i('ApiClient', '[$logContext] 流式字符串处理完成');
-         if (!controller.isClosed) {
-            controller.close();
-         }
+          } else if (line.startsWith('[') && line.endsWith(']')) {
+            AppLogger.v('ApiClient',
+                '[$logContext] 检测到单行 JSON 数组，尝试解析，长度: ${line.length}');
+            final decodedList = jsonDecode(line);
+            if (decodedList is List) {
+              int count = 0;
+              for (final itemJson in decodedList) {
+                await Future.delayed(Duration.zero);
 
-      }).catchError((error, stackTrace) {
-         AppLogger.e('ApiClient', '[$logContext] 获取或解码流式字节流失败', error, stackTrace);
-         if (!controller.isClosed) {
-             final apiError = (error is ApiException)
-                 ? error
-                 : ApiException(-1, '[$logContext] 启动或解码流式请求失败: ${error.toString()}');
-             controller.addError(apiError, stackTrace);
-             controller.close();
-         }
-      });
+                if (controller.isClosed) break;
+
+                if (itemJson is Map<String, dynamic>) {
+                  try {
+                    final item = fromJson(itemJson);
+                    AppLogger.v('ApiClient',
+                        '[$logContext] 解析 JSON 数组元素 ${++count}: ${item.runtimeType}');
+                    if (!controller.isClosed) {
+                      controller.add(item);
+                    }
+                  } catch (e, stackTrace) {
+                    AppLogger.e(
+                        'ApiClient',
+                        '[$logContext] 从 JSON 数组元素转换失败: $itemJson',
+                        e,
+                        stackTrace);
+                  }
+                } else {
+                  AppLogger.w('ApiClient',
+                      '[$logContext] JSON 数组中的元素不是 Map: $itemJson');
+                }
+              }
+              AppLogger.i(
+                  'ApiClient', '[$logContext] 成功处理 ${count} 个 JSON 数组元素');
+            } else {
+              AppLogger.w('ApiClient', '[$logContext] 解析为 JSON 但不是列表: "$line"');
+            }
+          } else {
+            AppLogger.v(
+                'ApiClient', '[$logContext] 忽略非 SSE 且非 JSON 数组的行: "$line"');
+          }
+        } catch (e, stackTrace) {
+          AppLogger.e('ApiClient', '[$logContext] 解析流式响应行失败: "$rawLine"', e,
+              stackTrace);
+        }
+        if (controller.isClosed) break;
+      }
+      AppLogger.i('ApiClient', '[$logContext] 流式字符串处理完成');
+      if (!controller.isClosed) {
+        controller.close();
+      }
+    }).catchError((error, stackTrace) {
+      AppLogger.e('ApiClient', '[$logContext] 获取或解码流式字节流失败', error, stackTrace);
+      if (!controller.isClosed) {
+        final apiError = (error is ApiException)
+            ? error
+            : ApiException(
+                -1, '[$logContext] 启动或解码流式请求失败: ${error.toString()}');
+        controller.addError(apiError, stackTrace);
+        controller.close();
+      }
+    });
 
     return controller.stream;
   }
@@ -220,15 +235,18 @@ class ApiClient {
   }
 
   /// 更新小说及其场景内容
-  Future<dynamic> updateNovelWithScenes(Map<String, dynamic> novelWithScenesData) async {
+  Future<dynamic> updateNovelWithScenes(
+      Map<String, dynamic> novelWithScenesData) async {
     AppLogger.i('/novels/update-with-scenes', '开始更新小说及场景数据');
     AppLogger.d('/novels/update-with-scenes', '发送的数据: $novelWithScenesData');
     try {
-      final response = await post('/novels/update-with-scenes', data: novelWithScenesData);
+      final response =
+          await post('/novels/update-with-scenes', data: novelWithScenesData);
       AppLogger.i('/novels/update-with-scenes', '更新成功，响应: $response');
       return response;
     } catch (e) {
-      AppLogger.e('/novels/update-with-scenes', '更新小说及场景数据失败，发送的数据: $novelWithScenesData', e);
+      AppLogger.e('/novels/update-with-scenes',
+          '更新小说及场景数据失败，发送的数据: $novelWithScenesData', e);
       rethrow;
     }
   }
@@ -242,8 +260,6 @@ class ApiClient {
   Future<dynamic> searchNovelsByTitle(String title) async {
     return post('/novels/search-by-title', data: {'title': title});
   }
-
-
 
   //==== 场景相关接口 ====//
 
@@ -278,7 +294,8 @@ class ApiClient {
       final response = await post('/scenes/upsert', data: sceneData);
       return response;
     } catch (e) {
-      AppLogger.e('Services/api_service/base/api_client', '更新/创建场景数据失败', e); // 更新日志消息
+      AppLogger.e(
+          'Services/api_service/base/api_client', '更新/创建场景数据失败', e); // 更新日志消息
       rethrow;
     }
   }
@@ -379,43 +396,45 @@ class ApiClient {
     String? modelName,
     Map<String, dynamic>? metadata,
   }) async {
-     try {
-        final response = await post('/ai-chat/sessions/create', data: {
-            'userId': userId,
-            'novelId': novelId,
-            'modelName': modelName,
-            'metadata': metadata,
-        });
-        return ChatSession.fromJson(response);
-     } catch (e) {
-         AppLogger.e('ApiClient', '创建 AI 会话失败', e);
-         rethrow;
-     }
+    try {
+      final response = await post('/ai-chat/sessions/create', data: {
+        'userId': userId,
+        'novelId': novelId,
+        'modelName': modelName,
+        'metadata': metadata,
+      });
+      return ChatSession.fromJson(response);
+    } catch (e) {
+      AppLogger.e('ApiClient', '创建 AI 会话失败', e);
+      rethrow;
+    }
   }
 
   /// 获取特定 AI 会话 (非流式)
   Future<ChatSession> getAiChatSession(String userId, String sessionId) async {
-     try {
-        final response = await post('/ai-chat/sessions/get', data: {
-          'userId': userId,
-          'sessionId': sessionId,
-        });
-        return ChatSession.fromJson(response);
-     } catch (e) {
-         AppLogger.e('ApiClient', '获取 AI 会话失败 (ID: $sessionId)', e);
-         rethrow;
-     }
+    try {
+      final response = await post('/ai-chat/sessions/get', data: {
+        'userId': userId,
+        'sessionId': sessionId,
+      });
+      return ChatSession.fromJson(response);
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取 AI 会话失败 (ID: $sessionId)', e);
+      rethrow;
+    }
   }
 
   /// 获取用户的所有 AI 会话 (流式)
   ///
   /// 返回 ChatSession 流
-  Stream<ChatSession> listAiChatUserSessionsStream(String userId, {int page = 0, int size = 100}) {
-    final byteStreamFuture = postStream('/ai-chat/sessions/list', data: {'id': userId});
+  Stream<ChatSession> listAiChatUserSessionsStream(String userId,
+      {int page = 0, int size = 100}) {
+    final byteStreamFuture =
+        postStream('/ai-chat/sessions/list', data: {'id': userId});
     return _processStream<ChatSession>(
-        byteStreamFuture: byteStreamFuture,
-        fromJson: ChatSession.fromJson,
-        logContext: 'listAiChatUserSessionsStream',
+      byteStreamFuture: byteStreamFuture,
+      fromJson: ChatSession.fromJson,
+      logContext: 'listAiChatUserSessionsStream',
     );
   }
 
@@ -425,30 +444,30 @@ class ApiClient {
     required String sessionId,
     required Map<String, dynamic> updates,
   }) async {
-     try {
-       final response = await post('/ai-chat/sessions/update', data: {
-         'userId': userId,
-         'sessionId': sessionId,
-         'updates': updates,
-       });
-       return ChatSession.fromJson(response);
-     } catch (e) {
-         AppLogger.e('ApiClient', '更新 AI 会话失败 (ID: $sessionId)', e);
-         rethrow;
-     }
+    try {
+      final response = await post('/ai-chat/sessions/update', data: {
+        'userId': userId,
+        'sessionId': sessionId,
+        'updates': updates,
+      });
+      return ChatSession.fromJson(response);
+    } catch (e) {
+      AppLogger.e('ApiClient', '更新 AI 会话失败 (ID: $sessionId)', e);
+      rethrow;
+    }
   }
 
   /// 删除 AI 会话 (非流式)
   Future<void> deleteAiChatSession(String userId, String sessionId) async {
-     try {
-       await post('/ai-chat/sessions/delete', data: {
-         'userId': userId,
-         'sessionId': sessionId,
-       });
-     } catch (e) {
-         AppLogger.e('ApiClient', '删除 AI 会话失败 (ID: $sessionId)', e);
-         rethrow;
-     }
+    try {
+      await post('/ai-chat/sessions/delete', data: {
+        'userId': userId,
+        'sessionId': sessionId,
+      });
+    } catch (e) {
+      AppLogger.e('ApiClient', '删除 AI 会话失败 (ID: $sessionId)', e);
+      rethrow;
+    }
   }
 
   /// 发送 AI 消息 (非流式)
@@ -459,16 +478,16 @@ class ApiClient {
     Map<String, dynamic>? metadata,
   }) async {
     try {
-       final response = await post('/ai-chat/messages/send', data: {
-         'userId': userId,
-         'sessionId': sessionId,
-         'content': content,
-         'metadata': metadata,
-       });
-       return ChatMessage.fromJson(response);
+      final response = await post('/ai-chat/messages/send', data: {
+        'userId': userId,
+        'sessionId': sessionId,
+        'content': content,
+        'metadata': metadata,
+      });
+      return ChatMessage.fromJson(response);
     } catch (e) {
-        AppLogger.e('ApiClient', '发送 AI 消息失败 (SessionID: $sessionId)', e);
-        rethrow;
+      AppLogger.e('ApiClient', '发送 AI 消息失败 (SessionID: $sessionId)', e);
+      rethrow;
     }
   }
 
@@ -498,19 +517,22 @@ class ApiClient {
   /// 获取 AI 会话消息历史 (流式)
   ///
   /// 返回 ChatMessage 流
-  Stream<ChatMessage> getAiChatMessageHistoryStream(String userId, String sessionId, {int limit = 100}) {
-     final requestData = {
-       'userId': userId,
-       'sessionId': sessionId,
-       'limit': limit,
-     };
-     final byteStreamFuture = postStream('/ai-chat/messages/history', data: requestData);
+  Stream<ChatMessage> getAiChatMessageHistoryStream(
+      String userId, String sessionId,
+      {int limit = 100}) {
+    final requestData = {
+      'userId': userId,
+      'sessionId': sessionId,
+      'limit': limit,
+    };
+    final byteStreamFuture =
+        postStream('/ai-chat/messages/history', data: requestData);
 
-     return _processStream<ChatMessage>(
-         byteStreamFuture: byteStreamFuture,
-         fromJson: ChatMessage.fromJson,
-         logContext: 'getAiChatMessageHistoryStream',
-     );
+    return _processStream<ChatMessage>(
+      byteStreamFuture: byteStreamFuture,
+      fromJson: ChatMessage.fromJson,
+      logContext: 'getAiChatMessageHistoryStream',
+    );
   }
 
   /// 获取特定 AI 消息 (非流式)
@@ -522,60 +544,66 @@ class ApiClient {
       });
       return ChatMessage.fromJson(response);
     } catch (e) {
-        AppLogger.e('ApiClient', '获取 AI 消息失败 (ID: $messageId)', e);
-        rethrow;
+      AppLogger.e('ApiClient', '获取 AI 消息失败 (ID: $messageId)', e);
+      rethrow;
     }
   }
 
   /// 删除 AI 消息 (非流式)
   Future<void> deleteAiChatMessage(String userId, String messageId) async {
     try {
-       await post('/ai-chat/messages/delete', data: {
-         'userId': userId,
-         'messageId': messageId,
-       });
+      await post('/ai-chat/messages/delete', data: {
+        'userId': userId,
+        'messageId': messageId,
+      });
     } catch (e) {
-        AppLogger.e('ApiClient', '删除 AI 消息失败 (ID: $messageId)', e);
-        rethrow;
+      AppLogger.e('ApiClient', '删除 AI 消息失败 (ID: $messageId)', e);
+      rethrow;
     }
   }
 
   /// 获取 AI 会话消息数量 (非流式)
   Future<int> countAiChatSessionMessages(String sessionId) async {
-     try {
-        final response = await post('/ai-chat/messages/count', data: {'id': sessionId});
-        if (response is int) {
-            return response;
-        } else if (response is String) {
-            return int.tryParse(response) ?? (throw ApiException(-1, "无法解析消息数量响应: $response"));
-        } else if (response is Map<String, dynamic> && response.containsKey('count')) {
-             final count = response['count'];
-             if (count is int) return count;
-        }
-        throw ApiException(-1, "无法解析消息数量响应: $response");
-     } catch (e) {
-         AppLogger.e('ApiClient', '获取消息数量失败 (SessionID: $sessionId)', e);
-         rethrow;
-     }
+    try {
+      final response =
+          await post('/ai-chat/messages/count', data: {'id': sessionId});
+      if (response is int) {
+        return response;
+      } else if (response is String) {
+        return int.tryParse(response) ??
+            (throw ApiException(-1, "无法解析消息数量响应: $response"));
+      } else if (response is Map<String, dynamic> &&
+          response.containsKey('count')) {
+        final count = response['count'];
+        if (count is int) return count;
+      }
+      throw ApiException(-1, "无法解析消息数量响应: $response");
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取消息数量失败 (SessionID: $sessionId)', e);
+      rethrow;
+    }
   }
 
   /// 获取用户 AI 会话数量 (非流式)
   Future<int> countAiChatUserSessions(String userId) async {
-     try {
-        final response = await post('/ai-chat/sessions/count', data: {'id': userId});
-        if (response is int) {
-            return response;
-        } else if (response is String) {
-            return int.tryParse(response) ?? (throw ApiException(-1, "无法解析会话数量响应: $response"));
-        } else if (response is Map<String, dynamic> && response.containsKey('count')) {
-             final count = response['count'];
-             if (count is int) return count;
-        }
-        throw ApiException(-1, "无法解析会话数量响应: $response");
-     } catch (e) {
-         AppLogger.e('ApiClient', '获取用户会话数量失败 (UserID: $userId)', e);
-         rethrow;
-     }
+    try {
+      final response =
+          await post('/ai-chat/sessions/count', data: {'id': userId});
+      if (response is int) {
+        return response;
+      } else if (response is String) {
+        return int.tryParse(response) ??
+            (throw ApiException(-1, "无法解析会话数量响应: $response"));
+      } else if (response is Map<String, dynamic> &&
+          response.containsKey('count')) {
+        final count = response['count'];
+        if (count is int) return count;
+      }
+      throw ApiException(-1, "无法解析会话数量响应: $response");
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取用户会话数量失败 (UserID: $userId)', e);
+      rethrow;
+    }
   }
 
   //==== 用户 AI 模型配置相关接口 (新) ====//
@@ -602,16 +630,18 @@ class ApiClient {
   }
 
   /// 获取指定 AI 提供商支持的模型列表
-  Future<List<String>> listAIModelsForProvider({required String provider}) async {
+  Future<List<String>> listAIModelsForProvider(
+      {required String provider}) async {
     final path = '$_userAIConfigBasePath/providers/models/list';
     final body = {'provider': provider};
     try {
       final responseData = await post(path, data: body);
-       if (responseData is List) {
+      if (responseData is List) {
         final models = responseData.map((item) => item.toString()).toList();
         return models;
       } else {
-        AppLogger.e('ApiClient', 'listAIModelsForProvider 响应格式错误: $responseData');
+        AppLogger.e(
+            'ApiClient', 'listAIModelsForProvider 响应格式错误: $responseData');
         throw ApiException(-1, '获取模型列表响应格式错误');
       }
     } catch (e) {
@@ -642,8 +672,8 @@ class ApiClient {
       if (responseData is Map<String, dynamic>) {
         return UserAIModelConfigModel.fromJson(responseData);
       } else {
-         AppLogger.e('ApiClient', 'addAIConfiguration 响应格式错误: $responseData');
-         throw ApiException(-1, '添加配置响应格式错误');
+        AppLogger.e('ApiClient', 'addAIConfiguration 响应格式错误: $responseData');
+        throw ApiException(-1, '添加配置响应格式错误');
       }
     } catch (e) {
       AppLogger.e('ApiClient', '添加 AI 配置失败 for user $userId', e);
@@ -665,13 +695,14 @@ class ApiClient {
       // 如果 body 为空，data 应该传 null
       final responseData = await post(path, data: body.isEmpty ? null : body);
       if (responseData is List) {
-         final configs = responseData
-            .map((json) => UserAIModelConfigModel.fromJson(json as Map<String, dynamic>))
+        final configs = responseData
+            .map((json) =>
+                UserAIModelConfigModel.fromJson(json as Map<String, dynamic>))
             .toList();
-         return configs;
+        return configs;
       } else {
-          AppLogger.e('ApiClient', 'listAIConfigurations 响应格式错误: $responseData');
-          throw ApiException(-1, '列出配置响应格式错误');
+        AppLogger.e('ApiClient', 'listAIConfigurations 响应格式错误: $responseData');
+        throw ApiException(-1, '列出配置响应格式错误');
       }
     } catch (e) {
       AppLogger.e('ApiClient', '列出 AI 配置失败 for user $userId', e);
@@ -688,11 +719,12 @@ class ApiClient {
     try {
       // POST with no body
       final responseData = await post(path);
-       if (responseData is Map<String, dynamic>) {
+      if (responseData is Map<String, dynamic>) {
         return UserAIModelConfigModel.fromJson(responseData);
       } else {
-          AppLogger.e('ApiClient', 'getAIConfigurationById 响应格式错误 ($userId/$configId): $responseData');
-          throw ApiException(-1, '获取配置详情响应格式错误');
+        AppLogger.e('ApiClient',
+            'getAIConfigurationById 响应格式错误 ($userId/$configId): $responseData');
+        throw ApiException(-1, '获取配置详情响应格式错误');
       }
     } catch (e) {
       AppLogger.e('ApiClient', '获取 AI 配置失败 ($userId / $configId)', e);
@@ -716,19 +748,20 @@ class ApiClient {
 
     // 前端仓库层应该已经做了空检查，但以防万一
     if (body.isEmpty) {
-       AppLogger.w('ApiClient', '尝试更新配置但没有提供字段 ($userId/$configId)');
-       // 可以选择抛出错误或返回当前配置（需要额外调用 get）
-       // 这里选择继续发送请求，让后端处理或返回错误
-       // throw ApiException(-1, 'Update called with no fields to update');
+      AppLogger.w('ApiClient', '尝试更新配置但没有提供字段 ($userId/$configId)');
+      // 可以选择抛出错误或返回当前配置（需要额外调用 get）
+      // 这里选择继续发送请求，让后端处理或返回错误
+      // throw ApiException(-1, 'Update called with no fields to update');
     }
 
     try {
       final responseData = await post(path, data: body);
-       if (responseData is Map<String, dynamic>) {
+      if (responseData is Map<String, dynamic>) {
         return UserAIModelConfigModel.fromJson(responseData);
       } else {
-          AppLogger.e('ApiClient', 'updateAIConfiguration 响应格式错误 ($userId/$configId): $responseData');
-          throw ApiException(-1, '更新配置响应格式错误');
+        AppLogger.e('ApiClient',
+            'updateAIConfiguration 响应格式错误 ($userId/$configId): $responseData');
+        throw ApiException(-1, '更新配置响应格式错误');
       }
     } catch (e) {
       AppLogger.e('ApiClient', '更新 AI 配置失败 ($userId / $configId)', e);
@@ -764,11 +797,12 @@ class ApiClient {
     try {
       // POST with no body
       final responseData = await post(path);
-       if (responseData is Map<String, dynamic>) {
+      if (responseData is Map<String, dynamic>) {
         return UserAIModelConfigModel.fromJson(responseData);
       } else {
-          AppLogger.e('ApiClient', 'validateAIConfiguration 响应格式错误 ($userId/$configId): $responseData');
-          throw ApiException(-1, '验证配置响应格式错误');
+        AppLogger.e('ApiClient',
+            'validateAIConfiguration 响应格式错误 ($userId/$configId): $responseData');
+        throw ApiException(-1, '验证配置响应格式错误');
       }
     } catch (e) {
       AppLogger.e('ApiClient', '验证 AI 配置失败 ($userId / $configId)', e);
@@ -776,7 +810,7 @@ class ApiClient {
     }
   }
 
-   /// 设置指定配置为用户的默认模型
+  /// 设置指定配置为用户的默认模型
   Future<UserAIModelConfigModel> setDefaultAIConfiguration({
     required String userId,
     required String configId,
@@ -785,11 +819,12 @@ class ApiClient {
     try {
       // POST with no body
       final responseData = await post(path);
-       if (responseData is Map<String, dynamic>) {
+      if (responseData is Map<String, dynamic>) {
         return UserAIModelConfigModel.fromJson(responseData);
       } else {
-           AppLogger.e('ApiClient', 'setDefaultAIConfiguration 响应格式错误 ($userId/$configId): $responseData');
-           throw ApiException(-1, '设置默认配置响应格式错误');
+        AppLogger.e('ApiClient',
+            'setDefaultAIConfiguration 响应格式错误 ($userId/$configId): $responseData');
+        throw ApiException(-1, '设置默认配置响应格式错误');
       }
     } catch (e) {
       AppLogger.e('ApiClient', '设置默认 AI 配置失败 ($userId / $configId)', e);

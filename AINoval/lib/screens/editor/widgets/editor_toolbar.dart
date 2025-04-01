@@ -30,7 +30,6 @@ class EditorToolbar extends StatelessWidget {
         child: const Text('编辑器工具栏加载中...'),
       );
     }
-
     // 构建基础工具栏 - 简化为使用标准工具栏
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8),

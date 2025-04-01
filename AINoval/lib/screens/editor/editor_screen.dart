@@ -221,7 +221,6 @@ class _EditorScreenState extends State<EditorScreen>
         for (int i = 0; i < chapter.scenes.length; i++) {
           final scene = chapter.scenes[i];
           final sceneId = '${act.id}_${chapter.id}_${scene.id}';
-
           if (!_sceneControllers.containsKey(sceneId)) {
             try {
               final sceneDocument = _parseDocument(scene.content);

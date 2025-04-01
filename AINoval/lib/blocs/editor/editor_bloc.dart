@@ -221,7 +221,6 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         event.sceneId,
         event.content,
       );
-
       try {
         // 使用传递的字数或重新计算
         final wordCount = event.wordCount ??

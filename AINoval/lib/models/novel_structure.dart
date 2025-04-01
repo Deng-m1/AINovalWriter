@@ -75,7 +75,6 @@ class Novel {
   final List<Act> acts;
   final String? lastEditedChapterId; // 上次编辑的章节ID
   final Author? author; // 作者信息
-
   /// 计算小说总字数
   int get wordCount {
     int totalWordCount = 0;
@@ -487,6 +486,24 @@ class Scene {
     final now = DateTime.now();
     return Scene(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
+      content: defaultContent,
+      wordCount: 0,
+      summary: Summary(
+        id: '${DateTime.now().millisecondsSinceEpoch}_summary',
+        content: '',
+      ),
+      lastEdited: now,
+      version: 1,
+      history: [],
+    );
+  }
+
+  /// 创建一个默认的场景
+  static Scene createDefault(String sceneIdBase) {
+    const defaultContent = '{"ops":[{"insert":"\\n"}]}'; // <-- 确保是这个值
+    final now = DateTime.now();
+    return Scene(
+      id: sceneIdBase,
       content: defaultContent,
       wordCount: 0,
       summary: Summary(

@@ -154,6 +154,17 @@ class _AddSceneButton extends StatelessWidget {
               chapterId: chapterId,
               sceneId: newSceneId,
             ));
+
+            // 延迟一帧后再添加场景，确保活动章节状态已更新
+            Future.microtask(() {
+              // 触发添加新Scene事件
+              editorBloc.add(AddNewScene(
+                novelId: editorBloc.novelId,
+                actId: actId,
+                chapterId: chapterId,
+                sceneId: newSceneId,
+              ));
+            });
           },
           icon: const Icon(Icons.add, size: 18),
           label: const Text('New Scene'),

@@ -212,7 +212,6 @@ class _EditorMainAreaState extends State<EditorMainArea> {
     } catch (e) {
       AppLogger.e('EditorMainArea', '解析文档内容失败: $content', e);
     }
-
     return Document.fromJson([
       {'insert': '\n'}
     ]);

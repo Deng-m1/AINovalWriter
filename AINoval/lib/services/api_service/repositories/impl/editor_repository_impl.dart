@@ -166,7 +166,6 @@ class EditorRepositoryImpl implements EditorRepository {
                   return _convertBackendSceneToFrontend(sceneData);
                 }).toList();
               }
-
               return Chapter(
                 id: chapterId,
                 title: chapterData['title'],
@@ -175,7 +174,6 @@ class EditorRepositoryImpl implements EditorRepository {
               );
             }).toList();
           }
-
           return Act(
             id: actData['id'],
             title: actData['title'],

@@ -42,22 +42,22 @@ import 'package:ainoval/config/app_config.dart'; // 引入 AppConfig
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // 初始化日志系统
   AppLogger.init();
-  
+
   // 初始化Hive本地存储
   await Hive.initFlutter();
-  
+
   // 创建必要的资源文件夹 - 仅在非Web平台执行
   if (!kIsWeb) {
     await _createResourceDirectories();
   }
-  
+
   // 初始化LocalStorageService
   final localStorageService = LocalStorageService();
   await localStorageService.init();
-  
+
   // 直接创建 ApiClient 实例
   final apiClient = ApiClient();
 /* 
@@ -67,39 +67,46 @@ void main() async {
   
   // 创建WebSocketService
   final webSocketService = WebSocketService(); */
-  
+
   // 创建AuthService
   final authServiceInstance = auth_service.AuthService();
   await authServiceInstance.init();
-  
+
   // 创建NovelRepository (它不再需要MockDataService)
   final novelRepository = NovelRepositoryImpl(/* apiClient: apiClient */);
-  
+
   // 创建ChatRepository，并传入 ApiClient
   final chatRepository = ChatRepositoryImpl(
     apiClient: apiClient, // 使用直接创建的 apiClient
   );
-  
+
   // 创建UserAIModelConfigRepository
-  final userAIModelConfigRepository = UserAIModelConfigRepositoryImpl(apiClient: apiClient);
-  
+  final userAIModelConfigRepository =
+      UserAIModelConfigRepositoryImpl(apiClient: apiClient);
+
   // 创建ContextProvider，移除 codexRepository 依赖
   final codexRepository = CodexRepository();
-  final contextProvider = ContextProvider(novelRepository: novelRepository, codexRepository: codexRepository);
-  
+  final contextProvider = ContextProvider(
+      novelRepository: novelRepository, codexRepository: codexRepository);
+
   AppLogger.i('Main', '应用程序初始化完成，准备启动界面');
-  
+
+  AppLogger.i('Main', '应用程序初始化完成，准备启动界面');
+
   runApp(
     MultiRepositoryProvider(
       providers: [
-        RepositoryProvider<auth_service.AuthService>.value(value: authServiceInstance),
+        RepositoryProvider<auth_service.AuthService>.value(
+            value: authServiceInstance),
         RepositoryProvider<ApiClient>.value(value: apiClient),
         RepositoryProvider<NovelRepository>.value(value: novelRepository),
         RepositoryProvider<CodexRepository>.value(value: codexRepository),
         RepositoryProvider<ChatRepository>.value(value: chatRepository),
-        RepositoryProvider<UserAIModelConfigRepository>.value(value: userAIModelConfigRepository),
+        RepositoryProvider<UserAIModelConfigRepository>.value(
+            value: userAIModelConfigRepository),
         RepositoryProvider<ContextProvider>.value(value: contextProvider),
-        RepositoryProvider<LocalStorageService>.value(value: localStorageService),
+        RepositoryProvider<LocalStorageService>.value(
+            value: localStorageService),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -145,22 +152,22 @@ Future<void> _createResourceDirectories() async {
     final assetsDir = Directory('${appDir.path}/assets');
     final imagesDir = Directory('${assetsDir.path}/images');
     final iconsDir = Directory('${assetsDir.path}/icons');
-    
+
     // 创建资源目录
     if (!await assetsDir.exists()) {
       await assetsDir.create(recursive: true);
     }
-    
+
     // 创建图像目录
     if (!await imagesDir.exists()) {
       await imagesDir.create(recursive: true);
     }
-    
+
     // 创建图标目录
     if (!await iconsDir.exists()) {
       await iconsDir.create(recursive: true);
     }
-    
+
     AppLogger.i('ResourceDir', '资源文件夹创建成功');
   } catch (e) {
     AppLogger.e('ResourceDir', '创建资源文件夹失败', e);
@@ -182,24 +189,28 @@ class MyApp extends StatelessWidget {
           if (state is AuthAuthenticated) {
             final userId = AppConfig.userId;
             if (userId != null) {
-              AppLogger.i('MyApp', 'User authenticated, loading AiConfigs for user $userId');
+              AppLogger.i('MyApp',
+                  'User authenticated, loading AiConfigs for user $userId');
               context.read<AiConfigBloc>().add(LoadAiConfigs(userId: userId));
             } else {
-              AppLogger.e('MyApp', 'User authenticated but userId is null in AppConfig!');
+              AppLogger.e('MyApp',
+                  'User authenticated but userId is null in AppConfig!');
             }
           }
         },
         builder: (context, state) {
           if (state is AuthAuthenticated) {
-            AppLogger.i('MyApp', 'User Authenticated, showing NovelListScreen.');
+            AppLogger.i(
+                'MyApp', 'User Authenticated, showing NovelListScreen.');
             return const NovelListScreen();
           }
-          AppLogger.i('MyApp', 'User Not Authenticated or Initial, showing LoginScreen.');
+          AppLogger.i('MyApp',
+              'User Not Authenticated or Initial, showing LoginScreen.');
           return const LoginScreen();
         },
       ),
       debugShowCheckedModeBanner: false,
-      
+
       // 添加完整的本地化支持
       localizationsDelegates: const [
         AppLocalizations.delegate,
@@ -212,4 +223,3 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-
