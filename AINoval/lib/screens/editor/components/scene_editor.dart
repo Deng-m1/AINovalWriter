@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
+import 'package:ainoval/screens/editor/widgets/selection_toolbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:ainoval/utils/logger.dart';
@@ -59,6 +60,15 @@ class _SceneEditorState extends State<SceneEditor> {
   final FocusNode _summaryFocusNode = FocusNode();
   bool _isSummaryFocused = false;
 
+  // 添加文本选择工具栏相关变量
+  bool _showToolbar = false;
+  final LayerLink _toolbarLayerLink = LayerLink();
+  int _selectedTextWordCount = 0;
+  Timer? _selectionDebounceTimer;
+  bool _showToolbarAbove = true; // 默认在选区上方显示
+  Rect _selectionRect = Rect.zero; // 当前选区的位置
+  final GlobalKey _editorContentKey = GlobalKey(); // 编辑器内容区域的key
+
   @override
   void initState() {
     super.initState();
@@ -76,6 +86,9 @@ class _SceneEditorState extends State<SceneEditor> {
 
     // 添加控制器内容监听器
     widget.controller.document.changes.listen(_onDocumentChange);
+
+    // 添加文本选择变化监听
+    widget.controller.addListener(_handleSelectionChange);
   }
 
   void _onEditorFocusChange() {
@@ -167,12 +180,105 @@ class _SceneEditorState extends State<SceneEditor> {
     }
   }
 
+  // 处理文本选择变化
+  void _handleSelectionChange() {
+    // 使用防抖动处理选择变化，避免频繁更新
+    _selectionDebounceTimer?.cancel();
+    _selectionDebounceTimer = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+
+      final selection = widget.controller.selection;
+      if (selection.isCollapsed) {
+        // 如果选择已折叠（没有选中文本），隐藏工具栏
+        if (_showToolbar) {
+          setState(() {
+            _showToolbar = false;
+            _selectedTextWordCount = 0;
+            _selectionRect = Rect.zero;
+          });
+        }
+      } else {
+        // 有文本被选中
+        final selectedText = widget.controller.document
+            .getPlainText(selection.start, selection.end - selection.start);
+
+        // 计算选中文本的字数
+        final wordCount = WordCountAnalyzer.countWords(selectedText);
+
+        // 计算选区矩形位置
+        final selectionRect = _calculateSelectionRect();
+
+        // 决定工具栏显示在上方还是下方
+        final showAbove = _shouldShowToolbarAbove(selectionRect);
+
+        setState(() {
+          _showToolbar = true;
+          _selectedTextWordCount = wordCount;
+          _selectionRect = selectionRect;
+          _showToolbarAbove = showAbove;
+        });
+      }
+    });
+  }
+
+  // 计算选区矩形
+  Rect _calculateSelectionRect() {
+    try {
+      // 获取编辑器渲染对象
+      final RenderBox? editorBox =
+          _editorContentKey.currentContext?.findRenderObject() as RenderBox?;
+      if (editorBox == null) {
+        AppLogger.w('SceneEditor', '无法获取编辑器渲染对象');
+        return Rect.zero;
+      }
+
+      // 获取选区的开始和结束位置
+      final selection = widget.controller.selection;
+      if (selection.isCollapsed) {
+        AppLogger.w('SceneEditor', '选区已折叠，无法计算位置');
+        return Rect.zero;
+      }
+
+      // 使用最新获取的编辑器全局坐标
+      final editorOffset = editorBox.localToGlobal(Offset.zero);
+      final editorHeight = editorBox.size.height;
+      final editorWidth = editorBox.size.width;
+
+      // 创建一个更合理的固定偏移值
+      double verticalPosition = editorOffset.dy + 50; // 固定在编辑器顶部下方50像素
+      final horizontalPosition = editorWidth * 0.5; // 水平居中
+
+      AppLogger.i('SceneEditor',
+          '选区位置计算: editorOffset=$editorOffset, editorWidth=$editorWidth, editorHeight=$editorHeight');
+
+      // 返回一个更易于查看的固定位置
+      return Rect.fromLTWH(
+        horizontalPosition - 50, // 水平居中，但略微左侧偏移
+        verticalPosition,
+        100, // 设置一个固定宽度
+        30, // 适当高度
+      );
+    } catch (e, stackTrace) {
+      AppLogger.e('SceneEditor', '计算选区矩形失败', e, stackTrace);
+      return Rect.zero;
+    }
+  }
+
+  // 决定工具栏是否显示在选区上方
+  bool _shouldShowToolbarAbove(Rect selectionRect) {
+    // 默认显示在选区上方 - 但也可以根据位置调整
+    // 如果选区在编辑器上半部分，工具栏显示在下方更合适
+    return false; // 始终显示在下方，确保可见
+  }
+
   @override
   void dispose() {
     _focusNode.removeListener(_onEditorFocusChange);
     _summaryFocusNode.removeListener(_onSummaryFocusChange);
     _debounceTimer?.cancel();
     _contentDebounceTimer?.cancel(); // 取消内容防抖定时器
+    _selectionDebounceTimer?.cancel(); // 取消选择防抖定时器
+    widget.controller.removeListener(_handleSelectionChange); // 移除选择变化监听
     _focusNode.dispose();
     _summaryFocusNode.dispose();
     super.dispose();
@@ -230,7 +336,41 @@ class _SceneEditorState extends State<SceneEditor> {
                   // 编辑器区域
                   Expanded(
                     flex: 7,
-                    child: _buildEditor(theme, isEditorOrSummaryFocused),
+                    child: Stack(
+                      children: [
+                        // 编辑器
+                        CompositedTransformTarget(
+                          link: _toolbarLayerLink,
+                          child: _buildEditor(theme, isEditorOrSummaryFocused),
+                        ),
+                        // 文本选择工具栏
+                        if (_showToolbar)
+                          Positioned(
+                            child: SelectionToolbar(
+                              controller: widget.controller,
+                              layerLink: _toolbarLayerLink,
+                              wordCount: _selectedTextWordCount,
+                              editorSize: _editorContentKey.currentContext
+                                      ?.findRenderObject() is RenderBox
+                                  ? (_editorContentKey.currentContext!
+                                          .findRenderObject() as RenderBox)
+                                      .size
+                                  : Size(300, 150),
+                              selectionRect: _selectionRect,
+                              showAbove: _showToolbarAbove,
+                              onClosed: () {
+                                setState(() {
+                                  _showToolbar = false;
+                                });
+                              },
+                              onFormatChanged: () {
+                                // 格式变更时可能需要更新选择状态
+                                _handleSelectionChange();
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 16), // 编辑器和摘要之间的间距
                   // 摘要区域
@@ -281,26 +421,66 @@ class _SceneEditorState extends State<SceneEditor> {
   }
 
   Widget _buildEditor(ThemeData theme, bool isFocused) {
-    // 移除 GestureDetector，因为 InkWell 在 Card 层处理点击
-    // 移除外部 Container 装饰，样式由 Card 控制
-    return QuillEditor.basic(
-      key: _editorKey, // 传递 key
-      controller: widget.controller,
-      focusNode: _focusNode, // 使用编辑器的 FocusNode
-      scrollController: ScrollController(), // 每个编辑器独立的滚动控制器
-      config: QuillEditorConfig(
-        // 移除背景色和边框，让 Card 控制
-        // decoration: BoxDecoration(...)
-        minHeight: 150, // 增加最小高度
-        placeholder: '开始写作...',
-        padding:
-            const EdgeInsets.symmetric(vertical: 8, horizontal: 4), // 调整内部填充
-        // autoFocus: widget.isActive, // 考虑移除 autofocus，由点击InkWell控制
-        expands: false, // Important: Should not expand within Row
-        scrollable: true, // Keep scrollable
-        showCursor: true,
+    // 使用 key 以便获取编辑器尺寸
+    return Container(
+      key: _editorContentKey,
+      child: QuillEditor.basic(
+        key: _editorKey, // 传递 key
+        controller: widget.controller,
+        focusNode: _focusNode, // 使用编辑器的 FocusNode
+        scrollController: ScrollController(), // 每个编辑器独立的滚动控制器
+        config: QuillEditorConfig(
+          // 移除背景色和边框，让 Card 控制
+          // decoration: BoxDecoration(...)
+          minHeight: 150, // 增加最小高度
+          placeholder: '开始写作...',
+          padding:
+              const EdgeInsets.symmetric(vertical: 8, horizontal: 4), // 调整内部填充
+          enableInteractiveSelection: true, // 确保启用文本选择交互
+          customStyles: DefaultStyles(
+            // 确保样式配置正确
+            bold: const TextStyle(fontWeight: FontWeight.bold),
+            italic: const TextStyle(fontStyle: FontStyle.italic),
+            underline: const TextStyle(decoration: TextDecoration.underline),
+            strikeThrough:
+                const TextStyle(decoration: TextDecoration.lineThrough),
+            // 移除不支持的自定义样式
+            link: const TextStyle(
+              color: Colors.blue,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+          // autoFocus: widget.isActive, // 考虑移除 autofocus，由点击InkWell控制
+          expands: false, // Important: Should not expand within Row
+          scrollable: true, // Keep scrollable
+          showCursor: true,
+          // 移除不支持的onTapDown
+        ),
       ),
     );
+  }
+
+  // 新增：处理编辑器点击事件，更精确定位选区
+  void _onQuillEditorTapDown(TapDownDetails details,
+      TextPosition Function(Offset) getPositionForOffset) {
+    AppLogger.i('SceneEditor', '编辑器点击事件: ${details.globalPosition}');
+    try {
+      if (_showToolbar && !widget.controller.selection.isCollapsed) {
+        // 更新选区位置计算
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            final selectionRect = _calculateSelectionRect();
+            if (selectionRect != Rect.zero) {
+              setState(() {
+                _selectionRect = selectionRect;
+              });
+            }
+          }
+        });
+      }
+    } catch (e, stackTrace) {
+      AppLogger.e('SceneEditor', '处理编辑器点击事件失败', e, stackTrace);
+    }
   }
 
   Widget _buildSummaryArea(ThemeData theme, bool isFocused) {
