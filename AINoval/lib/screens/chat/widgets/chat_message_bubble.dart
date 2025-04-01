@@ -28,70 +28,72 @@ class ChatMessageBubble extends StatelessWidget {
           if (!isUserMessage) _buildAvatar(context, false),
           if (!isUserMessage) const SizedBox(width: 8),
 
-          // 消息气泡容器
+          // 消息气泡容器 - 使用LayoutBuilder
           Flexible(
-            child: Container(
-              constraints: BoxConstraints(
-                // 限制气泡最大宽度，避免过长
-                maxWidth: MediaQuery.of(context).size.width * 0.75,
-              ),
-              child: Column(
-                // 用户消息时间戳靠右，AI 消息时间戳靠左
-                crossAxisAlignment: isUserMessage
-                    ? CrossAxisAlignment.end
-                    : CrossAxisAlignment.start,
-                children: [
-                  // 气泡主体
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 10.0, horizontal: 14.0), // 调整内边距
-                    decoration: BoxDecoration(
-                      color: isUserMessage
-                          ? Theme.of(context).colorScheme.primary // 用户消息用主色
-                          : Theme.of(context)
-                              .colorScheme
-                              .surfaceContainer, // AI消息用 surfaceContainer
-                      // 实现"尾巴"效果的圆角
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(16.0),
-                        topRight: const Radius.circular(16.0),
-                        bottomLeft: Radius.circular(
-                            isUserMessage ? 16.0 : 4.0), // 用户左下圆角，AI左下小圆角/直角
-                        bottomRight: Radius.circular(
-                            isUserMessage ? 4.0 : 16.0), // 用户右下小圆角/直角，AI右下圆角
+            child: LayoutBuilder(builder: (context, constraints) {
+              // 基于LayoutBuilder中的约束计算最大宽度，保证气泡不会太宽
+              final maxWidth = constraints.maxWidth * 0.95;
+
+              return Container(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: Column(
+                  // 用户消息时间戳靠右，AI 消息时间戳靠左
+                  crossAxisAlignment: isUserMessage
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: [
+                    // 气泡主体
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 10.0, horizontal: 14.0), // 调整内边距
+                      decoration: BoxDecoration(
+                        color: isUserMessage
+                            ? Theme.of(context).colorScheme.primary // 用户消息用主色
+                            : Theme.of(context)
+                                .colorScheme
+                                .surfaceContainer, // AI消息用 surfaceContainer
+                        // 实现"尾巴"效果的圆角
+                        borderRadius: BorderRadius.only(
+                          topLeft: const Radius.circular(16.0),
+                          topRight: const Radius.circular(16.0),
+                          bottomLeft: Radius.circular(
+                              isUserMessage ? 16.0 : 4.0), // 用户左下圆角，AI左下小圆角/直角
+                          bottomRight: Radius.circular(
+                              isUserMessage ? 4.0 : 16.0), // 用户右下小圆角/直角，AI右下圆角
+                        ),
+                        // 可以为 AI 消息添加细微边框
+                        border: !isUserMessage
+                            ? Border.all(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outlineVariant
+                                    .withOpacity(0.3),
+                                width: 0.5,
+                              )
+                            : null,
                       ),
-                      // 可以为 AI 消息添加细微边框
-                      border: !isUserMessage
-                          ? Border.all(
+                      child: isUserMessage
+                          ? _buildUserMessageContent(context)
+                          : _buildAIMessageContent(context),
+                    ),
+                    // 时间戳
+                    Padding(
+                      padding: const EdgeInsets.only(
+                          top: 4.0, left: 6.0, right: 6.0), // 调整时间戳边距
+                      child: Text(
+                        message.formattedTime, // 使用已有的格式化时间
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Theme.of(context)
                                   .colorScheme
-                                  .outlineVariant
-                                  .withOpacity(0.3),
-                              width: 0.5,
-                            )
-                          : null,
+                                  .onSurfaceVariant
+                                  .withOpacity(0.7), // 调整时间戳颜色
+                            ),
+                      ),
                     ),
-                    child: isUserMessage
-                        ? _buildUserMessageContent(context)
-                        : _buildAIMessageContent(context),
-                  ),
-                  // 时间戳
-                  Padding(
-                    padding: const EdgeInsets.only(
-                        top: 4.0, left: 6.0, right: 6.0), // 调整时间戳边距
-                    child: Text(
-                      message.formattedTime, // 使用已有的格式化时间
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant
-                                .withOpacity(0.7), // 调整时间戳颜色
-                          ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+              );
+            }),
           ),
 
           // 用户头像占位符 (如果需要显示)

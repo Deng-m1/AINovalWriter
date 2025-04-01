@@ -24,6 +24,7 @@ import 'package:ainoval/config/app_config.dart'; // <<< Import AppConfig
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart'; // <<< Import Repository Interface
 import 'package:ainoval/screens/settings/settings_panel.dart'; // <<< Import SettingsPanel
 import 'package:ainoval/utils/word_count_analyzer.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 导入持久化功能
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({
@@ -50,8 +51,14 @@ class _EditorScreenState extends State<EditorScreen>
   final Map<String, TextEditingController> _sceneSubtitleControllers = {};
   final Map<String, TextEditingController> _sceneSummaryControllers = {};
 
-  bool _isAIChatSidebarVisible = false;
+  bool _isAIChatSidebarVisible = false; // 控制聊天侧边栏是否可见
   bool _isSettingsPanelVisible = false; // <<< 添加状态变量
+
+  // 聊天侧边栏宽度相关状态
+  double _chatSidebarWidth = 380; // 默认宽度
+  static const double _minChatSidebarWidth = 280; // 最小宽度
+  static const double _maxChatSidebarWidth = 500; // 最大宽度
+  static const String _chatSidebarWidthPrefKey = 'chat_sidebar_width'; // 持久化键
 
   String? _currentUserId; // <<< Store userId
 
@@ -77,6 +84,37 @@ class _EditorScreenState extends State<EditorScreen>
     if (_currentUserId == null) {
       AppLogger.e(
           'EditorScreen', 'User ID is null. Some features might be limited.');
+    }
+
+    // 加载保存的侧边栏宽度
+    _loadSavedChatSidebarWidth();
+  }
+
+  // 加载保存的聊天侧边栏宽度
+  Future<void> _loadSavedChatSidebarWidth() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedWidth = prefs.getDouble(_chatSidebarWidthPrefKey);
+      if (savedWidth != null) {
+        if (savedWidth >= _minChatSidebarWidth &&
+            savedWidth <= _maxChatSidebarWidth) {
+          setState(() {
+            _chatSidebarWidth = savedWidth;
+          });
+        }
+      }
+    } catch (e) {
+      AppLogger.e('EditorScreen', '加载侧边栏宽度失败', e);
+    }
+  }
+
+  // 保存聊天侧边栏宽度
+  Future<void> _saveChatSidebarWidth() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_chatSidebarWidthPrefKey, _chatSidebarWidth);
+    } catch (e) {
+      AppLogger.e('EditorScreen', '保存侧边栏宽度失败', e);
     }
   }
 
@@ -337,86 +375,99 @@ class _EditorScreenState extends State<EditorScreen>
                 },
               ),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    EditorAppBar(
-                      novelTitle: widget.novel.title,
-                      wordCount: _calculateTotalWordCount(state.novel),
-                      isSaving: state.isSaving,
-                      lastSaveTime: state.lastSaveTime,
-                      onBackPressed: () => Navigator.pop(context),
-                      onChatPressed: () {
-                        setState(() {
-                          _isAIChatSidebarVisible = !_isAIChatSidebarVisible;
-                          if (_isAIChatSidebarVisible)
-                            _isSettingsPanelVisible = false; // 打开聊天时关闭设置
-                        });
-                      },
-                      isChatActive: _isAIChatSidebarVisible,
-                      onAiConfigPressed: () {
-                        // <<< 修改此回调
-                        setState(() {
-                          _isSettingsPanelVisible = !_isSettingsPanelVisible;
-                          if (_isSettingsPanelVisible)
-                            _isAIChatSidebarVisible = false; // 打开设置时关闭聊天
-                        });
-                      },
-                      isSettingsActive: _isSettingsPanelVisible, // <<< 传递设置面板状态
-                    ),
-                    EditorToolbar(
-                      controller: fallbackController,
-                    ),
                     Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(
-                            left: 16, right: 16, bottom: 16),
-                        child: EditorMainArea(
-                          novel: state.novel,
-                          editorBloc: _editorBloc,
-                          sceneControllers: _sceneControllers,
-                          sceneSummaryControllers: _sceneSummaryControllers,
-                          activeActId: state.activeActId,
-                          activeChapterId: state.activeChapterId,
-                          activeSceneId: state.activeSceneId,
-                          scrollController: _scrollController,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          EditorAppBar(
+                            novelTitle: widget.novel.title,
+                            wordCount: _calculateTotalWordCount(state.novel),
+                            isSaving: state.isSaving,
+                            lastSaveTime: state.lastSaveTime,
+                            onBackPressed: () => Navigator.pop(context),
+                            onChatPressed: () {
+                              setState(() {
+                                _isAIChatSidebarVisible =
+                                    !_isAIChatSidebarVisible;
+                                if (_isAIChatSidebarVisible) {
+                                  _isSettingsPanelVisible = false; // 打开聊天时关闭设置
+                                }
+                              });
+                            },
+                            isChatActive: _isAIChatSidebarVisible,
+                            onAiConfigPressed: () {
+                              // <<< 修改此回调
+                              setState(() {
+                                _isSettingsPanelVisible =
+                                    !_isSettingsPanelVisible;
+                                if (_isSettingsPanelVisible) {
+                                  _isAIChatSidebarVisible = false; // 打开设置时关闭聊天
+                                }
+                              });
+                            },
+                            isSettingsActive:
+                                _isSettingsPanelVisible, // <<< 传递设置面板状态
+                          ),
+                          EditorToolbar(
+                            controller: fallbackController,
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(
+                                  left: 16, right: 16, bottom: 16),
+                              child: EditorMainArea(
+                                novel: state.novel,
+                                editorBloc: _editorBloc,
+                                sceneControllers: _sceneControllers,
+                                sceneSummaryControllers:
+                                    _sceneSummaryControllers,
+                                activeActId: state.activeActId,
+                                activeChapterId: state.activeChapterId,
+                                activeSceneId: state.activeSceneId,
+                                scrollController: _scrollController,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                    if (_isAIChatSidebarVisible) ...[
+                      _DraggableDivider(
+                        onDragUpdate: (delta) {
+                          setState(() {
+                            // 更新侧边栏宽度，同时考虑最小/最大限制
+                            _chatSidebarWidth =
+                                (_chatSidebarWidth - delta.delta.dx).clamp(
+                              _minChatSidebarWidth,
+                              _maxChatSidebarWidth,
+                            );
+                          });
+                        },
+                        onDragEnd: (_) {
+                          // 拖拽结束时保存宽度
+                          _saveChatSidebarWidth();
+                        },
+                      ),
+                      SizedBox(
+                        width: _chatSidebarWidth,
+                        child: AIChatSidebar(
+                          novelId: widget.novel.id,
+                          chapterId: state.activeChapterId,
+                          onClose: () {
+                            setState(() {
+                              _isAIChatSidebarVisible = false;
+                            });
+                          },
+                        ),
+                      )
+                    ],
                   ],
                 ),
               ),
             ],
           ),
-          if (_isAIChatSidebarVisible)
-            Positioned(
-              top: 0,
-              right: 0,
-              bottom: 0,
-              child: Material(
-                elevation: 8,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  bottomLeft: Radius.circular(16),
-                ),
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(16),
-                    bottomLeft: Radius.circular(16),
-                  ),
-                  child: AIChatSidebar(
-                    novelId: widget.novel.id,
-                    chapterId: state.activeChapterId,
-                    onClose: () {
-                      setState(() {
-                        _isAIChatSidebarVisible = false;
-                      });
-                    },
-                  ),
-                ),
-              ),
-            ),
-          // --- 设置面板 ---
           if (_isSettingsPanelVisible) // <<< Uncomment settings panel
             Positioned.fill(
               child: GestureDetector(
@@ -661,5 +712,60 @@ class _EditorScreenState extends State<EditorScreen>
     AppLogger.i('EditorScreen',
         '小说总字数计算结果: $totalWordCount (Acts: $actCount, Chapters: $chapterCount, Scenes: $sceneCount)');
     return totalWordCount;
+  }
+}
+
+/// 可拖拽的分隔条组件
+class _DraggableDivider extends StatefulWidget {
+  const _DraggableDivider({
+    required this.onDragUpdate,
+    required this.onDragEnd,
+  });
+
+  final Function(DragUpdateDetails) onDragUpdate;
+  final Function(DragEndDetails) onDragEnd;
+
+  @override
+  State<_DraggableDivider> createState() => _DraggableDividerState();
+}
+
+class _DraggableDividerState extends State<_DraggableDivider> {
+  bool _isDragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onHorizontalDragStart: (_) {
+        setState(() {
+          _isDragging = true;
+        });
+      },
+      onHorizontalDragUpdate: widget.onDragUpdate,
+      onHorizontalDragEnd: (details) {
+        setState(() {
+          _isDragging = false;
+        });
+        widget.onDragEnd(details);
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.resizeLeftRight,
+        child: Container(
+          width: 8,
+          height: double.infinity,
+          color: _isDragging
+              ? Theme.of(context).colorScheme.primary.withOpacity(0.5)
+              : Colors.grey.withOpacity(0.2),
+          child: Center(
+            child: Container(
+              width: 2,
+              height: double.infinity,
+              color: _isDragging
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.grey.withOpacity(0.5),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

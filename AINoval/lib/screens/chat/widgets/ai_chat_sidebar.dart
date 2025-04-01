@@ -108,7 +108,7 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
     return Material(
       elevation: 4.0,
       child: Container(
-        width: 400,
+        // 移除固定宽度，让父组件SizedBox控制宽度
         color: Theme.of(context).colorScheme.surfaceContainerLow,
         child: Column(
           children: [
@@ -129,24 +129,27 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
               ),
               child: Row(
                 children: [
-                  BlocBuilder<ChatBloc, ChatState>(
-                    builder: (context, state) {
-                      String title = 'AI 聊天助手';
-                      if (state is ChatSessionActive) {
-                        title = state.session.title;
-                      } else if (state is ChatSessionsLoaded) {
-                        title = '聊天列表';
-                      }
-                      return Text(
-                        title,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      );
-                    },
+                  Expanded(
+                    child: BlocBuilder<ChatBloc, ChatState>(
+                      builder: (context, state) {
+                        String title = 'AI 聊天助手';
+                        if (state is ChatSessionActive) {
+                          title = state.session.title;
+                        } else if (state is ChatSessionsLoaded) {
+                          title = '聊天列表';
+                        }
+                        return Text(
+                          title,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        );
+                      },
+                    ),
                   ),
-                  const Spacer(),
                   BlocBuilder<ChatBloc, ChatState>(
                     builder: (context, state) {
                       if (state is ChatSessionActive) {
