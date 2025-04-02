@@ -2,7 +2,7 @@ part of 'editor_bloc.dart';
 
 abstract class EditorEvent extends Equatable {
   const EditorEvent();
-  
+
   @override
   List<Object?> get props => [];
 }
@@ -12,10 +12,9 @@ class LoadEditorContent extends EditorEvent {
 }
 
 class UpdateContent extends EditorEvent {
-  
   const UpdateContent({required this.content});
   final String content;
-  
+
   @override
   List<Object?> get props => [content];
 }
@@ -25,13 +24,13 @@ class SaveContent extends EditorEvent {
 }
 
 class UpdateSceneContent extends EditorEvent {
-  
   const UpdateSceneContent({
     required this.novelId,
     required this.actId,
     required this.chapterId,
     required this.sceneId,
     required this.content,
+    this.wordCount,
     this.shouldRebuild = true,
   });
   final String novelId;
@@ -39,14 +38,15 @@ class UpdateSceneContent extends EditorEvent {
   final String chapterId;
   final String sceneId;
   final String content;
+  final String? wordCount;
   final bool shouldRebuild;
-  
+
   @override
-  List<Object?> get props => [novelId, actId, chapterId, sceneId, content, shouldRebuild];
+  List<Object?> get props =>
+      [novelId, actId, chapterId, sceneId, content, wordCount, shouldRebuild];
 }
 
 class UpdateSummary extends EditorEvent {
-  
   const UpdateSummary({
     required this.novelId,
     required this.actId,
@@ -61,20 +61,20 @@ class UpdateSummary extends EditorEvent {
   final String sceneId;
   final String summary;
   final bool shouldRebuild;
-  
+
   @override
-  List<Object?> get props => [novelId, actId, chapterId, sceneId, summary, shouldRebuild];
+  List<Object?> get props =>
+      [novelId, actId, chapterId, sceneId, summary, shouldRebuild];
 }
 
 class SetActiveChapter extends EditorEvent {
-  
   const SetActiveChapter({
     required this.actId,
     required this.chapterId,
   });
   final String actId;
   final String chapterId;
-  
+
   @override
   List<Object?> get props => [actId, chapterId];
 }
@@ -84,29 +84,26 @@ class ToggleEditorSettings extends EditorEvent {
 }
 
 class UpdateEditorSettings extends EditorEvent {
-  
   const UpdateEditorSettings({required this.settings});
   final Map<String, dynamic> settings;
-  
+
   @override
   List<Object?> get props => [settings];
 }
 
 class UpdateActTitle extends EditorEvent {
-  
   const UpdateActTitle({
     required this.actId,
     required this.title,
   });
   final String actId;
   final String title;
-  
+
   @override
   List<Object?> get props => [actId, title];
 }
 
 class UpdateChapterTitle extends EditorEvent {
-  
   const UpdateChapterTitle({
     required this.actId,
     required this.chapterId,
@@ -115,7 +112,7 @@ class UpdateChapterTitle extends EditorEvent {
   final String actId;
   final String chapterId;
   final String title;
-  
+
   @override
   List<Object?> get props => [actId, chapterId, title];
 }
@@ -124,7 +121,7 @@ class UpdateChapterTitle extends EditorEvent {
 class AddNewAct extends EditorEvent {
   const AddNewAct({this.title = '新Act'});
   final String title;
-  
+
   @override
   List<Object?> get props => [title];
 }
@@ -139,7 +136,7 @@ class AddNewChapter extends EditorEvent {
   final String novelId;
   final String actId;
   final String title;
-  
+
   @override
   List<Object?> get props => [novelId, actId, title];
 }
@@ -156,14 +153,13 @@ class AddNewScene extends EditorEvent {
   final String actId;
   final String chapterId;
   final String sceneId;
-  
+
   @override
   List<Object?> get props => [novelId, actId, chapterId, sceneId];
 }
 
 // 设置活动场景事件
 class SetActiveScene extends EditorEvent {
-  
   const SetActiveScene({
     required this.actId,
     required this.chapterId,
@@ -172,7 +168,24 @@ class SetActiveScene extends EditorEvent {
   final String actId;
   final String chapterId;
   final String sceneId;
-  
+
   @override
   List<Object?> get props => [actId, chapterId, sceneId];
-} 
+}
+
+// 删除场景事件 (New Event)
+class DeleteScene extends EditorEvent {
+  const DeleteScene({
+    required this.novelId,
+    required this.actId,
+    required this.chapterId,
+    required this.sceneId,
+  });
+  final String novelId;
+  final String actId;
+  final String chapterId;
+  final String sceneId;
+
+  @override
+  List<Object?> get props => [novelId, actId, chapterId, sceneId];
+}

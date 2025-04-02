@@ -1,3 +1,4 @@
+/*
 package com.ainovel.server.service.impl;
 
 import java.time.Duration;
@@ -9,6 +10,7 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
+import com.ainovel.server.domain.model.AIRequest;
 import org.springframework.stereotype.Service;
 
 import com.ainovel.server.domain.model.AIResponse;
@@ -21,10 +23,12 @@ import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+*/
 /**
  * 模拟AI服务实现类
  * 用于性能测试和开发环境
- */
+ *//*
+
 @Slf4j
 @Service
 public class MockAIServiceImpl implements AIService {
@@ -77,12 +81,32 @@ public class MockAIServiceImpl implements AIService {
                 .delayElements(Duration.ofMillis(50)) // 每个单词之间的延迟
                 .doOnComplete(() -> log.debug("流式AI内容生成完成"));
     }
-    
+
+    @Override
+    public Mono<AIResponse> generateContent(AIRequest request, String apiKey, String apiEndpoint) {
+        return null;
+    }
+
+    @Override
+    public Flux<String> generateContentStream(AIRequest request, String apiKey, String apiEndpoint) {
+        return null;
+    }
+
     @Override
     public Flux<String> getAvailableModels() {
         return Flux.fromIterable(AVAILABLE_MODELS);
     }
-    
+
+    @Override
+    public Mono<Double> estimateCost(AIRequest request, String apiKey, String apiEndpoint) {
+        return null;
+    }
+
+    @Override
+    public Mono<Boolean> validateApiKey(String userId, String provider, String modelName, String apiKey, String apiEndpoint) {
+        return null;
+    }
+
     @Override
     public Mono<Double> estimateCost(BaseAIRequest request) {
         // 模拟成本估算
@@ -191,9 +215,11 @@ public class MockAIServiceImpl implements AIService {
         log.debug("设置使用LangChain4j: {}", useLangChain4j);
     }
     
-    /**
+    */
+/**
      * 创建模拟响应
-     */
+     *//*
+
     private AIResponse createMockResponse() {
         AIResponse response = new AIResponse();
         response.setId(UUID.randomUUID().toString());
@@ -211,9 +237,11 @@ public class MockAIServiceImpl implements AIService {
         return response;
     }
     
-    /**
+    */
+/**
      * 生成模拟内容
-     */
+     *//*
+
     private String generateMockContent() {
         Random random = ThreadLocalRandom.current();
         
@@ -228,3 +256,4 @@ public class MockAIServiceImpl implements AIService {
         return content.toString().trim();
     }
 }
+*/

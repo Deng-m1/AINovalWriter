@@ -4,7 +4,6 @@ import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:flutter/material.dart';
 
 class ActSection extends StatefulWidget {
-
   const ActSection({
     super.key,
     required this.title,
@@ -48,69 +47,75 @@ class _ActSectionState extends State<ActSection> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Act标题 - 居中显示
         Padding(
-          padding: const EdgeInsets.fromLTRB(0, 40, 0, 16),
+          padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
           child: Center(
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // 可编辑的文本字段
-                SizedBox(
-                  width: 200,
-                  child: TextField(
-                    controller: _actTitleController,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
+                IntrinsicWidth(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 400),
+                    child: TextField(
+                      controller: _actTitleController,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                        isDense: true,
+                      ),
+                      textAlign: TextAlign.center,
+                      onChanged: (value) {
+                        // 使用防抖动机制，避免频繁更新
+                        _actTitleDebounceTimer?.cancel();
+                        _actTitleDebounceTimer =
+                            Timer(const Duration(milliseconds: 500), () {
+                          if (mounted) {
+                            widget.editorBloc.add(UpdateActTitle(
+                              actId: widget.actId,
+                              title: value,
+                            ));
+                          }
+                        });
+                      },
                     ),
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                      isDense: true,
-                    ),
-                    textAlign: TextAlign.center,
-                    onChanged: (value) {
-                      // 使用防抖动机制，避免频繁更新
-                      _actTitleDebounceTimer?.cancel();
-                      _actTitleDebounceTimer = Timer(const Duration(milliseconds: 500), () {
-                        if (mounted) {
-                          widget.editorBloc.add(UpdateActTitle(
-                            actId: widget.actId,
-                            title: value,
-                          ));
-                        }
-                      });
-                    },
                   ),
                 ),
                 const SizedBox(width: 8),
                 IconButton(
                   icon: const Icon(Icons.more_vert, size: 20),
-                  onPressed: () {},
-                  tooltip: 'Actions',
-                  color: Colors.grey.shade700,
+                  onPressed: () {
+                    // TODO: 实现 Act 的更多操作菜单（如重命名、删除等）
+                  },
+                  tooltip: 'Act Actions',
+                  color: Colors.grey.shade600,
+                  splashRadius: 20,
                 ),
               ],
             ),
           ),
         ),
-        
+
         // 章节列表
         ...widget.chapters,
-        
+
         // 添加新章节按钮
         _AddChapterButton(
           actId: widget.actId,
           editorBloc: widget.editorBloc,
         ),
-        
+
         // Act分隔线
-        const _ActDivider(),
+        // const _ActDivider(),
       ],
     );
   }
@@ -128,36 +133,50 @@ class _AddChapterButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16.0),
-        child: TextButton.icon(
+        padding: const EdgeInsets.symmetric(vertical: 24.0),
+        child: OutlinedButton.icon(
           onPressed: () {
             // 触发添加新Chapter事件
             editorBloc.add(AddNewChapter(
               novelId: editorBloc.novelId,
               actId: actId,
-              title: '新章节',
+              title: '新章节 ${DateTime.now().millisecondsSinceEpoch % 100}',
             ));
           },
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add, size: 18),
           label: const Text('New Chapter'),
-          style: TextButton.styleFrom(
+          style: OutlinedButton.styleFrom(
             foregroundColor: Colors.grey.shade700,
-          ),
+            side: BorderSide(color: Colors.grey.shade300),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ).copyWith(overlayColor: MaterialStateProperty.resolveWith<Color?>(
+            (Set<MaterialState> states) {
+              if (states.contains(MaterialState.hovered)) {
+                return Colors.grey.shade100;
+              }
+              return null;
+            },
+          )),
         ),
       ),
     );
   }
 }
 
-class _ActDivider extends StatelessWidget {
-  const _ActDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 40),
-      height: 1,
-      color: Colors.grey.shade200,
-    );
-  }
-} 
+// 可以保留或移除 _ActDivider
+// class _ActDivider extends StatelessWidget {
+//   const _ActDivider();
+//   @override
+//   Widget build(BuildContext context) {
+//     return Divider(
+//       height: 80,
+//       thickness: 1,
+//       color: Colors.grey.shade200,
+//       indent: 40,
+//       endIndent: 40,
+//     );
+//   }
+// }

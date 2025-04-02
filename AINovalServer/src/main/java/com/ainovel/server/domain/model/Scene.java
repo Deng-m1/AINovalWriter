@@ -3,7 +3,6 @@ package com.ainovel.server.domain.model;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.time.Instant;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
@@ -69,9 +68,13 @@ public class Scene {
     @Builder.Default
     private List<HistoryEntry> history = new ArrayList<>();
     
-    private Instant createdAt = Instant.now();
+    // 如果确定传入的是某个特定时区（如系统默认时区）的本地时间
+    // @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS", timezone = JsonFormat.DEFAULT_TIMEZONE)
+    private LocalDateTime createdAt;
     
-    private Instant updatedAt = Instant.now();
+    // 同上
+    // @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS", timezone = JsonFormat.DEFAULT_TIMEZONE)
+    private LocalDateTime updatedAt;
     
     /**
      * 向量嵌入
@@ -94,6 +97,7 @@ public class Scene {
     @AllArgsConstructor
     public static class HistoryEntry {
         private String content;
+        // HistoryEntry 中的 updatedAt 是 LocalDateTime，这个没问题
         private LocalDateTime updatedAt;
         private String updatedBy;
         private String reason;

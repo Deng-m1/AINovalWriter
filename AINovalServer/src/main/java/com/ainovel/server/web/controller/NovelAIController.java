@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
 import com.ainovel.server.service.NovelAIService;
+import com.ainovel.server.web.dto.GenerateNextOutlinesDTO;
 import com.ainovel.server.web.dto.RevisionRequest;
 import com.ainovel.server.web.dto.SuggestionRequest;
 
@@ -25,16 +26,17 @@ import reactor.core.publisher.Mono;
 @RestController
 @RequestMapping("/api/novels")
 public class NovelAIController {
-    
+
     private final NovelAIService novelAIService;
-    
+
     @Autowired
     public NovelAIController(NovelAIService novelAIService) {
         this.novelAIService = novelAIService;
     }
-    
+
     /**
      * 生成小说内容
+     *
      * @param request AI请求
      * @return AI响应
      */
@@ -42,9 +44,10 @@ public class NovelAIController {
     public Mono<AIResponse> generateNovelContent(@RequestBody AIRequest request) {
         return novelAIService.generateNovelContent(request);
     }
-    
+
     /**
      * 生成小说内容（流式）
+     *
      * @param request AI请求
      * @return 流式AI响应
      */
@@ -52,12 +55,13 @@ public class NovelAIController {
     public Flux<ServerSentEvent<String>> generateNovelContentStream(@RequestBody AIRequest request) {
         return novelAIService.generateNovelContentStream(request)
                 .map(content -> ServerSentEvent.<String>builder()
-                        .data(content)
-                        .build());
+                .data(content)
+                .build());
     }
-    
+
     /**
      * 获取创作建议
+     *
      * @param novelId 小说ID
      * @param request 建议请求
      * @return 创作建议
@@ -71,9 +75,10 @@ public class NovelAIController {
                 request.getSceneId(),
                 request.getSuggestionType());
     }
-    
+
     /**
      * 获取创作建议（流式）
+     *
      * @param novelId 小说ID
      * @param request 建议请求
      * @return 流式创作建议
@@ -87,12 +92,13 @@ public class NovelAIController {
                 request.getSceneId(),
                 request.getSuggestionType())
                 .map(content -> ServerSentEvent.<String>builder()
-                        .data(content)
-                        .build());
+                .data(content)
+                .build());
     }
-    
+
     /**
      * 修改内容
+     *
      * @param novelId 小说ID
      * @param request 修改请求
      * @return 修改后的内容
@@ -107,9 +113,10 @@ public class NovelAIController {
                 request.getContent(),
                 request.getInstruction());
     }
-    
+
     /**
      * 修改内容（流式）
+     *
      * @param novelId 小说ID
      * @param request 修改请求
      * @return 流式修改后的内容
@@ -124,12 +131,13 @@ public class NovelAIController {
                 request.getContent(),
                 request.getInstruction())
                 .map(content -> ServerSentEvent.<String>builder()
-                        .data(content)
-                        .build());
+                .data(content)
+                .build());
     }
-    
+
     /**
      * 生成角色
+     *
      * @param novelId 小说ID
      * @param description 角色描述
      * @return 生成的角色信息
@@ -140,9 +148,10 @@ public class NovelAIController {
             @RequestParam String description) {
         return novelAIService.generateCharacter(novelId, description);
     }
-    
+
     /**
      * 生成情节
+     *
      * @param novelId 小说ID
      * @param description 情节描述
      * @return 生成的情节信息
@@ -153,9 +162,10 @@ public class NovelAIController {
             @RequestParam String description) {
         return novelAIService.generatePlot(novelId, description);
     }
-    
+
     /**
      * 生成设定
+     *
      * @param novelId 小说ID
      * @param description 设定描述
      * @return 生成的设定信息
@@ -166,4 +176,48 @@ public class NovelAIController {
             @RequestParam String description) {
         return novelAIService.generateSetting(novelId, description);
     }
-} 
+
+    /**
+     * 生成下一剧情大纲选项
+     *
+     * @param novelId 小说ID
+     * @param request 生成请求
+     * @return 生成的多个剧情大纲选项
+     */
+    @PostMapping("/{novelId}/ai/generate-next-outlines")
+    public Mono<GenerateNextOutlinesDTO.Response> generateNextOutlines(
+            @PathVariable String novelId,
+            @RequestBody GenerateNextOutlinesDTO.Request request) {
+        // 设置小说ID
+        request.setNovelId(novelId);
+
+        // 记录开始时间
+        long startTime = System.currentTimeMillis();
+
+        // 调用服务生成大纲
+        return novelAIService.generateNextOutlines(
+                novelId,
+                request.getCurrentContext(),
+                request.getNumberOfOptions(),
+                request.getAuthorGuidance()
+        )
+                .map(aiResponse -> {
+                    // 解析AI响应，提取大纲信息
+                    // 这里需要根据具体的AI响应格式进行处理
+                    // 为简化示例，假设直接返回原始内容，实际应用中需要解析结构化数据
+
+                    // 创建响应对象
+                    GenerateNextOutlinesDTO.Response response = new GenerateNextOutlinesDTO.Response();
+
+                    // 计算生成时间
+                    response.setGenerationTimeMs(System.currentTimeMillis() - startTime);
+
+                    // 设置使用的模型
+                    response.setModel(aiResponse.getModel());
+
+                    // TODO: 解析AI响应，提取大纲列表
+                    // 这里是简化处理，实际应用中需要根据AI输出格式进行解析
+                    return response;
+                });
+    }
+}

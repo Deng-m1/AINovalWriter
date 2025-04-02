@@ -1,3 +1,4 @@
+/*
 package com.ainovel.server.web.controller;
 
 import java.time.LocalDateTime;
@@ -25,10 +26,12 @@ import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+*/
 /**
  * 测试控制器
  * 用于性能测试和比较虚拟线程与传统线程的性能差异
- */
+ *//*
+
 @Slf4j
 @RestController
 @RequestMapping("/test")
@@ -47,12 +50,14 @@ public class TestController extends ReactiveBaseController {
         this.traditionalThreadExecutor = Executors.newFixedThreadPool(200);
     }
 
-    /**
+    */
+/**
      * 长时间运行的操作（使用虚拟线程）
      * 
      * @param request 请求参数
      * @return 操作结果
-     */
+     *//*
+
     @PostMapping("/long-running")
     @Timed(value = "test.long.running.virtual", description = "Time taken for long running operation with virtual threads")
     public Mono<Map<String, Object>> longRunningOperation(@RequestBody Map<String, Object> request) {
@@ -76,12 +81,14 @@ public class TestController extends ReactiveBaseController {
                 .doOnSuccess(result -> log.debug("完成长时间运行操作: {}", requestId));
     }
 
-    /**
+    */
+/**
      * 长时间运行的操作（使用传统线程）
      * 
      * @param request 请求参数
      * @return 操作结果
-     */
+     *//*
+
     @PostMapping("/long-running-traditional")
     @Timed(value = "test.long.running.traditional", description = "Time taken for long running operation with traditional threads")
     public Mono<Map<String, Object>> longRunningOperationTraditional(@RequestBody Map<String, Object> request) {
@@ -104,12 +111,14 @@ public class TestController extends ReactiveBaseController {
                 .doOnSuccess(result -> log.debug("完成长时间运行操作(传统线程): {}", requestId));
     }
 
-    /**
+    */
+/**
      * 内存占用测试
      * 
      * @param request 请求参数
      * @return 内存使用情况
-     */
+     *//*
+
     @PostMapping("/memory-usage")
     @Timed(value = "test.memory.usage", description = "Memory usage test")
     public Mono<Map<String, Object>> memoryUsageTest(@RequestBody Map<String, Object> request) {
@@ -155,10 +164,12 @@ public class TestController extends ReactiveBaseController {
                 .doOnSuccess(result -> log.debug("完成内存占用测试，线程数: {}", threadCount));
     }
 
-    /**
+    */
+/**
      * 测试端点，返回当前时间和服务器状态
      * @return 服务器状态信息
-     */
+     *//*
+
     @GetMapping("/ping")
     public Mono<ResponseEntity<Map<String, Object>>> ping() {
         logger.info("收到测试请求: /api/v1/test/ping");
@@ -172,10 +183,12 @@ public class TestController extends ReactiveBaseController {
         return Mono.just(ResponseEntity.ok(response));
     }
     
-    /**
+    */
+/**
      * 测试认证端点，用于验证安全配置
      * @return 认证状态信息
-     */
+     *//*
+
     @GetMapping("/auth-test")
     public Mono<ResponseEntity<Map<String, Object>>> authTest() {
         logger.info("收到认证测试请求: /api/v1/test/auth-test");
@@ -189,3 +202,4 @@ public class TestController extends ReactiveBaseController {
         return Mono.just(ResponseEntity.ok(response));
     }
 }
+*/

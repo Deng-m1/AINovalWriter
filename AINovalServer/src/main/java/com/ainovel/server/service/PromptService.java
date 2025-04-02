@@ -39,6 +39,12 @@ public interface PromptService {
     Mono<String> getSettingGenerationPrompt();
     
     /**
+     * 获取下一剧情大纲生成提示词
+     * @return 提示词模板
+     */
+    Mono<String> getNextOutlinesGenerationPrompt();
+    
+    /**
      * 保存提示词模板
      * @param promptType 提示词类型
      * @param template 模板内容

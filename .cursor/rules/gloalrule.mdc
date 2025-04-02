@@ -3,16 +3,7 @@ description:
 globs: 
 alwaysApply: false
 ---
----
-description: 
-globs: 
-alwaysApply: false
----
----
-description: 
-globs: *
-alwaysApply: false
----
+
 # AI写作软件项目全局配置
 project_config:
   name: "ai-novel-assistant"
@@ -45,47 +36,400 @@ AINovalWriter 是一个AI辅助小说创作平台，包含前端应用（Flutter
 
 ```
 AINovalWriter/
-├── AINoval/                    # 前端项目（Flutter）
-│   ├── lib/                    # 前端源代码
-│   │   ├── blocs/              # 业务逻辑组件
-│   │   ├── config/             # 配置文件
-│   │   ├── l10n/               # 国际化资源
-│   │   ├── models/             # 数据模型
-│   │   ├── repositories/       # 数据仓库
-│   │   ├── screens/            # 页面组件
-│   │   ├── services/           # 服务层
-│   │   ├── utils/              # 工具类
-│   │   └── main.dart           # 应用入口
-│   ├── assets/                 # 静态资源
-│   ├── test/                   # 测试代码
-│   ├── web/                    # Web相关文件
-│   ├── pubspec.yaml            # 依赖管理
-│   └── README.md               # 前端项目说明
-│
-├── AINovalServer/              # 后端项目（Spring Boot）
-│   ├── src/                    # 后端源代码
-│   │   ├── main/
-│   │   │   ├── java/com/ainovel/server/
-│   │   │   │   ├── common/     # 通用工具和常量
-│   │   │   │   ├── config/     # 配置类
-│   │   │   │   ├── domain/     # 领域模型
-│   │   │   │   ├── repository/ # 数据访问层
-│   │   │   │   ├── security/   # 安全相关
-│   │   │   │   ├── service/    # 业务服务层
-│   │   │   │   ├── web/        # Web控制器
-│   │   │   │   └── AiNovelServerApplication.java # 应用入口
-│   │   │   └── resources/      # 资源文件
-│   │   └── test/               # 测试代码
-│   ├── pom.xml                 # Maven依赖管理
-│   ├── README.md               # 后端项目说明
-│   └── PERFORMANCE_TESTING.md  # 性能测试文档
-│
-├── postman/                    # Postman测试集合
-├── 原型图/                      # UI/UX原型设计
-├── 需求文档/                    # 项目需求文档
-├── 测试计划与文档/               # 测试相关文档
-├── 后端开发文档/                 # 后端开发文档
-└── 前端产品敏捷迭代计划/          # 前端迭代计划
+├── AINoval/                        # Flutter 前端应用目录
+│   ├── analysis_options.yaml       # Dart 代码分析器配置文件
+│   ├── devtools_options.yaml       # Dart DevTools 配置文件
+│   ├── pubspec.yaml                # Flutter 项目依赖和元数据配置文件
+│   ├── README.md                   # 前端项目说明文档
+│   ├── web/                        # Web 平台相关文件
+│   │   ├── index.html              # Web 应用主 HTML 文件
+│   │   └── manifest.json           # Web 应用清单文件
+│   ├── scripts/                    # 脚本目录
+│   │   └── replace_print_with_logger.dart # 用于将 print 语句替换为 logger 的脚本
+│   ├── lib/                        # Flutter 应用核心代码目录
+│   │   ├── main.dart               # 应用入口文件
+│   │   ├── utils/                  # 工具类目录
+│   │   │   ├── app_theme.dart      # 应用主题定义
+│   │   │   ├── date_formatter.dart # 日期格式化工具
+│   │   │   ├── date_time_parser.dart # 日期时间解析工具
+│   │   │   ├── debouncer.dart      # 防抖动工具类
+│   │   │   ├── logger.dart         # 日志记录工具类
+│   │   │   ├── logger_guide.md     # 日志工具使用指南
+│   │   │   ├── logger_usage_examples.dart # 日志工具使用示例
+│   │   │   ├── mock_data.dart      # 模拟数据
+│   │   │   ├── mock_data_generator.dart # 模拟数据生成器
+│   │   │   └── word_count_analyzer.dart # 字数统计分析工具
+│   │   ├── ui/                     # UI 相关目录 (部分文件，结构可能不完整)
+│   │   │   ├── screens/            # 屏幕/页面目录
+│   │   │   │   └── editor_screen.dart # 编辑器屏幕 (旧版或冗余?)
+│   │   │   ├── dialogs/            # 对话框目录
+│   │   │   │   └── scene_history_dialog.dart # 场景历史记录对话框
+│   │   │   └── common/             # 通用 UI 组件目录
+│   │   │       ├── loading_indicator.dart # 加载指示器组件
+│   │   │       └── no_data_placeholder.dart # 无数据占位符组件
+│   │   ├── theme/                  # 主题相关目录
+│   │   │   └── text_styles.dart    # 文本样式定义
+│   │   ├── services/               # 服务类目录
+│   │   │   ├── auth_service.dart   # 认证服务
+│   │   │   ├── context_provider.dart # 上下文提供者 (可能用于 AI)
+│   │   │   ├── local_storage_service.dart # 本地存储服务
+│   │   │   ├── sync_service.dart   # 同步服务
+│   │   │   ├── websocket_service.dart # WebSocket 服务
+│   │   │   └── api_service/        # API 服务目录
+│   │   │       ├── README.md       # API 服务说明
+│   │   │       ├── repositories/   # Repository 接口定义目录
+│   │   │       │   ├── chat_repository.dart # 聊天 Repository 接口
+│   │   │       │   ├── editor_repository.dart # 编辑器 Repository 接口
+│   │   │       │   ├── novel_repository.dart # 小说 Repository 接口
+│   │   │       │   └── user_ai_model_config_repository.dart # 用户 AI 配置 Repository 接口
+│   │   │       ├── impl/           # Repository 实现目录
+│   │   │       │   ├── chat_repository_impl.dart # 聊天 Repository 实现
+│   │   │       │   ├── editor_repository_impl.dart # 编辑器 Repository 实现
+│   │   │       │   ├── novel_repository_impl.dart # 小说 Repository 实现
+│   │   │       │   └── user_ai_model_config_repository_impl.dart # 用户 AI 配置 Repository 实现
+│   │   │       └── base/           # API 基础类目录
+│   │   │           ├── api_client.dart # API 客户端基类
+│   │   │           └── api_exception.dart # API 异常类
+│   │   ├── screens/                # 屏幕/页面目录 (新结构)
+│   │   │   ├── settings/           # 设置屏幕目录
+│   │   │   │   ├── settings_panel.dart # 设置面板
+│   │   │   │   └── widgets/        # 设置屏幕相关组件
+│   │   │   │       └── ai_config_form.dart # AI 配置表单
+│   │   │   ├── novel_list/         # 小说列表屏幕目录
+│   │   │   │   ├── novel_list_screen.dart # 小说列表屏幕主文件
+│   │   │   │   └── widgets/        # 小说列表屏幕相关组件
+│   │   │   │       ├── continue_writing_section.dart # 继续写作区域
+│   │   │   │       ├── empty_novel_view.dart # 空小说列表视图
+│   │   │   │       ├── header_section.dart # 头部区域
+│   │   │   │       ├── loading_view.dart # 加载视图
+│   │   │   │       ├── novel_card.dart # 小说卡片
+│   │   │   │       ├── novel_list_error_view.dart # 小说列表错误视图
+│   │   │   │       └── search_filter_bar.dart # 搜索过滤栏
+│   │   │   ├── editor/             # 编辑器屏幕目录
+│   │   │   │   ├── editor_screen.dart # 编辑器屏幕主文件
+│   │   │   │   ├── widgets/        # 编辑器屏幕通用组件
+│   │   │   │   │   ├── ai_chat_button.dart # AI 聊天按钮
+│   │   │   │   │   ├── editor_settings_panel.dart # 编辑器设置面板
+│   │   │   │   │   ├── editor_toolbar.dart # 编辑器工具栏
+│   │   │   │   │   └── word_count_display.dart # 字数显示
+│   │   │   │   └── components/     # 编辑器屏幕主要布局组件
+│   │   │   │       ├── act_section.dart # 幕/卷区域组件
+│   │   │   │       ├── chapter_section.dart # 章节区域组件
+│   │   │   │       ├── editor_app_bar.dart # 编辑器应用栏
+│   │   │   │       ├── editor_main_area.dart # 编辑器主编辑区域
+│   │   │   │       ├── editor_sidebar.dart # 编辑器侧边栏 (大纲)
+│   │   │   │       └── scene_editor.dart # 场景编辑器组件
+│   │   │   ├── chat/               # AI 聊天屏幕目录
+│   │   │   │   ├── chat_screen.dart # AI 聊天屏幕主文件
+│   │   │   │   └── widgets/        # AI 聊天屏幕相关组件
+│   │   │   │       ├── ai_chat_sidebar.dart # AI 聊天侧边栏 (会话列表)
+│   │   │   │       ├── chat_input.dart # 聊天输入框
+│   │   │   │       ├── chat_message_bubble.dart # 聊天消息气泡
+│   │   │   │       ├── chat_sidebar.dart # 聊天侧边栏 (旧或冗余?)
+│   │   │   │       ├── context_panel.dart # 上下文面板
+│   │   │   │       ├── model_selector_dropdown.dart # 模型选择下拉框
+│   │   │   │       └── typing_indicator.dart # 输入中指示器
+│   │   │   ├── auth/               # 认证屏幕目录
+│   │   │   │   └── login_screen.dart # 登录屏幕
+│   │   │   └── ai_config/          # AI 配置管理屏幕目录
+│   │   │       ├── ai_config_management_screen.dart # AI 配置管理屏幕主文件
+│   │   │       └── widgets/        # AI 配置屏幕相关组件
+│   │   │           ├── add_edit_ai_config_dialog.dart # 添加/编辑 AI 配置对话框
+│   │   │           ├── ai_config_list_item.dart # AI 配置列表项
+│   │   │           └── ai_model_selector.dart # AI 模型选择器
+│   │   ├── repositories/           # Repository 接口定义目录 (旧结构?)
+│   │   │   └── codex_repository.dart # Codex 知识库 Repository 接口
+│   │   ├── models/                 # 数据模型目录
+│   │   │   ├── chat_message.dart   # 聊天消息模型
+│   │   │   ├── chat_models.dart    # 聊天相关模型 (可能包含会话等)
+│   │   │   ├── editor_content.dart # 编辑器内容模型 (可能包含场景、章节等)
+│   │   │   ├── editor_settings.dart # 编辑器设置模型
+│   │   │   ├── novel_structure.dart # 小说结构模型
+│   │   │   ├── novel_summary.dart  # 小说摘要模型
+│   │   │   ├── revision.dart       # 修订/版本模型
+│   │   │   ├── scene_version.dart  # 场景版本模型
+│   │   │   └── user_ai_model_config_model.dart # 用户 AI 模型配置模型
+│   │   ├── l10n/                   # 本地化目录
+│   │   │   └── l10n.dart           # 本地化工具入口
+│   │   ├── docs/                   # 文档目录 (前端内部)
+│   │   │   └── logger_guide.md     # 日志工具使用指南 (副本?)
+│   │   ├── config/                 # 配置目录
+│   │   │   └── app_config.dart     # 应用配置 (如 API 地址等)
+│   │   ├── components/             # 通用 UI 组件目录 (新结构?)
+│   │   │   └── editable_title.dart # 可编辑标题组件
+│   │   └── blocs/                  # BLoC (状态管理) 目录
+│   │       ├── editor_version_bloc.dart # 编辑器版本 BLoC
+│   │       ├── editor_version_event.dart # 编辑器版本事件
+│   │       ├── editor_version_state.dart # 编辑器版本状态
+│   │       ├── novel_list/         # 小说列表 BLoC 相关
+│   │       │   ├── novel_list_bloc.dart # 小说列表 BLoC
+│   │       │   └── novel_list_event.dart # 小说列表事件
+│   │       ├── editor/             # 编辑器 BLoC 相关
+│   │       │   ├── editor_bloc.dart # 编辑器 BLoC
+│   │       │   ├── editor_event.dart # 编辑器事件
+│   │       │   └── editor_state.dart # 编辑器状态
+│   │       ├── chat/               # AI 聊天 BLoC 相关
+│   │       │   ├── chat_bloc.dart  # AI 聊天 BLoC
+│   │       │   ├── chat_event.dart # AI 聊天事件
+│   │       │   └── chat_state.dart # AI 聊天状态
+│   │       ├── auth/               # 认证 BLoC 相关
+│   │       │   └── auth_bloc.dart  # 认证 BLoC
+│   │       └── ai_config/          # AI 配置 BLoC 相关
+│   │           ├── ai_config_bloc.dart # AI 配置 BLoC
+│   │           ├── ai_config_event.dart # AI 配置事件
+│   │           └── ai_config_state.dart # AI 配置状态
+│   ├── fix_dollar_e/             # 特殊字符处理工具目录?
+│   │   └── bin/
+│   │       └── fix_dollar_e.dart   # 处理 '$e' 字符的脚本
+│   └── build/                      # 构建输出目录
+│       ├── flutter_assets/         # Flutter 静态资源
+│       │   ├── AssetManifest.bin.json # 二进制资源清单
+│       │   ├── AssetManifest.json  # 资源清单
+│       │   ├── FontManifest.json   # 字体清单
+│       │   └── packages/           # 包资源
+│       │       └── fluttertoast/   # fluttertoast 包资源
+│       │           └── assets/
+│       │               ├── toastify.css # toast 样式
+│       │               └── toastify.js  # toast 脚本
+│       └── ce49e7d9.../            # 编译过程文件目录
+│           └── outputs.json        # 编译输出信息
+├── AINovalServer/                  # Java Spring Boot 后端服务目录
+│   ├── AINoval_API_Collection.json # Postman API 集合 (副本?)
+│   ├── AINoval_API_Tests.postman_collection.json # Postman API 测试集合
+│   ├── AINoval_Performance_Tests.postman_collection.json # Postman 性能测试集合
+│   ├── PERFORMANCE_TESTING.md      # 性能测试说明文档
+│   ├── performance_test_script.js  # 性能测试脚本 (k6?)
+│   ├── pom.xml                     # Maven 项目配置文件
+│   ├── README.md                   # 后端项目说明文档
+│   ├── Sprint1开发总结.md          # Sprint 1 开发总结
+│   ├── start-performance-test.sh   # 启动性能测试的脚本
+│   ├── target/                     # Maven 构建输出目录
+│   │   ├── test-classes/           # 测试类编译输出
+│   │   │   └── performance-test-report-template.md # 性能测试报告模板 (副本?)
+│   │   └── classes/                # 主代码编译输出
+│   │       ├── application-dev.yml # 开发环境配置文件
+│   │       ├── application-performance-test.yml # 性能测试环境配置文件
+│   │       ├── application-test.yml # 测试环境配置文件
+│   │       ├── application.yml     # 主应用配置文件
+│   │       └── static/             # 静态资源目录
+│   │           └── gemini-test.html # Gemini 测试页面
+│   └── src/                        # 源代码目录
+│       ├── test/                   # 测试代码目录
+│       │   ├── resources/          # 测试资源目录
+│       │   │   └── performance-test-report-template.md # 性能测试报告模板
+│       │   └── java/               # Java 测试代码
+│       │       └── com/ainovel/server/
+│       │           ├── service/    # 服务层测试
+│       │           │   └── SceneServiceVersionTest.java # 场景服务版本功能测试
+│       │           └── performance/ # 性能测试相关代码
+│       │               ├── PerformanceTestRunner.java # 性能测试运行器 (可能使用 Gatling 或类似工具)
+│       │               ├── VirtualThreadPerformanceTest.java # 虚拟线程性能测试
+│       │               ├── util/   # 性能测试工具类
+│       │               │   └── PerformanceTestUtil.java # 性能测试工具类
+│       │               └── simulation/ # 性能测试场景模拟
+│       │                   ├── AIServiceSimulation.java # AI 服务调用模拟
+│       │                   ├── NovelServiceSimulation.java # 小说服务调用模拟
+│       │                   └── VirtualThreadVsTraditionalSimulation.java # 虚拟线程与传统线程对比模拟
+│       └── main/                   # 主代码目录
+│           ├── resources/          # 资源目录
+│           │   ├── application-dev.yml # 开发环境配置文件 (源码)
+│           │   ├── application-performance-test.yml # 性能测试环境配置文件 (源码)
+│           │   ├── application-test.yml # 测试环境配置文件 (源码)
+│           │   ├── application.yml     # 主应用配置文件 (源码)
+│           │   └── static/             # 静态资源目录 (源码)
+│           │       └── gemini-test.html # Gemini 测试页面 (源码)
+│           └── java/               # Java 主代码
+│               └── com/ainovel/server/
+│                   ├── AiNovelServerApplication.java # Spring Boot 应用主入口
+│                   ├── web/                # Web 层 (Controller, DTO)
+│                   │   ├── GeminiTestController.java # Gemini 测试 Controller
+│                   │   ├── dto/            # 数据传输对象 (Data Transfer Objects)
+│                   │   │   ├── AIModelConfigDto.java # AI 模型配置 DTO
+│                   │   │   ├── ApiKeyValidationRequest.java # API Key 验证请求 DTO
+│                   │   │   ├── ApiKeyValidationResponse.java # API Key 验证响应 DTO
+│                   │   │   ├── AuthorIdDto.java # 作者 ID DTO
+│                   │   │   ├── AuthRequest.java # 认证请求 DTO
+│                   │   │   ├── AuthResponse.java # 认证响应 DTO
+│                   │   │   ├── ChangePasswordRequest.java # 修改密码请求 DTO
+│                   │   │   ├── ChapterIdDto.java # 章节 ID DTO
+│                   │   │   ├── ChapterSceneDto.java # 章节场景 DTO
+│                   │   │   ├── ChapterScenesDto.java # 章节场景列表 DTO
+│                   │   │   ├── ConfigIndexDto.java # 配置索引 DTO
+│                   │   │   ├── CreateUserAIModelConfigRequest.java # 创建用户 AI 配置请求 DTO
+│                   │   │   ├── IdDto.java # 通用 ID DTO
+│                   │   │   ├── ListUserConfigsRequest.java # 列出用户配置请求 DTO
+│                   │   │   ├── NovelChapterDto.java # 小说章节 DTO
+│                   │   │   ├── NovelChapterSceneDto.java # 小说章节场景 DTO
+│                   │   │   ├── NovelIdDto.java # 小说 ID DTO
+│                   │   │   ├── NovelIdTypeDto.java # 小说 ID 和类型 DTO
+│                   │   │   ├── NovelUpdateDto.java # 小说更新 DTO
+│                   │   │   ├── NovelWithScenesDto.java # 带场景的小说 DTO
+│                   │   │   ├── NovelWithScenesUpdateDto.java # 带场景的小说更新 DTO
+│                   │   │   ├── ProviderModelsRequest.java # AI 提供商模型请求 DTO
+│                   │   │   ├── ProxyConfigRequest.java # 代理配置请求 DTO
+│                   │   │   ├── RefreshTokenRequest.java # 刷新 Token 请求 DTO
+│                   │   │   ├── RevisionRequest.java # 修订/版本请求 DTO
+│                   │   │   ├── SceneContentUpdateDto.java # 场景内容更新 DTO
+│                   │   │   ├── SceneDeleteDto.java # 场景删除 DTO
+│                   │   │   ├── SceneRestoreDto.java # 场景恢复 DTO
+│                   │   │   ├── SceneSearchDto.java # 场景搜索 DTO
+│                   │   │   ├── SceneUpdateDto.java # 场景更新 DTO
+│                   │   │   ├── SceneVersionCompareDto.java # 场景版本比较 DTO
+│                   │   │   ├── SceneVersionDiff.java # 场景版本差异 DTO
+│                   │   │   ├── SessionCreateDto.java # 创建会话 DTO
+│                   │   │   ├── SessionMessageDto.java # 会话消息 DTO
+│                   │   │   ├── SessionUpdateDto.java # 更新会话 DTO
+│                   │   │   ├── SuggestionRequest.java # AI 建议请求 DTO
+│                   │   │   ├── UpdateUserAIModelConfigRequest.java # 更新用户 AI 配置请求 DTO
+│                   │   │   ├── UserAIModelConfigResponse.java # 用户 AI 配置响应 DTO
+│                   │   │   ├── UserIdConfigIndexDto.java # 用户 ID 和配置索引 DTO
+│                   │   │   ├── UserIdDto.java # 用户 ID DTO
+│                   │   │   ├── UserRegistrationRequest.java # 用户注册请求 DTO
+│                   │   │   └── UserUpdateDto.java # 用户更新 DTO
+│                   │   ├── controller/     # 控制器 (Controllers)
+│                   │   │   ├── AIChatController.java # AI 聊天控制器
+│                   │   │   ├── AIController.java # 通用 AI 控制器
+│                   │   │   ├── AuthController.java # 认证控制器
+│                   │   │   ├── MongoTestController.java # MongoDB 测试控制器
+│                   │   │   ├── NovelAIController.java # 小说 AI 功能控制器
+│                   │   │   ├── NovelController.java # 小说管理控制器
+│                   │   │   ├── PerformanceTestController.java # 性能测试端点控制器
+│                   │   │   ├── SceneController.java # 场景管理控制器
+│                   │   │   ├── SecurityTestController.java # 安全测试控制器
+│                   │   │   ├── TestController.java # 通用测试控制器
+│                   │   │   ├── UserAIModelConfigController.java # 用户 AI 配置控制器
+│                   │   │   └── UserController.java # 用户管理控制器
+│                   │   └── base/           # Web 层基类
+│                   │       └── ReactiveBaseController.java # 响应式 Controller 基类
+│                   ├── service/            # 服务层 (Service Interfaces and Implementations)
+│                   │   ├── AIChatService.java # AI 聊天服务接口
+│                   │   ├── AIService.java  # 通用 AI 服务接口
+│                   │   ├── EmbeddingService.java # 向量嵌入服务接口
+│                   │   ├── JwtService.java # JWT 服务接口
+│                   │   ├── KnowledgeService.java # 知识库服务接口
+│                   │   ├── NovelAIService.java # 小说 AI 功能服务接口
+│                   │   ├── NovelService.java # 小说管理服务接口
+│                   │   ├── PromptService.java # Prompt 管理服务接口
+│                   │   ├── SceneService.java # 场景管理服务接口
+│                   │   ├── UserAIModelConfigService.java # 用户 AI 配置服务接口
+│                   │   ├── UserService.java # 用户管理服务接口
+│                   │   ├── vectorstore/    # 向量存储相关接口和类
+│                   │   │   ├── ChromaVectorStore.java # Chroma 向量存储实现
+│                   │   │   ├── SearchResult.java # 向量搜索结果类
+│                   │   │   └── VectorStore.java # 向量存储接口
+│                   │   ├── impl/           # 服务层实现
+│                   │   │   ├── AIChatServiceImpl.java # AI 聊天服务实现
+│                   │   │   ├── AIServiceImpl.java # 通用 AI 服务实现
+│                   │   │   ├── EmbeddingServiceImpl.java # 向量嵌入服务实现
+│                   │   │   ├── JwtServiceImpl.java # JWT 服务实现
+│                   │   │   ├── KnowledgeServiceImpl.java # 知识库服务实现
+│                   │   │   ├── MockAIServiceImpl.java # 模拟 AI 服务实现 (用于测试)
+│                   │   │   ├── NovelAIServiceImpl.java # 小说 AI 功能服务实现
+│                   │   │   ├── NovelServiceImpl.java # 小说管理服务实现
+│                   │   │   ├── PromptServiceImpl.java # Prompt 管理服务实现
+│                   │   │   ├── SceneServiceImpl.java # 场景管理服务实现
+│                   │   │   ├── UserAIModelConfigServiceImpl.java # 用户 AI 配置服务实现
+│                   │   │   └── UserServiceImpl.java # 用户管理服务实现
+│                   │   └── ai/             # AI 模型提供者相关代码
+│                   │       ├── AbstractAIModelProvider.java # 抽象 AI 模型提供者基类
+│                   │       ├── AIModelProvider.java # AI 模型提供者接口
+│                   │       ├── AnthropicModelProvider.java # Anthropic 模型提供者
+│                   │       ├── GeminiModelProvider.java # Gemini 模型提供者
+│                   │       ├── OpenAIModelProvider.java # OpenAI 模型提供者
+│                   │       ├── SiliconFlowModelProvider.java # SiliconFlow 模型提供者
+│                   │       └── langchain4j/ # LangChain4j 集成相关
+│                   │           ├── AnthropicLangChain4jModelProvider.java # LangChain4j Anthropic 实现
+│                   │           ├── GeminiLangChain4jModelProvider.java # LangChain4j Gemini 实现
+│                   │           ├── LangChain4jModelProvider.java # LangChain4j 模型提供者接口/基类
+│                   │           ├── OpenAILangChain4jModelProvider.java # LangChain4j OpenAI 实现
+│                   │           └── SiliconFlowLangChain4jModelProvider.java # LangChain4j SiliconFlow 实现
+│                   ├── security/           # 安全配置相关
+│                   │   ├── JwtAuthenticationManager.java # JWT 认证管理器
+│                   │   └── JwtServerAuthenticationConverter.java # JWT 服务器认证转换器
+│                   ├── repository/         # 数据仓库层 (Repository Interfaces)
+│                   │   ├── AIChatMessageRepository.java # AI 聊天消息 Repository
+│                   │   ├── AIChatSessionRepository.java # AI 聊天会话 Repository
+│                   │   ├── KnowledgeChunkRepository.java # 知识库块 Repository
+│                   │   ├── NovelRepository.java # 小说 Repository
+│                   │   ├── SceneRepository.java # 场景 Repository
+│                   │   ├── UserAIModelConfigRepository.java # 用户 AI 配置 Repository
+│                   │   ├── UserRepository.java # 用户 Repository 接口
+│                   │   ├── impl/           # Repository 实现 (特定实现)
+│                   │   │   └── UserRepositoryImpl.java # 用户 Repository 实现类
+│                   │   └── custom/         # 自定义 Repository 接口
+│                   │       └── CustomUserRepository.java # 自定义用户 Repository 接口
+│                   ├── domain/             # 领域模型 (Domain Models)
+│                   │   └── model/          # 模型类
+│                   │       ├── AIChatMessage.java # AI 聊天消息实体
+│                   │       ├── AIChatSession.java # AI 聊天会话实体
+│                   │       ├── AIInteraction.java # AI 交互记录实体?
+│                   │       ├── AIRequest.java # AI 请求模型
+│                   │       ├── AIResponse.java # AI 响应模型
+│                   │       ├── BaseAIRequest.java # 基础 AI 请求模型
+│                   │       ├── Character.java # 角色实体 (可能未使用或在 Novel 中)
+│                   │       ├── KnowledgeChunk.java # 知识库块实体
+│                   │       ├── Novel.java # 小说实体
+│                   │       ├── PromptTemplate.java # Prompt 模板实体
+│                   │       ├── Scene.java # 场景实体
+│                   │       ├── SceneVersionDiff.java # 场景版本差异实体
+│                   │       ├── Setting.java # 设定实体 (可能未使用或在 Novel 中)
+│                   │       ├── User.java # 用户实体
+│                   │       └── UserAIModelConfig.java # 用户 AI 模型配置实体
+│                   ├── config/             # 配置类
+│                   │   ├── MongoConfig.java # MongoDB 配置
+│                   │   ├── MongoQueryCounterAspect.java # MongoDB 查询计数切面 (用于监控)
+│                   │   ├── MonitoringConfig.java # 监控配置 (Actuator, Micrometer)
+│                   │   ├── ProxyConfig.java # 网络代理配置
+│                   │   ├── SecurityBeanConfig.java # 安全相关的 Bean 配置
+│                   │   ├── SecurityConfig.java # Spring Security 配置
+│                   │   ├── TestSecurityConfig.java # 测试环境安全配置
+│                   │   ├── VectorStoreConfig.java # 向量存储配置
+│                   │   └── VirtualThreadConfig.java # 虚拟线程执行器配置
+│                   └── common/             # 通用工具和模型
+│                       ├── util/           # 工具类
+│                       │   ├── MockDataGenerator.java # 模拟数据生成器 (后端)
+│                       │   └── PerformanceTestUtil.java # 性能测试工具类 (后端)
+│                       ├── model/          # 通用模型
+│                       │   └── ErrorResponse.java # 错误响应模型
+│                       └── exception/      # 自定义异常
+│                           ├── ResourceNotFoundException.java # 资源未找到异常
+│                           └── ValidationException.java # 验证异常
+├── postman/                        # Postman 相关文件目录
+│   ├── AINovalWriter_Test_API.json # Postman 测试 API 集合 (副本?)
+│   ├── AINoval_API_Collection.json # Postman API 集合
+│   └── README.md                   # Postman 使用说明
+├── target/                         # 顶层 Maven 构建输出目录 (可能冗余)
+│   └── performance-reports/        # 性能测试报告目录
+│       ├── performance_test_platform_50_users_... .md # 平台线程性能测试报告
+│       └── performance_test_virtual_50_users_... .md # 虚拟线程性能测试报告
+├── temp.java                       # 临时 Java 文件 (可能无用)
+├── 版本控制功能说明.md             # 版本控制功能的设计或说明文档
+├── 项目架构说明.md                 # 项目整体架构说明文档
+├── 需求文档/                       # 需求相关文档目录
+│   ├── prd.md                      # 产品需求文档 (PRD)
+│   ├── requirements_validation.md  # 需求验证文档
+│   ├── user_flow_and_wireframes.md # 用户流程和线框图文档
+│   ├── 前端概要设计文档.md         # 前端概要设计文档
+│   ├── 前端详细设计文档.(小说列表模块,编辑器模块).md # 前端详细设计 (小说列表, 编辑器)
+│   ├── 前端详细设计文档（AI聊天模块）.md # 前端详细设计 (AI 聊天)
+│   ├── 前端详细设计文档（Codex知识库模块）.md # 前端详细设计 (Codex 知识库)
+│   ├── 前端详细设计文档（小说计划预览模块）.md # 前端详细设计 (小说计划预览)
+│   └── 前端详细设计文档（文件导出模块详细设计）.md # 前端详细设计 (文件导出)
+├── 测试计划与文档/                 # 测试相关文档目录
+│   ├── 后端接口文档.md             # 后端 API 接口文档
+│   ├── 改进报告.md                 # 测试后的改进报告
+│   ├── 第一次测试计划与功能点.md   # 第一次迭代的测试计划和功能点
+│   └── 第二次迭代第一次代码评审.md # 第二次迭代的代码评审记录
+├── 后端开发文档/                   # 后端开发过程文档目录
+│   ├── AI小说助手系统后端概要设计文档.md # 后端概要设计文档
+│   ├── AI小说助手系统敏捷开发计划 - 技术验证阶段（调整版）.md # 敏捷开发计划 (技术验证阶段)
+│   ├── AI小说助手系统敏捷开发计划 - 边验证边开发模式.md # 敏捷开发计划 (边验证边开发)
+│   ├── spint1-2.md                 # Sprint 1-2 记录?
+│   ├── 技术评估.md                 # 技术选型和评估文档
+│   └── 迭代日记.md                 # 开发迭代日记
+└── 前端产品敏捷迭代计划/           # 前端迭代计划目录
+    └── 前端产品迭代计划.md         # 前端产品迭代计划文档
+
 ```
 
 ## 技术架构
@@ -105,26 +449,7 @@ AINovalWriter/
 - **API文档**: Swagger/OpenAPI
 - **测试**: JUnit, Postman
 
-## 项目模块说明
 
-### 前端模块
-
-1. **blocs**: 业务逻辑组件，处理状态管理
-2. **models**: 数据模型，定义应用中使用的数据结构
-3. **repositories**: 数据仓库，负责数据获取和持久化
-4. **screens**: 页面组件，用户界面实现
-5. **services**: 服务层，处理API调用和业务逻辑
-6. **utils**: 工具类，提供通用功能
-
-### 后端模块
-
-1. **common**: 通用工具和常量定义
-2. **config**: 应用配置，包括数据库、安全等配置
-3. **domain**: 领域模型，定义业务实体
-4. **repository**: 数据访问层，处理数据库操作
-5. **security**: 安全相关，包括认证和授权
-6. **service**: 业务服务层，实现核心业务逻辑
-7. **web**: Web控制器，处理HTTP请求和响应
 
 ## 开发流程
 

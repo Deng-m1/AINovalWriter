@@ -1,5 +1,6 @@
 package com.ainovel.server.service.ai.langchain4j;
 
+import com.ainovel.server.config.ProxyConfig;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
 import com.ainovel.server.service.ai.AIModelProvider;
@@ -20,6 +21,14 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,6 +62,8 @@ public abstract class LangChain4jModelProvider implements AIModelProvider {
     
     @Getter
     protected boolean proxyEnabled;
+
+    private ProxyConfig proxyConfig;
     
     // LangChain4j模型实例
     protected ChatLanguageModel chatModel;
@@ -70,8 +81,20 @@ public abstract class LangChain4jModelProvider implements AIModelProvider {
         this.modelName = modelName;
         this.apiKey = apiKey;
         this.apiEndpoint = apiEndpoint;
-        this.proxyEnabled = false;
+        this.proxyEnabled = true;
         
+        // 初始化模型
+        initModels();
+    }
+
+    protected LangChain4jModelProvider(String providerName, String modelName, String apiKey, String apiEndpoint,ProxyConfig proxyConfig) {
+        this.providerName = providerName;
+        this.modelName = modelName;
+        this.apiKey = apiKey;
+        this.apiEndpoint = apiEndpoint;
+        this.proxyEnabled = true;
+        this.proxyConfig=proxyConfig;
+
         // 初始化模型
         initModels();
     }
@@ -109,28 +132,58 @@ public abstract class LangChain4jModelProvider implements AIModelProvider {
         // 重新初始化模型以应用代理设置
         initModels();
     }
-    
+
     /**
      * 配置系统代理
      * 使用系统属性设置HTTP和HTTPS代理
      */
-    protected void configureSystemProxy() {
-        if (proxyEnabled) {
-            // 使用系统属性设置代理
-            System.setProperty("http.proxyHost", proxyHost);
-            System.setProperty("http.proxyPort", String.valueOf(proxyPort));
-            System.setProperty("https.proxyHost", proxyHost);
-            System.setProperty("https.proxyPort", String.valueOf(proxyPort));
-            
-            log.info("{}模型已配置系统代理: {}:{}", providerName, proxyHost, proxyPort);
+
+    protected void configureSystemProxy() throws NoSuchAlgorithmException, KeyManagementException {
+        if (proxyConfig != null && proxyConfig.isProxyEnabled()) {
+            String host = proxyConfig.getProxyHost();
+            int port = proxyConfig.getProxyPort();
+            log.info("Gemini Provider: 检测到 ProxyConfig 已启用，配置系统HTTP/S代理: Host={}, Port={}", host, port);
+            System.setProperty("http.proxyHost", host);
+            System.setProperty("http.proxyPort", String.valueOf(port));
+            System.setProperty("https.proxyHost", host);
+            System.setProperty("https.proxyPort", String.valueOf(port));
+            log.info("Gemini Provider: 已设置Java系统代理属性。");
+            // 创建信任管理器
+
+
+            TrustManager[] trustAllCerts = new TrustManager[]{
+                    new X509TrustManager() {
+                        @Override
+                        public void checkClientTrusted(X509Certificate[] x509Certificates, String s) throws CertificateException {
+                        }
+                        public X509Certificate[] getAcceptedIssuers() {
+                            return null;
+                        }
+                        public void checkServerTrusted(X509Certificate[] certs, String authType) {
+                        }
+
+                    }
+
+
+            };
+
+
+            // 初始化SSLContext
+
+
+            SSLContext sc = SSLContext.getInstance("SSL");
+
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+
+            HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
         } else {
+            log.info("Gemini Provider: ProxyConfig 未启用或未配置，清除系统HTTP/S代理设置。");
             // 清除系统代理设置
             System.clearProperty("http.proxyHost");
             System.clearProperty("http.proxyPort");
             System.clearProperty("https.proxyHost");
             System.clearProperty("https.proxyPort");
-            
-            log.info("{}模型已清除系统代理设置", providerName);
+            log.info("Gemini Provider: 已清除Java系统代理属性。");
         }
     }
     

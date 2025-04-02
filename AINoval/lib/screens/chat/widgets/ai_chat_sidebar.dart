@@ -1,10 +1,16 @@
+import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart'; // 引入 intl 包用于日期格式化
 
 import '../../../blocs/chat/chat_bloc.dart';
 import '../../../blocs/chat/chat_event.dart';
 import '../../../blocs/chat/chat_state.dart';
 import '../../../models/chat_models.dart';
+import '../../../models/user_ai_model_config_model.dart'; // Import the model config
+import 'chat_message_bubble.dart'; // 引入 ChatMessageBubble
+import 'chat_input.dart'; // 引入 ChatInput
+import 'typing_indicator.dart'; // 引入 TypingIndicator
 
 /// AI聊天侧边栏组件，用于在编辑器右侧显示聊天功能
 class AIChatSidebar extends StatefulWidget {
@@ -14,7 +20,7 @@ class AIChatSidebar extends StatefulWidget {
     this.chapterId,
     this.onClose,
   }) : super(key: key);
-  
+
   final String novelId;
   final String? chapterId;
   final VoidCallback? onClose;
@@ -26,178 +32,262 @@ class AIChatSidebar extends StatefulWidget {
 class _AIChatSidebarState extends State<AIChatSidebar> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final bool _isContextPanelExpanded = false;
-  String? _selectedAIModel;
-  
+
   @override
   void initState() {
     super.initState();
-    // 加载聊天会话列表
-    context.read<ChatBloc>().add(LoadChatSessions(novelId: widget.novelId));
-    // 默认选择通用AI模型
-    _selectedAIModel = 'General Purpose';
+    // --- Add initState Log ---
+    AppLogger.i('AIChatSidebar',
+        'initState called. Widget hash: ${identityHashCode(widget)}, State hash: ${identityHashCode(this)}');
+    // Get the Bloc instance WITHOUT triggering a rebuild if already present
+    final chatBloc = BlocProvider.of<ChatBloc>(context, listen: false);
+    AppLogger.i('AIChatSidebar',
+        'initState: Associated ChatBloc hash: ${identityHashCode(chatBloc)}');
+    // --- End Add Log ---
+    // Only add LoadChatSessions if the state isn't already loaded or loading
+    if (chatBloc.state is ChatInitial) {
+      chatBloc.add(LoadChatSessions(novelId: widget.novelId));
+    }
   }
-  
+
   @override
   void dispose() {
+    // --- Add dispose Log ---
+    AppLogger.w('AIChatSidebar',
+        'dispose() called. Widget hash: ${identityHashCode(widget)}, State hash: ${identityHashCode(this)}');
+    // --- End Add Log ---
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
-  
+
   // 滚动到底部
   void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
-  
+
   // 发送消息
   void _sendMessage() {
     final message = _messageController.text.trim();
     if (message.isNotEmpty) {
       context.read<ChatBloc>().add(SendMessage(content: message));
       _messageController.clear();
-      
-      // 延迟滚动到底部，等待消息添加到列表
-      Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
     }
   }
-  
+
   // 选择会话
   void _selectSession(String sessionId) {
     context.read<ChatBloc>().add(SelectChatSession(sessionId: sessionId));
   }
-  
+
   // 创建新会话
   void _createNewThread() {
     context.read<ChatBloc>().add(CreateChatSession(
-      title: 'New Thread',
-      novelId: widget.novelId,
-      chapterId: widget.chapterId,
-    ));
+          title: '新对话 ${DateFormat('MM-dd HH:mm').format(DateTime.now())}',
+          novelId: widget.novelId,
+          chapterId: widget.chapterId,
+        ));
   }
-  
-  // 选择AI模型
-  void _selectAIModel() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('选择AI模型'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: const Text('General Purpose'),
-              subtitle: const Text('通用AI助手'),
-              selected: _selectedAIModel == 'General Purpose',
-              onTap: () {
-                setState(() {
-                  _selectedAIModel = 'General Purpose';
-                });
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              title: const Text('Creative Writer'),
-              subtitle: const Text('创意写作助手'),
-              selected: _selectedAIModel == 'Creative Writer',
-              onTap: () {
-                setState(() {
-                  _selectedAIModel = 'Creative Writer';
-                });
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              title: const Text('Plot Developer'),
-              subtitle: const Text('情节发展助手'),
-              selected: _selectedAIModel == 'Plot Developer',
-              onTap: () {
-                setState(() {
-                  _selectedAIModel = 'Plot Developer';
-                });
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  
+
   @override
   Widget build(BuildContext context) {
-    print('Building AIChatSidebar widget');
+    // Log the associated Bloc hash on build too, might be helpful
+    final chatBloc = BlocProvider.of<ChatBloc>(context, listen: false);
+    AppLogger.d('AIChatSidebar',
+        'build called. Associated ChatBloc hash: ${identityHashCode(chatBloc)}');
+    AppLogger.i('Screens/chat/widgets/ai_chat_sidebar',
+        'Building AIChatSidebar widget');
     return Material(
-      elevation: 8.0,
+      elevation: 4.0,
       child: Container(
-        width: 400,
-        color: Colors.white,
+        // 移除固定宽度，让父组件SizedBox控制宽度
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
         child: Column(
           children: [
             // 顶部标题栏
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
+                color: Theme.of(context).colorScheme.surfaceContainer,
                 border: Border(
                   bottom: BorderSide(
-                    color: Theme.of(context).dividerColor,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .outlineVariant
+                        .withOpacity(0.5),
                     width: 1.0,
                   ),
                 ),
               ),
               child: Row(
                 children: [
-                  const Text(
-                    'AI聊天助手',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: BlocBuilder<ChatBloc, ChatState>(
+                      builder: (context, state) {
+                        String title = 'AI 聊天助手';
+                        if (state is ChatSessionActive) {
+                          title = state.session.title;
+                        } else if (state is ChatSessionsLoaded) {
+                          title = '聊天列表';
+                        }
+                        return Text(
+                          title,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        );
+                      },
                     ),
                   ),
-                  const Spacer(),
+                  BlocBuilder<ChatBloc, ChatState>(
+                    builder: (context, state) {
+                      if (state is ChatSessionActive) {
+                        return IconButton(
+                          icon: const Icon(Icons.list),
+                          tooltip: '返回列表',
+                          onPressed: () {
+                            context
+                                .read<ChatBloc>()
+                                .add(LoadChatSessions(novelId: widget.novelId));
+                          },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                  const SizedBox(width: 8),
                   IconButton(
                     icon: const Icon(Icons.close),
                     onPressed: widget.onClose,
-                    padding: EdgeInsets.zero,
+                    tooltip: '关闭侧边栏',
+                    padding: const EdgeInsets.all(8.0),
                     constraints: const BoxConstraints(),
                   ),
                 ],
               ),
             ),
-            
+
             // 聊天内容区域
             Expanded(
               child: BlocConsumer<ChatBloc, ChatState>(
                 listener: (context, state) {
-                  print('ChatBloc state changed: $state');
-                  if (state is ChatSessionActive) {
-                    // 当新消息添加时，滚动到底部
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      _scrollToBottom();
-                    });
+                  AppLogger.i('Screens/chat/widgets/ai_chat_sidebar',
+                      'ChatBloc state changed: $state');
+                  // 显示会话加载错误
+                  if (state is ChatSessionsLoaded && state.error != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: Text(state.error!),
+                          backgroundColor: Colors.red),
+                    );
+                  }
+                  // 显示活动会话错误（例如加载历史失败或发送失败后）
+                  if (state is ChatSessionActive && state.error != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: Text(state.error!),
+                          backgroundColor: Colors.red),
+                    );
+                  }
+                  // 滚动到底部逻辑保持不变
+                  if (state is ChatSessionActive && !state.isLoadingHistory) {
+                    // 仅在历史加载完成后滚动
+                    _scrollToBottom();
                   }
                 },
+                // buildWhen 优化：避免不必要的重建，例如仅在关键状态或错误变化时重建
+                buildWhen: (previous, current) {
+                  if (previous is ChatSessionsLoading &&
+                      current is ChatSessionsLoaded) return true;
+                  if (previous is ChatSessionsLoaded &&
+                      current is ChatSessionsLoading) return true; // 从列表返回加载
+                  if (previous is ChatSessionLoading &&
+                      current is ChatSessionActive) return true;
+                  if (previous is ChatSessionActive &&
+                      current is ChatSessionLoading) return true; // 从活动返回加载
+                  if (previous is ChatSessionActive &&
+                      current is ChatSessionsLoaded) return true; // 从活动返回列表
+                  if (current is ChatInitial) return true; // 返回初始状态
+                  if (current is ChatError) return true; // 显示错误
+
+                  // 优化 ChatSessionActive 状态更新检查
+                  if (previous is ChatSessionActive &&
+                      current is ChatSessionActive) {
+                    return previous.session.id !=
+                            current.session.id || // 检查会话ID是否变化
+                        previous.messages !=
+                            current.messages || // 列表实例或内容变化（浅比较）
+                        previous.isGenerating != current.isGenerating ||
+                        previous.isLoadingHistory != current.isLoadingHistory ||
+                        previous.error != current.error ||
+                        previous.selectedModel?.id !=
+                            current.selectedModel?.id; // 模型变化也触发重建
+                  }
+                  // 优化 ChatSessionsLoaded 状态更新检查
+                  if (previous is ChatSessionsLoaded &&
+                      current is ChatSessionsLoaded) {
+                    return previous.sessions !=
+                            current.sessions || // 列表实例或内容变化（浅比较）
+                        previous.error != current.error;
+                  }
+                  // 如果状态类型不同，也重建
+                  return previous.runtimeType != current.runtimeType;
+                },
                 builder: (context, state) {
-                  print('Building chat UI for state: $state');
-                  if (state is ChatSessionsLoading) {
+                  AppLogger.i('Screens/chat/widgets/ai_chat_sidebar',
+                      'Building chat UI for state: ${state.runtimeType}');
+                  // --- 加载状态处理 ---
+                  if (state is ChatSessionsLoading ||
+                      state is ChatSessionLoading) {
+                    AppLogger.d('AIChatSidebar builder',
+                        'State is Loading, showing indicator.');
                     return const Center(child: CircularProgressIndicator());
-                  } else if (state is ChatSessionsLoaded) {
-                    return _buildThreadsList(state.sessions);
-                  } else if (state is ChatSessionLoading) {
-                    return const Center(child: CircularProgressIndicator());
-                  } else if (state is ChatSessionActive) {
-                    return _buildChatView(state);
-                  } else if (state is ChatError) {
-                    return Center(child: Text('错误: ${state.message}'));
-                  } else {
-                    return _buildEmptyState();
+                  }
+                  // --- 错误状态处理 ---
+                  else if (state is ChatError) {
+                    AppLogger.d('AIChatSidebar builder',
+                        'State is ChatError, showing error message.');
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text('错误: ${state.message}',
+                            style: TextStyle(color: Colors.red)),
+                      ),
+                    );
+                  }
+                  // --- 会话列表状态 ---
+                  else if (state is ChatSessionsLoaded) {
+                    AppLogger.d('AIChatSidebar builder',
+                        'State is ChatSessionsLoaded with ${state.sessions.length} sessions.');
+                    return _buildThreadsList(
+                        context, state); // _buildThreadsList 会处理空列表
+                  }
+                  // --- 活动会话状态 ---
+                  else if (state is ChatSessionActive) {
+                    AppLogger.d('AIChatSidebar builder',
+                        'State is ChatSessionActive. isLoadingHistory: ${state.isLoadingHistory}, isGenerating: ${state.isGenerating}');
+                    return _buildChatView(context, state);
+                  }
+                  // --- 初始或其他状态 ---
+                  else {
+                    AppLogger.d('AIChatSidebar builder',
+                        'State is Initial or unexpected, showing empty state.');
+                    // 初始状态可以显示空状态或者加载列表
+                    // context.read<ChatBloc>().add(LoadChatSessions(novelId: widget.novelId)); // 如果希望初始时自动加载
+                    return _buildEmptyState(); // 或者 return const Center(child: CircularProgressIndicator()); 看设计需求
                   }
                 },
               ),
@@ -207,126 +297,185 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
       ),
     );
   }
-  
+
   // 构建空状态
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text(
-            '开始一个新的对话',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.chat_bubble_outline,
+                size: 56, color: Theme.of(context).colorScheme.secondary),
+            const SizedBox(height: 20),
+            Text(
+              '开始一个新的对话',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+              textAlign: TextAlign.center,
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '与AI助手交流，获取写作灵感和建议',
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _createNewThread,
-            child: const Text('新建对话'),
-          ),
-        ],
+            const SizedBox(height: 12),
+            Text(
+              '与AI助手交流，获取写作灵感、建议或进行头脑风暴',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _createNewThread,
+              icon: const Icon(Icons.add_comment_outlined),
+              label: const Text('新建对话'),
+              style: ElevatedButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                textStyle: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                backgroundColor: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
-  
+
   // 构建会话列表
-  Widget _buildThreadsList(List<ChatSession> sessions) {
+  Widget _buildThreadsList(BuildContext context, ChatSessionsLoaded state) {
+    // 现在接收整个 state 以便访问 error
+    final sessions = state.sessions;
+
+    if (sessions.isEmpty) {
+      // 即使列表为空，也不显示加载，显示空状态
+      return _buildEmptyState();
+    }
     return Column(
       children: [
-        // 顶部标题栏
-        _buildHeader('聊天'),
-        
-        // 搜索框
+        // 新建对话按钮
         Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: TextField(
-            decoration: InputDecoration(
-              hintText: 'Search threads...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 8),
-            ),
-          ),
-        ),
-        
-        // 新建会话按钮
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
           child: OutlinedButton.icon(
             onPressed: _createNewThread,
-            icon: const Icon(Icons.add),
-            label: const Text('New Thread'),
+            icon: const Icon(Icons.add_comment_outlined),
+            label: const Text('新建对话'),
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(40),
+              minimumSize: const Size.fromHeight(44),
+              foregroundColor: Theme.of(context).colorScheme.primary,
+              side: BorderSide(
+                  color:
+                      Theme.of(context).colorScheme.outline.withOpacity(0.8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+              textStyle: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
         ),
-        
-        // 未固定会话标题
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Row(
-            children: [
-              Text(
-                'Unpinned',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${sessions.length} threads',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 12,
-                ),
-              ),
-              const Spacer(),
-              Icon(
-                Icons.keyboard_arrow_up,
-                size: 16,
-                color: Colors.grey.shade600,
-              ),
-            ],
-          ),
-        ),
-        
-        // 会话列表
+        const Divider(height: 1, thickness: 1, indent: 16, endIndent: 16),
+        // 列表视图
         Expanded(
-          child: ListView.builder(
+          child: ListView.separated(
             itemCount: sessions.length,
+            separatorBuilder: (context, index) => Divider(
+              height: 1,
+              thickness: 1,
+              indent: 16,
+              endIndent: 16,
+              color:
+                  Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3),
+            ),
             itemBuilder: (context, index) {
               final session = sessions[index];
+              // 获取当前活动会话 ID （需要 ChatBloc 的状态信息，这里假设可以从 context 获取）
+              String? activeSessionId;
+              final currentState = context.read<ChatBloc>().state;
+              if (currentState is ChatSessionActive) {
+                activeSessionId = currentState.session.id;
+              }
+              final bool isSelected = session.id == activeSessionId;
+
               return ListTile(
+                leading: Icon(
+                  isSelected ? Icons.chat_bubble : Icons.chat_bubble_outline,
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
                 title: Text(
                   session.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  'Chapter 1: ${session.chapterId ?? "全局"} - Scene 1',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                trailing: Text(
-                  _formatDate(session.lastUpdatedAt),
                   style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
+                subtitle: Text(
+                  '最后更新: ${DateFormat('MM-dd HH:mm').format(session.lastUpdatedAt)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withOpacity(0.8),
+                      ),
+                ),
+                trailing: IconButton(
+                  icon: Icon(Icons.delete_outline,
+                      color: Colors.grey.shade500, size: 20),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (BuildContext dialogContext) {
+                        return AlertDialog(
+                          title: const Text('确认删除'),
+                          content:
+                              Text('确定要删除会话 "${session.title}" 吗？此操作无法撤销。'),
+                          actions: <Widget>[
+                            TextButton(
+                              child: const Text('取消'),
+                              onPressed: () {
+                                Navigator.of(dialogContext).pop();
+                              },
+                            ),
+                            TextButton(
+                              child: Text('删除',
+                                  style: TextStyle(
+                                      color:
+                                          Theme.of(context).colorScheme.error)),
+                              onPressed: () {
+                                context.read<ChatBloc>().add(
+                                    DeleteChatSession(sessionId: session.id));
+                                Navigator.of(dialogContext).pop();
+                              },
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                  tooltip: '删除会话',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                selected: isSelected,
+                selectedTileColor: Theme.of(context)
+                    .colorScheme
+                    .primaryContainer
+                    .withOpacity(0.1),
                 onTap: () => _selectSession(session.id),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
               );
             },
           ),
@@ -334,322 +483,85 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
       ],
     );
   }
-  
+
   // 构建聊天视图
-  Widget _buildChatView(ChatSessionActive state) {
+  Widget _buildChatView(BuildContext context, ChatSessionActive state) {
+    // --- 获取当前会话选择的模型 ---
+    // 现在可以直接从 state 获取 selectedModel
+    final UserAIModelConfigModel? currentChatModel = state.selectedModel;
+
     return Column(
       children: [
-        // 顶部标题栏
-        _buildChatHeader(state),
-        
-        // 消息列表
+        // 显示历史加载指示器
+        if (state.isLoadingHistory)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8.0),
+            child: Center(
+                child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2))),
+          ),
+        // 显示加载历史或发送消息时的错误信息（如果需要更持久的提示）
+        // if (state.error != null)
+        //   Padding(
+        //     padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+        //     child: Text(state.error!, style: TextStyle(color: Colors.red)),
+        //   ),
         Expanded(
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.all(16),
-            itemCount: state.session.messages.length + (state.isGenerating ? 1 : 0),
-            itemBuilder: (context, index) {
-              // 如果是最后一项且正在生成，显示打字指示器
-              if (state.isGenerating && index == state.session.messages.length) {
-                return _buildTypingIndicator();
-              }
-              
-              final message = state.session.messages[index];
-              return _buildMessageBubble(message);
-            },
-          ),
-        ),
-        
-        // 底部输入框
-        _buildInputArea(state),
-      ],
-    );
-  }
-  
-  // 构建顶部标题栏
-  Widget _buildHeader(String title) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor,
-            width: 1.0,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: widget.onClose,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  // 构建聊天标题栏
-  Widget _buildChatHeader(ChatSessionActive state) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor,
-            width: 1.0,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () {
-              context.read<ChatBloc>().add(LoadChatSessions(novelId: widget.novelId));
-            },
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  state.session.title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Row(
-                  children: [
-                    GestureDetector(
-                      onTap: _selectAIModel,
-                      child: Row(
-                        children: [
-                          Text(
-                            _selectedAIModel ?? 'General Purpose',
-                            style: TextStyle(
-                              color: Colors.grey.shade700,
-                              fontSize: 12,
-                            ),
-                          ),
-                          Icon(
-                            Icons.arrow_drop_down,
-                            size: 16,
-                            color: Colors.grey.shade700,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.pin),
-            onPressed: () {},
-            tooltip: 'Pin',
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () {},
-            tooltip: 'More options',
-          ),
-        ],
-      ),
-    );
-  }
-  
-  // 构建消息气泡
-  Widget _buildMessageBubble(ChatMessage message) {
-    final isUser = message.role == MessageRole.user;
-    
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isUser) ...[
-            CircleAvatar(
-              backgroundColor: Colors.grey.shade200,
-              radius: 16,
-              child: const Icon(Icons.smart_toy, size: 20),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isUser ? Colors.blue.shade100 : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    message.content,
-                    style: TextStyle(
-                      color: Colors.grey.shade800,
-                    ),
-                  ),
-                  if (message.actions != null && message.actions!.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: message.actions!.map((action) {
-                        return ActionChip(
-                          label: Text(action.label),
-                          onPressed: () {},
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          if (isUser) ...[
-            const SizedBox(width: 8),
-            CircleAvatar(
-              backgroundColor: Colors.blue.shade200,
-              radius: 16,
-              child: const Icon(Icons.person, size: 20, color: Colors.white),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-  
-  // 构建打字指示器
-  Widget _buildTypingIndicator() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            backgroundColor: Colors.grey.shade200,
-            radius: 16,
-            child: const Icon(Icons.smart_toy, size: 20),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildDot(1),
-                _buildDot(2),
-                _buildDot(3),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  // 构建打字指示器的点
-  Widget _buildDot(int index) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 2),
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(
-        color: Colors.grey.shade400,
-        shape: BoxShape.circle,
-      ),
-    );
-  }
-  
-  // 构建输入区域
-  Widget _buildInputArea(ChatSessionActive state) {
-    return Container(
-      padding: const EdgeInsets.all(8.0),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: Theme.of(context).dividerColor,
-            width: 1.0,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              decoration: InputDecoration(
-                hintText: 'Type your message...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                suffixIcon: state.isGenerating
-                    ? IconButton(
-                        icon: const Icon(Icons.stop),
-                        onPressed: () {
-                          context.read<ChatBloc>().add(const CancelOngoingRequest());
-                        },
-                      )
-                    : null,
-              ),
-              maxLines: null,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (value) {
-                if (!state.isGenerating) {
-                  _sendMessage();
+          child: Container(
+            color: Theme.of(context).colorScheme.surface,
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.all(16),
+              itemCount: state.messages.length +
+                  (state.isGenerating && !state.isLoadingHistory ? 1 : 0),
+              itemBuilder: (context, index) {
+                // 打字指示器逻辑保持不变，并增加 isLoadingHistory 判断
+                if (state.isGenerating &&
+                    !state.isLoadingHistory &&
+                    index == state.messages.length) {
+                  return const TypingIndicator();
                 }
+
+                final message = state.messages[index];
+                // ChatMessageBubble 逻辑保持不变
+                return ChatMessageBubble(
+                  message: message,
+                  onActionSelected: (action) {
+                    context.read<ChatBloc>().add(ExecuteAction(action: action));
+                  },
+                );
               },
             ),
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.send),
-            onPressed: state.isGenerating ? null : _sendMessage,
-            color: Colors.blue,
+        ),
+        // ChatInput 背景应与聊天视图背景一致或略有区分
+        Container(
+          color: Theme.of(context).colorScheme.surface,
+          child: ChatInput(
+            controller: _messageController,
+            onSend: _sendMessage,
+            isGenerating: state.isGenerating,
+            onCancel: () {
+              context.read<ChatBloc>().add(const CancelOngoingRequest());
+            },
+            initialModel: currentChatModel,
+            onModelSelected: (selectedModel) {
+              if (selectedModel != null &&
+                  selectedModel.id != currentChatModel?.id) {
+                // 使用正确的事件类
+                context.read<ChatBloc>().add(UpdateChatModel(
+                      sessionId: state.session.id,
+                      modelConfigId: selectedModel.id,
+                    ));
+                AppLogger.i('AIChatSidebar',
+                    'Model selected event dispatched: ${selectedModel.id} for session ${state.session.id}');
+              }
+            },
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
-  
-  // 格式化日期
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-    
-    if (difference.inDays > 0) {
-      return '${difference.inDays}天前';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}小时前';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}分钟前';
-    } else {
-      return '刚刚';
-    }
-  }
-} 
+}

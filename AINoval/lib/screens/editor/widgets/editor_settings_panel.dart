@@ -2,7 +2,6 @@ import 'package:ainoval/models/editor_settings.dart';
 import 'package:flutter/material.dart';
 
 class EditorSettingsPanel extends StatefulWidget {
-  
   const EditorSettingsPanel({
     super.key,
     required this.settings,
@@ -17,7 +16,7 @@ class EditorSettingsPanel extends StatefulWidget {
 
 class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
   late EditorSettings _settings;
-  
+
   @override
   void initState() {
     super.initState();
@@ -26,11 +25,18 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final cardShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12.0),
+    );
+    const cardElevation = 2.0;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         // 字体大小设置
         Card(
+          shape: cardShape,
+          elevation: cardElevation,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -77,11 +83,13 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
             ),
           ),
         ),
-        
+
         const SizedBox(height: 16),
-        
+
         // 行间距设置
         Card(
+          shape: cardShape,
+          elevation: cardElevation,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -144,11 +152,13 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
             ),
           ),
         ),
-        
+
         const SizedBox(height: 16),
-        
+
         // 字体选择
         Card(
+          shape: cardShape,
+          elevation: cardElevation,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -166,7 +176,8 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
                   value: _settings.fontFamily,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   ),
                   items: const [
                     DropdownMenuItem(
@@ -205,11 +216,13 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
             ),
           ),
         ),
-        
+
         const SizedBox(height: 16),
-        
+
         // 自动保存设置
         Card(
+          shape: cardShape,
+          elevation: cardElevation,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -242,7 +255,8 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
                     min: 30,
                     max: 300,
                     divisions: 9,
-                    label: '${(_settings.autoSaveIntervalMinutes / 60).toStringAsFixed(1)}分钟',
+                    label:
+                        '${(_settings.autoSaveIntervalMinutes / 60).toStringAsFixed(1)}分钟',
                     onChanged: (value) {
                       setState(() {
                         _settings = _settings.copyWith(
@@ -265,11 +279,13 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
             ),
           ),
         ),
-        
+
         const SizedBox(height: 16),
-        
+
         // 拼写检查
         Card(
+          shape: cardShape,
+          elevation: cardElevation,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -297,11 +313,13 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
             ),
           ),
         ),
-        
+
         const SizedBox(height: 16),
-        
+
         // 主题模式
         Card(
+          shape: cardShape,
+          elevation: cardElevation,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -332,4 +350,4 @@ class _EditorSettingsPanelState extends State<EditorSettingsPanel> {
       ],
     );
   }
-} 
+}
