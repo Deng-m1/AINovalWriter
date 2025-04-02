@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class AppTheme {
   static const Color primaryColor = Color(0xFF1A73E8);
   static const Color secondaryColor = Color(0xFF009688);
-  
+
   // 浅色主题
   static final ThemeData lightTheme = ThemeData(
     useMaterial3: true,
@@ -56,7 +56,7 @@ class AppTheme {
       foregroundColor: Colors.white,
     ),
   );
-  
+
   // 深色主题
   static final ThemeData darkTheme = ThemeData(
     useMaterial3: true,
@@ -109,4 +109,4 @@ class AppTheme {
       foregroundColor: Colors.white,
     ),
   );
-} 
+}
