@@ -1,6 +1,8 @@
 package com.ainovel.server.service.impl;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -18,7 +20,10 @@ import com.ainovel.server.service.NovelService;
 import com.ainovel.server.service.PromptService;
 import com.ainovel.server.service.UserService;
 import com.ainovel.server.service.ai.AIModelProvider;
+import com.ainovel.server.service.rag.NovelRagAssistant;
 
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.retriever.Retriever;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -41,6 +46,12 @@ public class NovelAIServiceImpl implements NovelAIService {
 
     // 是否使用LangChain4j实现
     private boolean useLangChain4j = true;
+
+    @Autowired
+    private Retriever<TextSegment> contentRetriever;
+
+    @Autowired
+    private NovelRagAssistant novelRagAssistant;
 
     @Autowired
     public NovelAIServiceImpl(
@@ -181,6 +192,26 @@ public class NovelAIServiceImpl implements NovelAIService {
     }
 
     @Override
+    public Mono<AIResponse> generateNextOutlines(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance) {
+        log.info("为小说 {} 生成下一剧情大纲选项", novelId);
+
+        // 设置默认值
+        int optionsCount = numberOfOptions != null ? numberOfOptions : 3;
+        String guidance = authorGuidance != null ? authorGuidance : "";
+
+        return createNextOutlinesGenerationRequest(novelId, currentContext, optionsCount, guidance)
+                .flatMap(this::enrichRequestWithContext)
+                .flatMap(enrichedRequest -> {
+                    // 获取AI模型提供商并直接调用
+                    return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
+                            .flatMap(provider -> {
+                                // 直接使用业务请求调用提供商
+                                return provider.generateContent(enrichedRequest);
+                            });
+                });
+    }
+
+    @Override
     public Mono<AIResponse> generateChatResponse(String userId, String sessionId, String content, Map<String, Object> metadata) {
         return getAIModelProvider(userId, null)
                 .flatMap(provider -> {
@@ -235,31 +266,168 @@ public class NovelAIServiceImpl implements NovelAIService {
      * @return 丰富后的请求
      */
     private Mono<AIRequest> enrichRequestWithContext(AIRequest request) {
-        if (request.getEnableContext() != null && !request.getEnableContext()) {
+        // 如果没有指定小说ID，则直接返回原始请求
+        if (request.getNovelId() == null || request.getNovelId().isEmpty()) {
             return Mono.just(request);
         }
 
-        String novelId = request.getNovelId();
-        if (novelId == null || novelId.isEmpty()) {
-            return Mono.just(request);
+        log.info("为请求丰富上下文，小说ID: {}", request.getNovelId());
+
+        // 获取是否启用RAG
+        boolean enableRag = request.getMetadata() != null
+                && request.getMetadata().getOrDefault("enableRag", "false").toString().equalsIgnoreCase("true");
+
+        if (!enableRag) {
+            // 如果未启用RAG，使用原有逻辑
+            return getNovelContextFromDatabase(request);
         }
 
-        // 获取相关上下文
-        return knowledgeService.retrieveRelevantContext(request.getPrompt(), novelId)
+        log.info("为请求使用RAG检索上下文，小说ID: {}", request.getNovelId());
+
+        // 从请求中提取查询文本
+        String queryText = extractQueryTextFromRequest(request);
+
+        if (queryText.isEmpty()) {
+            return getNovelContextFromDatabase(request);
+        }
+
+        // 使用ContentRetriever检索相关上下文
+        return Mono.fromCallable(() -> {
+            List<TextSegment> relevantSegments = contentRetriever.findRelevant(queryText);
+
+            if (relevantSegments.isEmpty()) {
+                log.info("RAG未找到相关上下文，使用数据库检索");
+                return request;
+            }
+
+            log.info("RAG检索到 {} 个相关段落", relevantSegments.size());
+
+            // 格式化检索到的上下文
+            String relevantContext = formatRetrievedContext(relevantSegments);
+
+            // 将检索到的上下文添加到系统消息中
+            if (request.getMessages() == null) {
+                request.setMessages(new ArrayList<>());
+            }
+
+            // 添加系统消息
+            AIRequest.Message systemMessage = new AIRequest.Message();
+            systemMessage.setRole("system");
+            systemMessage.setContent("你是一位小说创作助手。以下是一些相关的上下文信息，可能对回答有帮助：\n\n" + relevantContext);
+
+            // 在消息列表开头插入系统消息
+            if (!request.getMessages().isEmpty()) {
+                request.getMessages().add(0, systemMessage);
+            } else {
+                request.getMessages().add(systemMessage);
+            }
+
+            // 在元数据中标记已使用RAG
+            if (request.getMetadata() != null) {
+                request.getMetadata().put("usedRag", "true");
+            }
+
+            return request;
+        }).onErrorResume(e -> {
+            log.error("使用RAG检索上下文时出错", e);
+            return getNovelContextFromDatabase(request);
+        });
+    }
+
+    /**
+     * 从数据库获取小说上下文（原有逻辑）
+     *
+     * @param request AI请求
+     * @return 丰富的AI请求
+     */
+    private Mono<AIRequest> getNovelContextFromDatabase(AIRequest request) {
+        // 原有的从数据库获取上下文的逻辑
+        return knowledgeService.retrieveRelevantContext(extractQueryTextFromRequest(request), request.getNovelId())
                 .map(context -> {
-                    // 创建新的系统消息，包含上下文
-                    AIRequest.Message systemMessage = new AIRequest.Message();
-                    systemMessage.setRole("system");
-                    systemMessage.setContent("以下是小说的相关上下文信息，请在生成内容时参考：\n\n" + context);
+                    if (context != null && !context.isEmpty()) {
+                        log.info("从知识库中获取到相关上下文");
 
-                    // 添加到消息列表的开头
-                    request.getMessages().add(0, systemMessage);
+                        if (request.getMessages() == null) {
+                            request.setMessages(new ArrayList<>());
+                        }
+
+                        // 创建系统消息
+                        AIRequest.Message systemMessage = new AIRequest.Message();
+                        systemMessage.setRole("system");
+                        systemMessage.setContent("你是一位小说创作助手。以下是一些相关的上下文信息，可能对回答有帮助：\n\n" + context);
+
+                        // 在消息列表开头插入系统消息
+                        if (!request.getMessages().isEmpty()) {
+                            request.getMessages().add(0, systemMessage);
+                        } else {
+                            request.getMessages().add(systemMessage);
+                        }
+                    }
                     return request;
                 })
                 .onErrorResume(e -> {
-                    log.error("获取上下文失败", e);
+                    log.error("获取知识库上下文时出错", e);
                     return Mono.just(request);
-                });
+                })
+                .defaultIfEmpty(request);
+    }
+
+    /**
+     * 从请求中提取查询文本
+     *
+     * @param request AI请求
+     * @return 查询文本
+     */
+    private String extractQueryTextFromRequest(AIRequest request) {
+        // 从消息列表中提取用户最后一条消息
+        if (request.getMessages() != null && !request.getMessages().isEmpty()) {
+            return request.getMessages().stream()
+                    .filter(msg -> "user".equals(msg.getRole()))
+                    .reduce((first, second) -> second) // 获取最后一条用户消息
+                    .map(AIRequest.Message::getContent)
+                    .orElse("");
+        }
+
+        // 如果没有消息，则使用提示文本
+        return request.getPrompt() != null ? request.getPrompt() : "";
+    }
+
+    /**
+     * 格式化检索到的上下文
+     *
+     * @param segments 文本段落列表
+     * @return 格式化的上下文
+     */
+    private String formatRetrievedContext(List<TextSegment> segments) {
+        StringBuilder builder = new StringBuilder();
+
+        for (int i = 0; i < segments.size(); i++) {
+            TextSegment segment = segments.get(i);
+            builder.append("段落 #").append(i + 1).append(":\n");
+
+            // 添加元数据信息（如果存在）
+            if (segment.metadata() != null) {
+                Map<String, String> metadata = segment.metadata().asMap();
+                if (metadata.containsKey("title")) {
+                    builder.append("标题: ").append(metadata.get("title")).append("\n");
+                }
+                if (metadata.containsKey("sourceType")) {
+                    String sourceType = metadata.get("sourceType");
+                    if ("scene".equals(sourceType)) {
+                        builder.append("类型: 场景\n");
+                    } else if ("novel_metadata".equals(sourceType)) {
+                        builder.append("类型: 小说元数据\n");
+                    } else {
+                        builder.append("类型: ").append(sourceType).append("\n");
+                    }
+                }
+            }
+
+            // 添加文本内容
+            builder.append(segment.text()).append("\n\n");
+        }
+
+        return builder.toString();
     }
 
     /**
@@ -386,6 +554,41 @@ public class NovelAIServiceImpl implements NovelAIService {
                     AIRequest request = new AIRequest();
                     request.setNovelId(novelId);
                     request.setEnableContext(true);
+
+                    // 创建用户消息
+                    AIRequest.Message userMessage = new AIRequest.Message();
+                    userMessage.setRole("user");
+                    userMessage.setContent(prompt);
+
+                    request.getMessages().add(userMessage);
+                    return request;
+                });
+    }
+
+    /**
+     * 创建下一剧情大纲生成请求
+     *
+     * @param novelId 小说ID
+     * @param currentContext 当前剧情上下文
+     * @param numberOfOptions 希望生成的选项数量
+     * @param authorGuidance 作者引导
+     * @return AI请求
+     */
+    private Mono<AIRequest> createNextOutlinesGenerationRequest(String novelId, String currentContext, int numberOfOptions, String authorGuidance) {
+        return promptService.getNextOutlinesGenerationPrompt()
+                .map(promptTemplate -> {
+                    // 根据提示词模板替换变量
+                    String prompt = promptTemplate
+                            .replace("{{context}}", currentContext)
+                            .replace("{{numberOfOptions}}", String.valueOf(numberOfOptions))
+                            .replace("{{authorGuidance}}", authorGuidance.isEmpty() ? "" : "作者希望: " + authorGuidance);
+
+                    AIRequest request = new AIRequest();
+                    request.setNovelId(novelId);
+                    request.setEnableContext(true);
+
+                    // 设置较高的温度以获得多样性
+                    request.setTemperature(0.8);
 
                     // 创建用户消息
                     AIRequest.Message userMessage = new AIRequest.Message();

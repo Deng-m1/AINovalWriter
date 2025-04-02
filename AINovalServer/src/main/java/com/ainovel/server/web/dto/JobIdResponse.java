@@ -5,15 +5,15 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 小说ID数据传输对象
+ * 任务ID响应DTO
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class NovelIdDto {
+public class JobIdResponse {
 
     /**
-     * 小说ID
+     * 任务ID
      */
-    private String novelId;
+    private String jobId;
 }

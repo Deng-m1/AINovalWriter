@@ -151,4 +151,15 @@ public interface NovelAIService {
      * @return 流式聊天响应
      */
     Flux<String> generateChatResponseStream(String userId, String sessionId, String content, Map<String, Object> metadata);
+
+    /**
+     * 生成下一剧情大纲选项
+     *
+     * @param novelId 小说ID
+     * @param currentContext 当前剧情上下文（可以是最近一个场景ID、章节ID或剧情描述）
+     * @param numberOfOptions 希望生成的大纲选项数量（默认3）
+     * @param authorGuidance 作者希望的剧情引导（可选）
+     * @return 生成的多个剧情大纲选项
+     */
+    Mono<AIResponse> generateNextOutlines(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance);
 }

@@ -515,24 +515,6 @@ class Scene {
       history: [],
     );
   }
-
-  /// 创建一个默认的场景
-  static Scene createDefault(String sceneIdBase) {
-    const defaultContent = '{"ops":[{"insert":"\\n"}]}'; // <-- 确保是这个值
-    final now = DateTime.now();
-    return Scene(
-      id: sceneIdBase,
-      content: defaultContent,
-      wordCount: 0,
-      summary: Summary(
-        id: '${DateTime.now().millisecondsSinceEpoch}_summary',
-        content: '',
-      ),
-      lastEdited: now,
-      version: 1,
-      history: [],
-    );
-  }
 }
 
 /// 摘要模型

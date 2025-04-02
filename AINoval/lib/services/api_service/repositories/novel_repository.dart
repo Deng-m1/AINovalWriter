@@ -1,5 +1,6 @@
 import 'package:ainoval/models/novel_structure.dart';
 import 'package:ainoval/models/scene_version.dart';
+import 'package:ainoval/models/import_status.dart';
 
 /// 小说仓库接口
 /// 
@@ -87,4 +88,14 @@ abstract class NovelRepository {
     int versionIndex1,
     int versionIndex2
   );
+  
+  /// 导入小说文件
+  /// 
+  /// 返回导入任务的ID
+  Future<String> importNovel(List<int> fileBytes, String fileName);
+  
+  /// 获取导入任务状态流
+  /// 
+  /// 返回导入状态的实时更新
+  Stream<ImportStatus> getImportStatus(String jobId);
 } 

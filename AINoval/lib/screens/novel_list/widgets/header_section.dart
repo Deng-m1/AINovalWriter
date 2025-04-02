@@ -5,9 +5,11 @@ class HeaderSection extends StatelessWidget {
   const HeaderSection({
     super.key,
     required this.onCreateNovel,
+    required this.onImportNovel,
   });
 
   final VoidCallback onCreateNovel;
+  final VoidCallback onImportNovel;
 
   @override
   Widget build(BuildContext context) {
@@ -60,12 +62,7 @@ class HeaderSection extends StatelessWidget {
           Row(
             children: [
               ElevatedButton.icon(
-                onPressed: () {
-                  // TODO: 导入小说
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('导入功能将在下一个版本中实现')),
-                  );
-                },
+                onPressed: onImportNovel,
                 icon: const Icon(Icons.file_upload),
                 label: const Text('导入'),
                 style: ElevatedButton.styleFrom(

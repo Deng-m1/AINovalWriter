@@ -1,49 +1,45 @@
 package com.ainovel.server.web.base;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.web.reactive.function.server.ServerResponse;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.ainovel.server.common.exception.ResourceNotFoundException;
-import com.ainovel.server.common.exception.ValidationException;
-import com.ainovel.server.common.model.ErrorResponse;
+import com.ainovel.server.web.dto.ErrorResponse;
 
 import lombok.extern.slf4j.Slf4j;
-import reactor.core.publisher.Mono;
 
 /**
- * 响应式控制器基类
- * 提供统一的响应处理和错误处理
+ * 响应式Controller基类 提供通用的异常处理和错误响应
  */
 @Slf4j
-public abstract class ReactiveBaseController {
+@RestControllerAdvice
+public class ReactiveBaseController {
 
     /**
-     * 包装响应结果
-     * @param result 响应数据
-     * @return 包装后的响应
-     */
-    protected <T> Mono<ServerResponse> responseOf(Mono<T> result) {
-        return result
-            .flatMap(data -> ServerResponse.ok().bodyValue(data))
-            .onErrorResume(this::handleError);
-    }
-    
-    /**
-     * 统一错误处理
-     * @param error 错误信息
+     * 处理资源未找到异常
+     *
+     * @param ex 异常
      * @return 错误响应
      */
-    protected Mono<ServerResponse> handleError(Throwable error) {
-        log.error("处理请求时发生错误", error);
-        
-        if (error instanceof ValidationException) {
-            return ServerResponse.badRequest()
-                .bodyValue(new ErrorResponse(error.getMessage()));
-        } else if (error instanceof ResourceNotFoundException) {
-            return ServerResponse.notFound().build();
-        } else {
-            return ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .bodyValue(new ErrorResponse("服务器内部错误"));
-        }
+    @ExceptionHandler(ResourceNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ErrorResponse handleResourceNotFoundException(ResourceNotFoundException ex) {
+        log.error("资源未找到: {}", ex.getMessage());
+        return new ErrorResponse("NOT_FOUND", ex.getMessage());
     }
-} 
+
+    /**
+     * 处理通用异常
+     *
+     * @param ex 异常
+     * @return 错误响应
+     */
+    @ExceptionHandler(Exception.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ErrorResponse handleException(Exception ex) {
+        log.error("服务器内部错误: {}", ex.getMessage(), ex);
+        return new ErrorResponse("INTERNAL_SERVER_ERROR", "服务器内部错误: " + ex.getMessage());
+    }
+}

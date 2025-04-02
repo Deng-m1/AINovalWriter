@@ -1,6 +1,7 @@
 import 'package:ainoval/config/app_config.dart';
 import 'package:ainoval/models/novel_structure.dart';
 import 'package:ainoval/models/scene_version.dart';
+import 'package:ainoval/models/import_status.dart';
 import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 
@@ -319,6 +320,35 @@ class NovelRepositoryImpl implements NovelRepository {
           '比较版本差异失败',
           e);
       throw ApiException(500, '比较版本差异失败: $e');
+    }
+  }
+
+  /// 导入小说文件
+  @override
+  Future<String> importNovel(List<int> fileBytes, String fileName) async {
+    try {
+      return await _apiClient.importNovel(fileBytes, fileName);
+    } catch (e) {
+      AppLogger.e(
+          'Services/api_service/repositories/impl/novel_repository_impl',
+          '导入小说文件失败',
+          e);
+      rethrow;
+    }
+  }
+
+  /// 获取导入任务状态流
+  @override
+  Stream<ImportStatus> getImportStatus(String jobId) {
+    try {
+      return _apiClient.getImportStatusStream(jobId);
+    } catch (e) {
+      AppLogger.e(
+          'Services/api_service/repositories/impl/novel_repository_impl',
+          '获取导入状态流失败',
+          e);
+      // 在流处理中，返回带有错误的流而不是抛出异常
+      return Stream.error(e is ApiException ? e : ApiException(-1, '获取导入状态流失败: $e'));
     }
   }
 

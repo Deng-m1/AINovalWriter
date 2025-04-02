@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:ainoval/config/app_config.dart' hide LogLevel;
 import 'package:ainoval/models/chat_models.dart';
+import 'package:ainoval/models/import_status.dart';
 import 'package:ainoval/models/user_ai_model_config_model.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/utils/logger.dart';
@@ -208,9 +210,140 @@ class ApiClient {
 
   //==== 小说相关接口 ====//
 
+  /// 导入小说文件
+  Future<String> importNovel(List<int> fileBytes, String fileName) async {
+    try {
+      // 创建 MultipartFile
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(
+          fileBytes,
+          filename: fileName,
+        ),
+      });
+
+      // 设置接收 JobId 的选项
+      final options = Options(
+        contentType: 'multipart/form-data',
+        responseType: ResponseType.json,
+      );
+
+      // 发送上传请求
+      final response = await _dio.post('/api/v1/novels/import', 
+        data: formData,
+        options: options,
+      );
+
+      // 响应应该包含一个 jobId
+      if (response.data is Map<String, dynamic> && 
+          response.data.containsKey('jobId')) {
+        return response.data['jobId'];
+      } else {
+        AppLogger.e('ApiClient', '导入小说响应格式不正确: ${response.data}');
+        throw ApiException(-1, '导入请求响应格式不正确');
+      }
+    } on DioException catch (e) {
+      AppLogger.e('ApiClient', '导入小说文件失败', e);
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '导入小说文件失败', e);
+      throw ApiException(-1, '导入小说文件失败: ${e.toString()}');
+    }
+  }
+
+  /// 获取小说导入状态 SSE 流
+  Stream<ImportStatus> getImportStatusStream(String jobId) {
+    final url = '${_dio.options.baseUrl}/api/v1/novels/import/$jobId/status';
+    
+    return _connectToEventSource(url, 'getImportStatusStream');
+  }
+
+  /// 连接到SSE事件源并解析ImportStatus事件
+  Stream<ImportStatus> _connectToEventSource(String url, String logContext) {
+    final controller = StreamController<ImportStatus>();
+    
+    // 使用原生HttpClient来处理SSE连接
+    final client = HttpClient();
+    client.autoUncompress = true;
+    
+    // 异步连接到事件源
+    client.getUrl(Uri.parse(url)).then((request) {
+      // 设置请求头
+      final token = AppConfig.authToken;
+      if (token != null) {
+        request.headers.add('Authorization', 'Bearer $token');
+      }
+      request.headers.add('Accept', 'text/event-stream');
+      request.headers.add('Cache-Control', 'no-cache');
+      
+      return request.close();
+    }).then((response) {
+      // 处理响应
+      if (response.statusCode != 200) {
+        controller.addError(
+          ApiException(response.statusCode, '连接到导入状态流失败: HTTP ${response.statusCode}')
+        );
+        controller.close();
+        client.close();
+        return;
+      }
+      
+      // 处理SSE事件流
+      response.transform(utf8.decoder).transform(const LineSplitter()).listen(
+        (line) {
+          try {
+            if (line.isEmpty) return;
+            
+            if (line.startsWith('data:')) {
+              final eventData = line.substring(5).trim();
+              if (eventData.isNotEmpty) {
+                final json = jsonDecode(eventData);
+                if (json is Map<String, dynamic>) {
+                  final status = ImportStatus.fromJson(json);
+                  AppLogger.i('ApiClient', '[$logContext] 收到状态更新: ${status.status} - ${status.message}');
+                  controller.add(status);
+                  
+                  // 如果收到完成或失败状态，关闭流
+                  if (status.status == 'COMPLETED' || status.status == 'FAILED') {
+                    AppLogger.i('ApiClient', '[$logContext] 导入任务已${status.status == 'COMPLETED' ? '完成' : '失败'}，关闭SSE连接');
+                    controller.close();
+                    client.close();
+                  }
+                }
+              }
+            }
+          } catch (e, stack) {
+            AppLogger.e('ApiClient', '[$logContext] 解析SSE事件失败: $line', e, stack);
+          }
+        },
+        onError: (e, stack) {
+          AppLogger.e('ApiClient', '[$logContext] SSE流错误', e, stack);
+          controller.addError(e is ApiException ? e : ApiException(-1, '读取SSE流错误: $e'), stack);
+          controller.close();
+          client.close();
+        },
+        onDone: () {
+          AppLogger.i('ApiClient', '[$logContext] SSE流已关闭');
+          if (!controller.isClosed) {
+            controller.close();
+          }
+          client.close();
+        },
+      );
+    }).catchError((e, stack) {
+      AppLogger.e('ApiClient', '[$logContext] 连接到SSE流失败', e, stack);
+      if (!controller.isClosed) {
+        controller.addError(e is ApiException ? e : ApiException(-1, '连接SSE流失败: $e'), stack);
+        controller.close();
+      }
+      client.close();
+    });
+    
+    return controller.stream;
+  }
+
   /// 根据作者ID获取小说列表
   Future<dynamic> getNovelsByAuthor(String authorId) async {
-    return post('/novels/get-by-author', data: {'authorId': authorId});
+    return post('/api/v1/novels/get-by-author', data: {'authorId': authorId});
   }
 
   /// 根据ID获取小说详情

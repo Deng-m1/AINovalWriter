@@ -5,15 +5,24 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.http.codec.multipart.FilePart;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.ainovel.server.common.security.CurrentUser;
 import com.ainovel.server.domain.model.Novel;
 import com.ainovel.server.domain.model.Scene;
 import com.ainovel.server.domain.model.Scene.HistoryEntry;
+import com.ainovel.server.service.ImportService;
 import com.ainovel.server.service.NovelService;
 import com.ainovel.server.service.SceneService;
 import com.ainovel.server.web.base.ReactiveBaseController;
@@ -21,6 +30,8 @@ import com.ainovel.server.web.dto.AuthorIdDto;
 import com.ainovel.server.web.dto.ChapterSceneDto;
 import com.ainovel.server.web.dto.ChapterScenesDto;
 import com.ainovel.server.web.dto.IdDto;
+import com.ainovel.server.web.dto.ImportStatus;
+import com.ainovel.server.web.dto.JobIdResponse;
 import com.ainovel.server.web.dto.NovelChapterDto;
 import com.ainovel.server.web.dto.NovelChapterSceneDto;
 import com.ainovel.server.web.dto.NovelWithScenesDto;
@@ -31,12 +42,14 @@ import com.ainovel.server.web.dto.SceneVersionCompareDto;
 import com.ainovel.server.web.dto.SceneVersionDiff;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
  * 小说控制器
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/novels")
 @RequiredArgsConstructor
@@ -44,10 +57,11 @@ public class NovelController extends ReactiveBaseController {
 
     private final NovelService novelService;
     private final SceneService sceneService;
+    private final ImportService importService;
 
     /**
      * 创建小说
-     * 
+     *
      * @param novel 小说信息
      * @return 创建的小说
      */
@@ -59,7 +73,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 获取小说详情
-     * 
+     *
      * @param idDto 包含小说ID的DTO
      * @return 小说信息
      */
@@ -70,7 +84,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 获取小说详情及其所有场景内容
-     * 
+     *
      * @param idDto 包含小说ID的DTO
      * @return 小说及其所有场景数据
      */
@@ -81,7 +95,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 更新小说及其所有场景内容
-     * 
+     *
      * @param novelWithScenesDto 包含小说信息及其所有场景数据的DTO
      * @return 更新后的小说及场景数据
      */
@@ -92,11 +106,11 @@ public class NovelController extends ReactiveBaseController {
         List<Scene> scenes = novelWithScenesDto.getScenesByChapter().values().stream()
                 .flatMap(List::stream) // 将多个 List<Scene> 合并成一个 Stream<Scene>
                 .toList(); // 收集成一个新的 List<Scene>
-        
+
         // 确保所有场景关联到正确的小说ID
         // 注意：ChapterId 应该在构建 DTO 时已经正确设置在每个 Scene 对象中
         scenes.forEach(scene -> scene.setNovelId(novel.getId()));
-        
+
         // 首先更新小说
         return novelService.updateNovel(novel.getId(), novel)
                 // 然后更新所有场景
@@ -108,12 +122,12 @@ public class NovelController extends ReactiveBaseController {
                                 // 将更新后的场景列表重新按 ChapterId 分组
                                 Map<String, List<Scene>> updatedScenesByChapter = updatedScenes.stream()
                                         .collect(Collectors.groupingBy(Scene::getChapterId));
-                                
+
                                 // 构建返回对象
                                 NovelWithScenesDto result = new NovelWithScenesDto();
                                 result.setNovel(updatedNovel);
                                 // 设置分组后的 Map
-                                result.setScenesByChapter(updatedScenesByChapter); 
+                                result.setScenesByChapter(updatedScenesByChapter);
                                 return result;
                             });
                 });
@@ -121,7 +135,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 更新小说
-     * 
+     *
      * @param novelUpdateDto 包含小说ID和更新信息的DTO
      * @return 更新后的小说
      */
@@ -144,7 +158,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 获取作者的所有小说
-     * 
+     *
      * @param authorIdDto 包含作者ID的DTO
      * @return 小说列表
      */
@@ -155,7 +169,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 搜索小说
-     * 
+     *
      * @param searchDto 包含标题关键词的DTO
      * @return 小说列表
      */
@@ -166,7 +180,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 获取小说章节的场景内容（按顺序排序）
-     * 
+     *
      * @param novelChapterDto 包含小说ID和章节ID的DTO
      * @return 排序后的场景列表
      */
@@ -178,7 +192,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 获取小说章节的特定场景内容
-     * 
+     *
      * @param novelChapterSceneDto 包含小说ID、章节ID和场景ID的DTO
      * @return 场景内容
      */
@@ -186,13 +200,13 @@ public class NovelController extends ReactiveBaseController {
     public Mono<Scene> getChapterScene(@RequestBody NovelChapterSceneDto novelChapterSceneDto) {
         return sceneService.findSceneById(novelChapterSceneDto.getSceneId())
                 .filter(scene -> scene.getNovelId().equals(novelChapterSceneDto.getNovelId())
-                        && scene.getChapterId().equals(novelChapterSceneDto.getChapterId()))
+                && scene.getChapterId().equals(novelChapterSceneDto.getChapterId()))
                 .switchIfEmpty(Mono.error(new RuntimeException("场景不存在或不属于指定的小说和章节")));
     }
 
     /**
      * 创建小说章节的场景内容
-     * 
+     *
      * @param chapterSceneDto 包含小说ID、章节ID和场景内容的DTO
      * @return 创建的场景
      */
@@ -209,7 +223,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 批量创建小说章节的场景内容
-     * 
+     *
      * @param chapterScenesDto 包含小说ID、章节ID和场景列表的DTO
      * @return 创建的场景列表
      */
@@ -228,7 +242,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 创建或更新小说章节的场景内容
-     * 
+     *
      * @param chapterSceneDto 包含小说ID、章节ID和场景内容的DTO
      * @return 更新后的场景
      */
@@ -244,7 +258,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 批量创建或更新小说章节的场景内容
-     * 
+     *
      * @param chapterScenesDto 包含小说ID、章节ID和场景列表的DTO
      * @return 更新后的场景列表
      */
@@ -262,7 +276,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 更新小说章节的特定场景内容
-     * 
+     *
      * @param novelChapterSceneDto 包含小说ID、章节ID、场景ID和更新信息的DTO
      * @return 更新后的场景
      */
@@ -279,7 +293,7 @@ public class NovelController extends ReactiveBaseController {
 
     /**
      * 删除小说章节的特定场景
-     * 
+     *
      * @param novelChapterSceneDto 包含小说ID、章节ID和场景ID的DTO
      * @return 操作结果
      */
@@ -288,14 +302,14 @@ public class NovelController extends ReactiveBaseController {
     public Mono<Void> deleteChapterScene(@RequestBody NovelChapterSceneDto novelChapterSceneDto) {
         return sceneService.findSceneById(novelChapterSceneDto.getSceneId())
                 .filter(scene -> scene.getNovelId().equals(novelChapterSceneDto.getNovelId())
-                        && scene.getChapterId().equals(novelChapterSceneDto.getChapterId()))
+                && scene.getChapterId().equals(novelChapterSceneDto.getChapterId()))
                 .switchIfEmpty(Mono.error(new RuntimeException("场景不存在或不属于指定的小说和章节")))
                 .flatMap(scene -> sceneService.deleteScene(novelChapterSceneDto.getSceneId()));
     }
 
     /**
      * 删除小说章节的所有场景
-     * 
+     *
      * @param novelChapterDto 包含小说ID和章节ID的DTO
      * @return 操作结果
      */
@@ -310,10 +324,9 @@ public class NovelController extends ReactiveBaseController {
     }
 
     // ============================== 场景版本控制相关API ==============================
-
     /**
      * 更新场景内容并保存历史版本
-     * 
+     *
      * @param sceneContentUpdateDto 包含小说ID、章节ID、场景ID和更新数据的DTO
      * @return 更新后的场景
      */
@@ -327,12 +340,12 @@ public class NovelController extends ReactiveBaseController {
                 .filter(scene -> scene.getNovelId().equals(novelId) && scene.getChapterId().equals(chapterId))
                 .switchIfEmpty(Mono.error(new RuntimeException("场景不存在或不属于指定的小说和章节")))
                 .flatMap(scene -> sceneService.updateSceneContent(sceneId, sceneContentUpdateDto.getContent(),
-                        sceneContentUpdateDto.getUserId(), sceneContentUpdateDto.getReason()));
+                sceneContentUpdateDto.getUserId(), sceneContentUpdateDto.getReason()));
     }
 
     /**
      * 获取场景的历史版本列表
-     * 
+     *
      * @param novelChapterSceneDto 包含小说ID、章节ID和场景ID的DTO
      * @return 历史版本列表
      */
@@ -340,14 +353,14 @@ public class NovelController extends ReactiveBaseController {
     public Mono<List<HistoryEntry>> getChapterSceneHistory(@RequestBody NovelChapterSceneDto novelChapterSceneDto) {
         return sceneService.findSceneById(novelChapterSceneDto.getSceneId())
                 .filter(scene -> scene.getNovelId().equals(novelChapterSceneDto.getNovelId())
-                        && scene.getChapterId().equals(novelChapterSceneDto.getChapterId()))
+                && scene.getChapterId().equals(novelChapterSceneDto.getChapterId()))
                 .switchIfEmpty(Mono.error(new RuntimeException("场景不存在或不属于指定的小说和章节")))
                 .flatMap(scene -> sceneService.getSceneHistory(novelChapterSceneDto.getSceneId()));
     }
 
     /**
      * 恢复场景到指定的历史版本
-     * 
+     *
      * @param sceneRestoreDto 包含小说ID、章节ID、场景ID和恢复数据的DTO
      * @return 恢复后的场景
      */
@@ -361,12 +374,12 @@ public class NovelController extends ReactiveBaseController {
                 .filter(scene -> scene.getNovelId().equals(novelId) && scene.getChapterId().equals(chapterId))
                 .switchIfEmpty(Mono.error(new RuntimeException("场景不存在或不属于指定的小说和章节")))
                 .flatMap(scene -> sceneService.restoreSceneVersion(sceneId, sceneRestoreDto.getHistoryIndex(),
-                        sceneRestoreDto.getUserId(), sceneRestoreDto.getReason()));
+                sceneRestoreDto.getUserId(), sceneRestoreDto.getReason()));
     }
 
     /**
      * 对比两个场景版本
-     * 
+     *
      * @param sceneVersionCompareDto 包含小说ID、章节ID、场景ID和对比数据的DTO
      * @return 差异信息
      */
@@ -393,5 +406,36 @@ public class NovelController extends ReactiveBaseController {
                                 return dto;
                             });
                 });
+    }
+
+    /**
+     * 导入小说文件
+     *
+     * @param filePart 上传的文件部分
+     * @param currentUser 当前用户
+     * @return 导入任务ID
+     */
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Mono<ResponseEntity<JobIdResponse>> importNovel(
+            @RequestPart("file") FilePart filePart,
+            @CurrentUser String currentUserId) {
+
+        log.info("接收到小说导入请求: {}，大小: {}", filePart.filename(), filePart.headers().getContentLength());
+
+        return importService.startImport(filePart, currentUserId)
+                .map(jobId -> ResponseEntity
+                .status(HttpStatus.ACCEPTED)
+                .body(new JobIdResponse(jobId)));
+    }
+
+    /**
+     * 获取导入任务状态流
+     *
+     * @param jobId 任务ID
+     * @return SSE事件流
+     */
+    @GetMapping(value = "/import/{jobId}/status", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<ImportStatus>> getImportStatus(@PathVariable String jobId) {
+        return importService.getImportStatusStream(jobId);
     }
 }

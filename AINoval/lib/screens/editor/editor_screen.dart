@@ -52,7 +52,8 @@ class _EditorScreenState extends State<EditorScreen>
   final Map<String, TextEditingController> _sceneSummaryControllers = {};
 
   bool _isAIChatSidebarVisible = false; // 控制聊天侧边栏是否可见
-  bool _isSettingsPanelVisible = false; // <<< 添加状态变量
+  bool _isSettingsPanelVisible = false; // 控制设置面板是否可见
+  bool _isEditorSidebarVisible = true; // 控制编辑器侧边栏是否可见
 
   // 聊天侧边栏宽度相关状态
   double _chatSidebarWidth = 380; // 默认宽度
@@ -60,7 +61,14 @@ class _EditorScreenState extends State<EditorScreen>
   static const double _maxChatSidebarWidth = 500; // 最大宽度
   static const String _chatSidebarWidthPrefKey = 'chat_sidebar_width'; // 持久化键
 
-  String? _currentUserId; // <<< Store userId
+  // 编辑器侧边栏宽度相关状态
+  double _editorSidebarWidth = 280; // 默认宽度
+  static const double _minEditorSidebarWidth = 240; // 最小宽度
+  static const double _maxEditorSidebarWidth = 400; // 最大宽度
+  static const String _editorSidebarWidthPrefKey =
+      'editor_sidebar_width'; // 持久化键
+
+  String? _currentUserId; // Store userId
 
   @override
   void initState() {
@@ -86,8 +94,11 @@ class _EditorScreenState extends State<EditorScreen>
           'EditorScreen', 'User ID is null. Some features might be limited.');
     }
 
-    // 加载保存的侧边栏宽度
+    // 加载保存的聊天侧边栏宽度
     _loadSavedChatSidebarWidth();
+
+    // 加载保存的编辑器侧边栏宽度
+    _loadSavedEditorSidebarWidth();
   }
 
   // 加载保存的聊天侧边栏宽度
@@ -116,6 +127,80 @@ class _EditorScreenState extends State<EditorScreen>
     } catch (e) {
       AppLogger.e('EditorScreen', '保存侧边栏宽度失败', e);
     }
+  }
+
+  // 加载保存的编辑器侧边栏宽度
+  Future<void> _loadSavedEditorSidebarWidth() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedWidth = prefs.getDouble(_editorSidebarWidthPrefKey);
+      if (savedWidth != null) {
+        if (savedWidth >= _minEditorSidebarWidth &&
+            savedWidth <= _maxEditorSidebarWidth) {
+          setState(() {
+            _editorSidebarWidth = savedWidth;
+          });
+        }
+      }
+    } catch (e) {
+      AppLogger.e('EditorScreen', '加载编辑器侧边栏宽度失败', e);
+    }
+  }
+
+  // 保存编辑器侧边栏宽度
+  Future<void> _saveEditorSidebarWidth() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_editorSidebarWidthPrefKey, _editorSidebarWidth);
+    } catch (e) {
+      AppLogger.e('EditorScreen', '保存编辑器侧边栏宽度失败', e);
+    }
+  }
+
+  // 显示编辑器侧边栏宽度调整对话框
+  void _showEditorSidebarWidthDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('调整侧边栏宽度'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('当前宽度: ${_editorSidebarWidth.toInt()} 像素'),
+              const SizedBox(height: 16),
+              Slider(
+                value: _editorSidebarWidth,
+                min: _minEditorSidebarWidth,
+                max: _maxEditorSidebarWidth,
+                divisions: 8,
+                label: _editorSidebarWidth.toInt().toString(),
+                onChanged: (value) {
+                  setState(() {
+                    _editorSidebarWidth = value;
+                  });
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                _saveEditorSidebarWidth();
+                Navigator.pop(context);
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _ensureControllersForNovel(novel_models.Novel novel) {
@@ -348,7 +433,7 @@ class _EditorScreenState extends State<EditorScreen>
       BuildContext context, EditorLoaded state, AppLocalizations l10n) {
     final fallbackController = _getFallbackController(state);
 
-    // <<< Get userId, provide default or handle error if null >>>
+    // Get userId, provide default or handle error if null
     final userIdForPanel = _currentUserId;
 
     return Scaffold(
@@ -356,23 +441,49 @@ class _EditorScreenState extends State<EditorScreen>
         children: [
           Row(
             children: [
-              EditorSidebar(
-                novel: widget.novel,
-                tabController: _tabController,
-                onOpenAIChat: () {
-                  setState(() {
-                    _isAIChatSidebarVisible = true;
-                    _isSettingsPanelVisible = false; // 关闭设置面板
-                  });
-                },
-                onOpenSettings: () {
-                  // <<< 添加打开设置的回调
-                  setState(() {
-                    _isSettingsPanelVisible = true;
-                    _isAIChatSidebarVisible = false; // 关闭聊天侧边栏
-                  });
-                },
-              ),
+              if (_isEditorSidebarVisible) ...[
+                SizedBox(
+                  width: _editorSidebarWidth,
+                  child: EditorSidebar(
+                    novel: widget.novel,
+                    tabController: _tabController,
+                    onOpenAIChat: () {
+                      setState(() {
+                        _isAIChatSidebarVisible = true;
+                        _isSettingsPanelVisible = false; // 关闭设置面板
+                      });
+                    },
+                    onOpenSettings: () {
+                      setState(() {
+                        _isSettingsPanelVisible = true;
+                        _isAIChatSidebarVisible = false; // 关闭聊天侧边栏
+                      });
+                    },
+                    onToggleSidebar: () {
+                      setState(() {
+                        _isEditorSidebarVisible = false;
+                      });
+                    },
+                    onAdjustWidth: _showEditorSidebarWidthDialog,
+                  ),
+                ),
+                _DraggableDivider(
+                  onDragUpdate: (delta) {
+                    setState(() {
+                      // 更新侧边栏宽度，同时考虑最小/最大限制
+                      _editorSidebarWidth =
+                          (_editorSidebarWidth + delta.delta.dx).clamp(
+                        _minEditorSidebarWidth,
+                        _maxEditorSidebarWidth,
+                      );
+                    });
+                  },
+                  onDragEnd: (_) {
+                    // 拖拽结束时保存宽度
+                    _saveEditorSidebarWidth();
+                  },
+                ),
+              ],
               Expanded(
                 child: Row(
                   children: [
@@ -397,7 +508,6 @@ class _EditorScreenState extends State<EditorScreen>
                             },
                             isChatActive: _isAIChatSidebarVisible,
                             onAiConfigPressed: () {
-                              // <<< 修改此回调
                               setState(() {
                                 _isSettingsPanelVisible =
                                     !_isSettingsPanelVisible;
@@ -406,8 +516,7 @@ class _EditorScreenState extends State<EditorScreen>
                                 }
                               });
                             },
-                            isSettingsActive:
-                                _isSettingsPanelVisible, // <<< 传递设置面板状态
+                            isSettingsActive: _isSettingsPanelVisible,
                           ),
                           EditorToolbar(
                             controller: fallbackController,
@@ -467,22 +576,55 @@ class _EditorScreenState extends State<EditorScreen>
               ),
             ],
           ),
-          if (_isSettingsPanelVisible) // <<< Uncomment settings panel
+          if (!_isEditorSidebarVisible)
+            Positioned(
+              left: 0,
+              top: 16,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _isEditorSidebarVisible = true;
+                    });
+                  },
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(8),
+                    bottomRight: Radius.circular(8),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withOpacity(0.1),
+                      borderRadius: const BorderRadius.only(
+                        topRight: Radius.circular(8),
+                        bottomRight: Radius.circular(8),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.arrow_forward_ios,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_isSettingsPanelVisible)
             Positioned.fill(
               child: GestureDetector(
-                // Use Positioned.fill and add background overlay
                 onTap: () => setState(() => _isSettingsPanelVisible = false),
                 child: Container(
-                  color: Colors.black.withOpacity(0.5), // Darker overlay
+                  color: Colors.black.withOpacity(0.5),
                   child: Center(
                     child: GestureDetector(
-                      // Prevent closing when clicking the panel itself
                       onTap: () {},
                       child: userIdForPanel == null
-                          ? _buildLoginRequiredPanel(
-                              context) // Show message if not logged in
+                          ? _buildLoginRequiredPanel(context)
                           : SettingsPanel(
-                              // <<< Pass userId and provide BLoC
                               userId: userIdForPanel,
                               onClose: () {
                                 setState(() {
@@ -730,37 +872,45 @@ class _DraggableDivider extends StatefulWidget {
 
 class _DraggableDividerState extends State<_DraggableDivider> {
   bool _isDragging = false;
+  bool _isHovering = false;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onHorizontalDragStart: (_) {
-        setState(() {
-          _isDragging = true;
-        });
-      },
-      onHorizontalDragUpdate: widget.onDragUpdate,
-      onHorizontalDragEnd: (details) {
-        setState(() {
-          _isDragging = false;
-        });
-        widget.onDragEnd(details);
-      },
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeLeftRight,
+    final theme = Theme.of(context);
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      onEnter: (_) => setState(() => _isHovering = true),
+      onExit: (_) => setState(() => _isHovering = false),
+      child: GestureDetector(
+        onHorizontalDragStart: (_) {
+          setState(() {
+            _isDragging = true;
+          });
+        },
+        onHorizontalDragUpdate: widget.onDragUpdate,
+        onHorizontalDragEnd: (details) {
+          setState(() {
+            _isDragging = false;
+          });
+          widget.onDragEnd(details);
+        },
         child: Container(
           width: 8,
           height: double.infinity,
           color: _isDragging
-              ? Theme.of(context).colorScheme.primary.withOpacity(0.5)
-              : Colors.grey.withOpacity(0.2),
+              ? theme.colorScheme.primary.withOpacity(0.1)
+              : _isHovering
+                  ? Colors.grey.shade200
+                  : Colors.grey.shade100,
           child: Center(
             child: Container(
-              width: 2,
+              width: 1,
               height: double.infinity,
               color: _isDragging
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.grey.withOpacity(0.5),
+                  ? theme.colorScheme.primary
+                  : _isHovering
+                      ? Colors.grey.shade400
+                      : Colors.grey.shade300,
             ),
           ),
         ),
