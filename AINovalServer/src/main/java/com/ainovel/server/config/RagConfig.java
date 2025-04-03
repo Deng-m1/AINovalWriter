@@ -59,17 +59,6 @@ public class RagConfig {
         return new LangChain4jEmbeddingModel(embeddingService);
     }
 
-    /**
-     * 配置嵌入存储
-     *
-     * @return 嵌入存储
-     */
-    @Bean
-    public EmbeddingStore<TextSegment> embeddingStore() {
-        // 这里使用ChromaEmbeddingStore，由VectorStoreConfig中已经配置好的Bean提供
-        // 所以这个方法不需要实现，我们将让Spring找到已有的EmbeddingStore Bean
-        return null;
-    }
 
     /**
      * 配置嵌入存储摄取器

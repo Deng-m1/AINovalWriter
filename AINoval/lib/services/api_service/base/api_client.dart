@@ -174,8 +174,7 @@ class ApiClient {
                       '[$logContext] JSON 数组中的元素不是 Map: $itemJson');
                 }
               }
-              AppLogger.i(
-                  'ApiClient', '[$logContext] 成功处理 ${count} 个 JSON 数组元素');
+              AppLogger.i('ApiClient', '[$logContext] 成功处理 $count 个 JSON 数组元素');
             } else {
               AppLogger.w('ApiClient', '[$logContext] 解析为 JSON 但不是列表: "$line"');
             }
@@ -228,13 +227,14 @@ class ApiClient {
       );
 
       // 发送上传请求
-      final response = await _dio.post('/api/v1/novels/import', 
+      final response = await _dio.post(
+        '/novels/import',
         data: formData,
         options: options,
       );
 
       // 响应应该包含一个 jobId
-      if (response.data is Map<String, dynamic> && 
+      if (response.data is Map<String, dynamic> &&
           response.data.containsKey('jobId')) {
         return response.data['jobId'];
       } else {
@@ -252,19 +252,19 @@ class ApiClient {
 
   /// 获取小说导入状态 SSE 流
   Stream<ImportStatus> getImportStatusStream(String jobId) {
-    final url = '${_dio.options.baseUrl}/api/v1/novels/import/$jobId/status';
-    
+    final url = '${_dio.options.baseUrl}/novels/import/$jobId/status';
+
     return _connectToEventSource(url, 'getImportStatusStream');
   }
 
   /// 连接到SSE事件源并解析ImportStatus事件
   Stream<ImportStatus> _connectToEventSource(String url, String logContext) {
     final controller = StreamController<ImportStatus>();
-    
+
     // 使用原生HttpClient来处理SSE连接
     final client = HttpClient();
     client.autoUncompress = true;
-    
+
     // 异步连接到事件源
     client.getUrl(Uri.parse(url)).then((request) {
       // 设置请求头
@@ -274,37 +274,39 @@ class ApiClient {
       }
       request.headers.add('Accept', 'text/event-stream');
       request.headers.add('Cache-Control', 'no-cache');
-      
+
       return request.close();
     }).then((response) {
       // 处理响应
       if (response.statusCode != 200) {
-        controller.addError(
-          ApiException(response.statusCode, '连接到导入状态流失败: HTTP ${response.statusCode}')
-        );
+        controller.addError(ApiException(
+            response.statusCode, '连接到导入状态流失败: HTTP ${response.statusCode}'));
         controller.close();
         client.close();
         return;
       }
-      
+
       // 处理SSE事件流
       response.transform(utf8.decoder).transform(const LineSplitter()).listen(
         (line) {
           try {
             if (line.isEmpty) return;
-            
+
             if (line.startsWith('data:')) {
               final eventData = line.substring(5).trim();
               if (eventData.isNotEmpty) {
                 final json = jsonDecode(eventData);
                 if (json is Map<String, dynamic>) {
                   final status = ImportStatus.fromJson(json);
-                  AppLogger.i('ApiClient', '[$logContext] 收到状态更新: ${status.status} - ${status.message}');
+                  AppLogger.i('ApiClient',
+                      '[$logContext] 收到状态更新: ${status.status} - ${status.message}');
                   controller.add(status);
-                  
+
                   // 如果收到完成或失败状态，关闭流
-                  if (status.status == 'COMPLETED' || status.status == 'FAILED') {
-                    AppLogger.i('ApiClient', '[$logContext] 导入任务已${status.status == 'COMPLETED' ? '完成' : '失败'}，关闭SSE连接');
+                  if (status.status == 'COMPLETED' ||
+                      status.status == 'FAILED') {
+                    AppLogger.i('ApiClient',
+                        '[$logContext] 导入任务已${status.status == 'COMPLETED' ? '完成' : '失败'}，关闭SSE连接');
                     controller.close();
                     client.close();
                   }
@@ -312,12 +314,14 @@ class ApiClient {
               }
             }
           } catch (e, stack) {
-            AppLogger.e('ApiClient', '[$logContext] 解析SSE事件失败: $line', e, stack);
+            AppLogger.e(
+                'ApiClient', '[$logContext] 解析SSE事件失败: $line', e, stack);
           }
         },
         onError: (e, stack) {
           AppLogger.e('ApiClient', '[$logContext] SSE流错误', e, stack);
-          controller.addError(e is ApiException ? e : ApiException(-1, '读取SSE流错误: $e'), stack);
+          controller.addError(
+              e is ApiException ? e : ApiException(-1, '读取SSE流错误: $e'), stack);
           controller.close();
           client.close();
         },
@@ -332,18 +336,19 @@ class ApiClient {
     }).catchError((e, stack) {
       AppLogger.e('ApiClient', '[$logContext] 连接到SSE流失败', e, stack);
       if (!controller.isClosed) {
-        controller.addError(e is ApiException ? e : ApiException(-1, '连接SSE流失败: $e'), stack);
+        controller.addError(
+            e is ApiException ? e : ApiException(-1, '连接SSE流失败: $e'), stack);
         controller.close();
       }
       client.close();
     });
-    
+
     return controller.stream;
   }
 
   /// 根据作者ID获取小说列表
   Future<dynamic> getNovelsByAuthor(String authorId) async {
-    return post('/api/v1/novels/get-by-author', data: {'authorId': authorId});
+    return post('/novels/get-by-author', data: {'authorId': authorId});
   }
 
   /// 根据ID获取小说详情
@@ -704,13 +709,13 @@ class ApiClient {
         return response;
       } else if (response is String) {
         return int.tryParse(response) ??
-            (throw ApiException(-1, "无法解析消息数量响应: $response"));
+            (throw ApiException(-1, '无法解析消息数量响应: $response'));
       } else if (response is Map<String, dynamic> &&
           response.containsKey('count')) {
         final count = response['count'];
         if (count is int) return count;
       }
-      throw ApiException(-1, "无法解析消息数量响应: $response");
+      throw ApiException(-1, '无法解析消息数量响应: $response');
     } catch (e) {
       AppLogger.e('ApiClient', '获取消息数量失败 (SessionID: $sessionId)', e);
       rethrow;
@@ -726,13 +731,13 @@ class ApiClient {
         return response;
       } else if (response is String) {
         return int.tryParse(response) ??
-            (throw ApiException(-1, "无法解析会话数量响应: $response"));
+            (throw ApiException(-1, '无法解析会话数量响应: $response'));
       } else if (response is Map<String, dynamic> &&
           response.containsKey('count')) {
         final count = response['count'];
         if (count is int) return count;
       }
-      throw ApiException(-1, "无法解析会话数量响应: $response");
+      throw ApiException(-1, '无法解析会话数量响应: $response');
     } catch (e) {
       AppLogger.e('ApiClient', '获取用户会话数量失败 (UserID: $userId)', e);
       rethrow;

@@ -10,7 +10,6 @@ abstract class ChatEvent extends Equatable {
 
 // 加载聊天会话列表
 class LoadChatSessions extends ChatEvent {
-
   const LoadChatSessions({required this.novelId});
   final String novelId;
 
@@ -20,7 +19,6 @@ class LoadChatSessions extends ChatEvent {
 
 // 创建新的聊天会话
 class CreateChatSession extends ChatEvent {
-
   const CreateChatSession({
     required this.title,
     required this.novelId,
@@ -46,11 +44,12 @@ class SelectChatSession extends ChatEvent {
 
 // 发送消息
 class SendMessage extends ChatEvent {
-  final String content;
-  final String? configId; // <<< Add configId field
+  // <<< Add configId field
 
   // <<< Modify existing constructor
   const SendMessage({required this.content, this.configId});
+  final String content;
+  final String? configId;
 
   @override
   List<Object?> get props => [content, configId]; // <<< Add configId to props
@@ -63,7 +62,6 @@ class LoadMoreMessages extends ChatEvent {
 
 // 更新聊天标题
 class UpdateChatTitle extends ChatEvent {
-
   const UpdateChatTitle({required this.newTitle});
   final String newTitle;
 
@@ -73,7 +71,6 @@ class UpdateChatTitle extends ChatEvent {
 
 // 执行操作
 class ExecuteAction extends ChatEvent {
-
   const ExecuteAction({required this.action});
   final MessageAction action;
 
@@ -83,7 +80,6 @@ class ExecuteAction extends ChatEvent {
 
 // 删除聊天会话
 class DeleteChatSession extends ChatEvent {
-
   const DeleteChatSession({required this.sessionId});
   final String sessionId;
 
@@ -96,17 +92,15 @@ class CancelOngoingRequest extends ChatEvent {
   const CancelOngoingRequest();
 }
 
-
 class UpdateActiveChatConfig extends ChatEvent {
-   final String? configId;
-   const UpdateActiveChatConfig({required this.configId});
-   @override
-   List<Object?> get props => [configId];
+  const UpdateActiveChatConfig({required this.configId});
+  final String? configId;
+  @override
+  List<Object?> get props => [configId];
 }
 
 // 更新聊天上下文
 class UpdateChatContext extends ChatEvent {
-
   const UpdateChatContext({required this.context});
   final ChatContext context;
 
@@ -116,17 +110,15 @@ class UpdateChatContext extends ChatEvent {
 
 // 更新聊天模型
 class UpdateChatModel extends ChatEvent {
-  final String sessionId;
-  final String modelConfigId; // Pass the ID, Bloc will resolve the model
+  // Pass the ID, Bloc will resolve the model
 
   const UpdateChatModel({
     required this.sessionId,
     required this.modelConfigId,
   });
+  final String sessionId;
+  final String modelConfigId;
 
   @override
   List<Object?> get props => [sessionId, modelConfigId];
-} 
-
-
-
+}

@@ -2,12 +2,11 @@ import 'dart:async';
 
 import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
-import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/api_service/repositories/impl/editor_repository_impl.dart';
+import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/utils/word_count_analyzer.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:ainoval/utils/logger.dart';
 
 part 'editor_event.dart';
 part 'editor_state.dart';
@@ -1129,8 +1128,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
 
         final chapterIndex =
             act.chapters.indexWhere((c) => c.id == event.chapterId);
-        if (chapterIndex == -1)
+        if (chapterIndex == -1) {
           throw Exception('找不到指定的 Chapter: ${event.chapterId}');
+        }
         final chapter = act.chapters[chapterIndex];
 
         final sceneIndex =

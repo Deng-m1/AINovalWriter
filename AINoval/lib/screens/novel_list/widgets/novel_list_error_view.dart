@@ -17,7 +17,7 @@ class NovelListErrorView extends StatelessWidget {
         message: message,
         icon: Icons.error_outline_rounded,
         primaryAction: RetryButton(onRetry: onRetry),
-        secondaryAction: HelpButton(),
+        secondaryAction: const HelpButton(),
       ),
     );
   }

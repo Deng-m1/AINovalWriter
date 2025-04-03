@@ -1,37 +1,41 @@
+/*
 package com.ainovel.server.config;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
-import com.ainovel.server.service.rag.ChromaEmbeddingStoreAdapter;
-import com.ainovel.server.service.rag.LangChain4jEmbeddingModel;
-
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
+import dev.langchain4j.store.embedding.EmbeddingStore;
 import lombok.extern.slf4j.Slf4j;
 
+*/
 /**
- * RAG助手配置类
- */
+ * 内容检索器配置类
+ *//*
+
 @Slf4j
 @Configuration
-public class RagAssistantConfig {
+public class ContentRetrieverConfig {
 
-    @Autowired
-    private ChromaEmbeddingStoreAdapter embeddingStore;
-
-    @Autowired
-    private LangChain4jEmbeddingModel embeddingModel;
-
-    /**
+    */
+/**
      * 配置内容检索器
      *
-     * @return 内容检索器Bean
-     */
+     * @param embeddingStore 嵌入存储
+     * @param embeddingModel 嵌入模型
+     * @return 内容检索器
+     *//*
+
     @Bean
-    public ContentRetriever contentRetriever() {
-        log.info("创建ContentRetriever...");
+    @Primary
+    public ContentRetriever contentRetriever(
+            EmbeddingStore<TextSegment> embeddingStore,
+            EmbeddingModel embeddingModel) {
+        log.info("配置ContentRetriever");
         return EmbeddingStoreContentRetriever.builder()
                 .embeddingStore(embeddingStore)
                 .embeddingModel(embeddingModel)
@@ -39,4 +43,6 @@ public class RagAssistantConfig {
                 .minScore(0.6)
                 .build();
     }
+
 }
+*/

@@ -1,6 +1,6 @@
+import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
-import 'package:ainoval/utils/logger.dart';
 
 /// 文本选中上下文工具栏
 ///

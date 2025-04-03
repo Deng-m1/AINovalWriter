@@ -1,13 +1,12 @@
 import 'package:ainoval/config/app_config.dart';
 import 'package:ainoval/models/editor_content.dart';
-import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart';
 import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/local_storage_service.dart';
-import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/utils/date_time_parser.dart';
+import 'package:ainoval/utils/logger.dart';
 
 /// 编辑器仓库实现
 class EditorRepositoryImpl implements EditorRepository {
@@ -42,7 +41,7 @@ class EditorRepositoryImpl implements EditorRepository {
         id: '$novelId-$chapterId-$sceneId',
         content: '{"ops":[{"insert":"\\n"}]}',
         lastSaved: DateTime.now(),
-        scenes: {},
+        scenes: const {},
       );
     }
   }
@@ -686,7 +685,7 @@ class EditorRepositoryImpl implements EditorRepository {
     Map<String, dynamic>? localSettings;
     try {
       localSettings = await _localStorageService.getEditorSettings();
-      if (localSettings != null && localSettings.isNotEmpty) {
+      if (localSettings.isNotEmpty) {
         AppLogger.i('EditorRepositoryImpl/getEditorSettings', '从本地加载编辑器设置');
         return {...defaultSettings, ...localSettings};
       }
@@ -700,7 +699,7 @@ class EditorRepositoryImpl implements EditorRepository {
     AppLogger.i('EditorRepositoryImpl/getEditorSettings', '本地无设置，尝试从API获取');
     try {
       //final data = await _apiClient.getEditorSettings();
-      final data = null;
+      const data = null;
 
       final serverSettings = Map<String, dynamic>.from(data);
       final mergedSettings = {...defaultSettings, ...serverSettings};

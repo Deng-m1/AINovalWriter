@@ -1,21 +1,21 @@
 import 'dart:async';
 
-import 'package:ainoval/services/api_service/repositories/impl/chat_repository_impl.dart';
 import 'package:ainoval/services/api_service/repositories/chat_repository.dart';
+import 'package:ainoval/services/api_service/repositories/impl/chat_repository_impl.dart';
 import 'package:bloc_concurrency/bloc_concurrency.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
-import '../../models/chat_models.dart';
 
+import '../../config/app_config.dart';
+import '../../models/chat_models.dart';
+import '../../models/user_ai_model_config_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/context_provider.dart';
 import '../../utils/logger.dart';
+import '../ai_config/ai_config_bloc.dart';
 import 'chat_event.dart';
 import 'chat_state.dart';
-import '../../config/app_config.dart';
-import '../ai_config/ai_config_bloc.dart';
-import '../../models/user_ai_model_config_model.dart';
-import 'package:collection/collection.dart';
 
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ChatBloc({
@@ -217,9 +217,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             (config) => config.id == session.selectedModelConfigId,
           );
         }
-        if (selectedModel == null) {
-          selectedModel = aiState.defaultConfig;
-        }
+        selectedModel ??= aiState.defaultConfig;
       } else {
         AppLogger.w('ChatBloc',
             '_onSelectChatSession: AiConfigBloc state does not have configs loaded.');
@@ -397,7 +395,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               emit(errorState.copyWith(
                 messages: errorMessages,
                 isGenerating: false, // 即使出错也要停止生成状态
-                error: ApiExceptionHelper.fromException(e, "发送消息失败")
+                error: ApiExceptionHelper.fromException(e, '发送消息失败')
                     .message, // 使用辅助方法
               ));
             } else {
@@ -406,7 +404,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                   'ChatBloc', '未找到ID为 ${placeholderMessage.id} 的占位符消息标记错误');
               emit(errorState.copyWith(
                 isGenerating: false,
-                error: ApiExceptionHelper.fromException(e, "发送消息失败")
+                error: ApiExceptionHelper.fromException(e, '发送消息失败')
                     .message, // 使用辅助方法
               ));
             }
@@ -414,7 +412,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             // 如果 placeholder 尚未创建就出错
             emit(errorState.copyWith(
               isGenerating: false,
-              error: ApiExceptionHelper.fromException(e, "发送消息失败")
+              error: ApiExceptionHelper.fromException(e, '发送消息失败')
                   .message, // 使用辅助方法
             ));
           }
@@ -566,8 +564,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             latestMessages[lastPendingIndex].copyWith(
           status: MessageStatus.error,
           content: latestMessages[lastPendingIndex].content.isEmpty
-              ? "[已取消]"
-              : "${latestMessages[lastPendingIndex].content}\n[已取消]",
+              ? '[已取消]'
+              : '${latestMessages[lastPendingIndex].content}\n[已取消]',
         );
         emit(currentState.copyWith(
           messages: latestMessages,
@@ -602,7 +600,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       // Emitter might be closed here already if called incorrectly, so check
       if (!emit.isDone) {
         try {
-          emit(ChatError(message: '内部错误: 无法在非活动会话中处理流'));
+          emit(const ChatError(message: '内部错误: 无法在非活动会话中处理流'));
         } catch (e) {
           AppLogger.e('ChatBloc', 'Failed to emit error state', e);
         }
@@ -612,7 +610,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // Capture initial state specifics
     final initialState = state as ChatSessionActive;
     final currentSessionId = initialState.session.id;
-    final initialRole = MessageRole.assistant;
+    const initialRole = MessageRole.assistant;
 
     StringBuffer contentBuffer = StringBuffer();
 
@@ -684,7 +682,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               'ChatBloc', 'Stream error in emit.forEach', error, stackTrace);
           final currentState = state; // Get state at the time of error
           final errorMessage =
-              ApiExceptionHelper.fromException(error, "流处理失败").message;
+              ApiExceptionHelper.fromException(error, '流处理失败').message;
           if (currentState is ChatSessionActive &&
               currentState.session.id == currentSessionId) {
             // Return the error state to be emitted by forEach
@@ -769,8 +767,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       if (!emit.isDone) {
         final currentState = state; // Get state at the time of catch
         final errorMessage = (error is StateError)
-            ? "内部错误: ${error.message}" // Keep StateError messages distinct
-            : ApiExceptionHelper.fromException(error, "处理流响应失败").message;
+            ? '内部错误: ${error.message}' // Keep StateError messages distinct
+            : ApiExceptionHelper.fromException(error, '处理流响应失败').message;
 
         if (currentState is ChatSessionActive &&
             currentState.session.id == currentSessionId) {

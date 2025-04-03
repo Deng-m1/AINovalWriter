@@ -1,28 +1,28 @@
 import 'dart:io';
 
+// <<< 导入 AiConfigBloc >>>
+import 'package:ainoval/blocs/ai_config/ai_config_bloc.dart';
 // 导入聊天相关的类
 import 'package:ainoval/blocs/auth/auth_bloc.dart';
 import 'package:ainoval/blocs/chat/chat_bloc.dart';
 import 'package:ainoval/blocs/editor_version_bloc.dart';
 import 'package:ainoval/blocs/novel_list/novel_list_bloc.dart';
+import 'package:ainoval/config/app_config.dart'; // 引入 AppConfig
 import 'package:ainoval/l10n/l10n.dart';
 import 'package:ainoval/screens/auth/login_screen.dart';
 import 'package:ainoval/screens/novel_list/novel_list_screen.dart';
+import 'package:ainoval/services/api_service/base/api_client.dart';
+// <<< 移除未使用的 Codex Impl 引用 >>>
+// import 'package:ainoval/services/api_service/repositories/impl/codex_repository_impl.dart';
+import 'package:ainoval/services/api_service/repositories/chat_repository.dart'; // <<< 导入接口
 // ApiService import might not be needed directly in main unless provided
 // import 'package:ainoval/services/api_service.dart';
 import 'package:ainoval/services/api_service/repositories/impl/chat_repository_impl.dart';
 import 'package:ainoval/services/api_service/repositories/impl/novel_repository_impl.dart';
-// <<< 移除未使用的 Codex Impl 引用 >>>
-// import 'package:ainoval/services/api_service/repositories/impl/codex_repository_impl.dart';
-import 'package:ainoval/services/api_service/repositories/chat_repository.dart'; // <<< 导入接口
-
+import 'package:ainoval/services/api_service/repositories/impl/user_ai_model_config_repository_impl.dart';
 import 'package:ainoval/services/api_service/repositories/novel_repository.dart'; // <<< 导入接口
 // <<< 导入 AI Config 仓库 >>>
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
-import 'package:ainoval/services/api_service/repositories/impl/user_ai_model_config_repository_impl.dart';
-// <<< 导入 AiConfigBloc >>>
-import 'package:ainoval/blocs/ai_config/ai_config_bloc.dart';
-
 import 'package:ainoval/services/auth_service.dart' as auth_service;
 import 'package:ainoval/services/context_provider.dart';
 import 'package:ainoval/services/local_storage_service.dart';
@@ -34,11 +34,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:ainoval/services/api_service/base/api_client.dart';
-import 'package:ainoval/config/app_config.dart'; // 引入 AppConfig
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -139,7 +136,7 @@ void main() async {
             ),
           ),
         ],
-        child: MyApp(),
+        child: const MyApp(),
       ),
     ),
   );

@@ -7,7 +7,6 @@ import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:dio/dio.dart';
 
 /// 数据同步服务
 ///

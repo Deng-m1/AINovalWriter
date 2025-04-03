@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
+import 'package:ainoval/config/app_config.dart'; // <<< Import AppConfig
 import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/models/novel_summary.dart';
@@ -12,18 +13,14 @@ import 'package:ainoval/screens/editor/components/editor_main_area.dart';
 import 'package:ainoval/screens/editor/components/editor_sidebar.dart';
 import 'package:ainoval/screens/editor/widgets/editor_settings_panel.dart';
 import 'package:ainoval/screens/editor/widgets/editor_toolbar.dart';
+import 'package:ainoval/screens/settings/settings_panel.dart'; // <<< Import SettingsPanel
+import 'package:ainoval/services/api_service/repositories/impl/editor_repository_impl.dart';
+import 'package:ainoval/utils/logger.dart';
+import 'package:ainoval/utils/word_count_analyzer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-import 'package:ainoval/utils/logger.dart';
-
 import 'package:flutter_quill/flutter_quill.dart' hide EditorState;
-import 'package:ainoval/services/api_service/repositories/impl/editor_repository_impl.dart';
-import 'package:ainoval/screens/ai_config/ai_config_management_screen.dart'; // 导入管理屏幕
-import 'package:ainoval/config/app_config.dart'; // <<< Import AppConfig
-import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart'; // <<< Import Repository Interface
-import 'package:ainoval/screens/settings/settings_panel.dart'; // <<< Import SettingsPanel
-import 'package:ainoval/utils/word_count_analyzer.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // 导入持久化功能
 
 class EditorScreen extends StatefulWidget {
@@ -63,7 +60,7 @@ class _EditorScreenState extends State<EditorScreen>
 
   // 编辑器侧边栏宽度相关状态
   double _editorSidebarWidth = 280; // 默认宽度
-  static const double _minEditorSidebarWidth = 240; // 最小宽度
+  static const double _minEditorSidebarWidth = 220; // 减小最小宽度
   static const double _maxEditorSidebarWidth = 400; // 最大宽度
   static const String _editorSidebarWidthPrefKey =
       'editor_sidebar_width'; // 持久化键
@@ -485,42 +482,49 @@ class _EditorScreenState extends State<EditorScreen>
                 ),
               ],
               Expanded(
-                child: Row(
+                child: Column(
                   children: [
+                    // 编辑器顶部工具栏和操作栏
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        EditorAppBar(
+                          novelTitle: widget.novel.title,
+                          wordCount: _calculateTotalWordCount(state.novel),
+                          isSaving: state.isSaving,
+                          lastSaveTime: state.lastSaveTime,
+                          onBackPressed: () => Navigator.pop(context),
+                          onChatPressed: () {
+                            setState(() {
+                              _isAIChatSidebarVisible =
+                                  !_isAIChatSidebarVisible;
+                              if (_isAIChatSidebarVisible) {
+                                _isSettingsPanelVisible = false; // 打开聊天时关闭设置
+                              }
+                            });
+                          },
+                          isChatActive: _isAIChatSidebarVisible,
+                          onAiConfigPressed: () {
+                            setState(() {
+                              _isSettingsPanelVisible =
+                                  !_isSettingsPanelVisible;
+                              if (_isSettingsPanelVisible) {
+                                _isAIChatSidebarVisible = false; // 打开设置时关闭聊天
+                              }
+                            });
+                          },
+                          isSettingsActive: _isSettingsPanelVisible,
+                        ),
+                        EditorToolbar(
+                          controller: fallbackController,
+                        ),
+                      ],
+                    ),
+                    // 主编辑区域与聊天侧边栏
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          EditorAppBar(
-                            novelTitle: widget.novel.title,
-                            wordCount: _calculateTotalWordCount(state.novel),
-                            isSaving: state.isSaving,
-                            lastSaveTime: state.lastSaveTime,
-                            onBackPressed: () => Navigator.pop(context),
-                            onChatPressed: () {
-                              setState(() {
-                                _isAIChatSidebarVisible =
-                                    !_isAIChatSidebarVisible;
-                                if (_isAIChatSidebarVisible) {
-                                  _isSettingsPanelVisible = false; // 打开聊天时关闭设置
-                                }
-                              });
-                            },
-                            isChatActive: _isAIChatSidebarVisible,
-                            onAiConfigPressed: () {
-                              setState(() {
-                                _isSettingsPanelVisible =
-                                    !_isSettingsPanelVisible;
-                                if (_isSettingsPanelVisible) {
-                                  _isAIChatSidebarVisible = false; // 打开设置时关闭聊天
-                                }
-                              });
-                            },
-                            isSettingsActive: _isSettingsPanelVisible,
-                          ),
-                          EditorToolbar(
-                            controller: fallbackController,
-                          ),
+                          // 主编辑区域
                           Expanded(
                             child: Padding(
                               padding: const EdgeInsets.only(
@@ -538,39 +542,40 @@ class _EditorScreenState extends State<EditorScreen>
                               ),
                             ),
                           ),
+                          // AI聊天侧边栏
+                          if (_isAIChatSidebarVisible) ...[
+                            _DraggableDivider(
+                              onDragUpdate: (delta) {
+                                setState(() {
+                                  // 更新侧边栏宽度，同时考虑最小/最大限制
+                                  _chatSidebarWidth =
+                                      (_chatSidebarWidth - delta.delta.dx).clamp(
+                                    _minChatSidebarWidth,
+                                    _maxChatSidebarWidth,
+                                  );
+                                });
+                              },
+                              onDragEnd: (_) {
+                                // 拖拽结束时保存宽度
+                                _saveChatSidebarWidth();
+                              },
+                            ),
+                            SizedBox(
+                              width: _chatSidebarWidth,
+                              child: AIChatSidebar(
+                                novelId: widget.novel.id,
+                                chapterId: state.activeChapterId,
+                                onClose: () {
+                                  setState(() {
+                                    _isAIChatSidebarVisible = false;
+                                  });
+                                },
+                              ),
+                            )
+                          ],
                         ],
                       ),
                     ),
-                    if (_isAIChatSidebarVisible) ...[
-                      _DraggableDivider(
-                        onDragUpdate: (delta) {
-                          setState(() {
-                            // 更新侧边栏宽度，同时考虑最小/最大限制
-                            _chatSidebarWidth =
-                                (_chatSidebarWidth - delta.delta.dx).clamp(
-                              _minChatSidebarWidth,
-                              _maxChatSidebarWidth,
-                            );
-                          });
-                        },
-                        onDragEnd: (_) {
-                          // 拖拽结束时保存宽度
-                          _saveChatSidebarWidth();
-                        },
-                      ),
-                      SizedBox(
-                        width: _chatSidebarWidth,
-                        child: AIChatSidebar(
-                          novelId: widget.novel.id,
-                          chapterId: state.activeChapterId,
-                          onClose: () {
-                            setState(() {
-                              _isAIChatSidebarVisible = false;
-                            });
-                          },
-                        ),
-                      )
-                    ],
                   ],
                 ),
               ),

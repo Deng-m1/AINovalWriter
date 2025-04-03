@@ -5,14 +5,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 class AddEditAiConfigDialog extends StatefulWidget {
-  final UserAIModelConfigModel? configToEdit;
-  final String userId; // Needed for add/update events
+  // Needed for add/update events
 
   const AddEditAiConfigDialog({
     super.key,
     required this.userId,
     this.configToEdit,
   });
+  final UserAIModelConfigModel? configToEdit;
+  final String userId;
 
   @override
   State<AddEditAiConfigDialog> createState() => _AddEditAiConfigDialogState();
@@ -39,19 +40,22 @@ class _AddEditAiConfigDialogState extends State<AddEditAiConfigDialog> {
   void initState() {
     super.initState();
     // Initialize controllers
-    _aliasController = TextEditingController(text: widget.configToEdit?.alias ?? '');
-    _apiKeyController = TextEditingController(); // API key is never pre-filled for editing
-    _apiEndpointController = TextEditingController(text: widget.configToEdit?.apiEndpoint ?? '');
+    _aliasController =
+        TextEditingController(text: widget.configToEdit?.alias ?? '');
+    _apiKeyController =
+        TextEditingController(); // API key is never pre-filled for editing
+    _apiEndpointController =
+        TextEditingController(text: widget.configToEdit?.apiEndpoint ?? '');
     _selectedProvider = widget.configToEdit?.provider;
     _selectedModel = widget.configToEdit?.modelName;
 
-     // Request providers immediately if needed
-     if (!_isEditMode) {
-       _loadProviders();
-     } else if (_selectedProvider != null) {
-        // If editing, load providers to populate dropdown, and models for the selected provider
-        _loadProviders();
-        _loadModels(_selectedProvider!);
+    // Request providers immediately if needed
+    if (!_isEditMode) {
+      _loadProviders();
+    } else if (_selectedProvider != null) {
+      // If editing, load providers to populate dropdown, and models for the selected provider
+      _loadProviders();
+      _loadModels(_selectedProvider!);
     }
   }
 
@@ -65,35 +69,43 @@ class _AddEditAiConfigDialogState extends State<AddEditAiConfigDialog> {
     super.dispose();
   }
 
-   void _loadProviders() {
-     setState(() {
-       _isLoadingProviders = true;
-     });
-     // Use the Bloc provided via context
-     context.read<AiConfigBloc>().add(LoadAvailableProviders());
-   }
+  void _loadProviders() {
+    setState(() {
+      _isLoadingProviders = true;
+    });
+    // Use the Bloc provided via context
+    context.read<AiConfigBloc>().add(LoadAvailableProviders());
+  }
 
-   void _loadModels(String provider) {
-     setState(() {
-       _isLoadingModels = true;
-       _selectedModel = null; // Reset model selection when provider changes
-       _models = []; // Clear previous models
-     });
-     context.read<AiConfigBloc>().add(LoadModelsForProvider(provider: provider));
-   }
+  void _loadModels(String provider) {
+    setState(() {
+      _isLoadingModels = true;
+      _selectedModel = null; // Reset model selection when provider changes
+      _models = []; // Clear previous models
+    });
+    context.read<AiConfigBloc>().add(LoadModelsForProvider(provider: provider));
+  }
 
   void _submitForm() {
     if (_formKey.currentState!.validate()) {
-        setState(() { _isSaving = true; });
+      setState(() {
+        _isSaving = true;
+      });
       final bloc = context.read<AiConfigBloc>();
 
       if (_isEditMode) {
         bloc.add(UpdateAiConfig(
           userId: widget.userId,
           configId: widget.configToEdit!.id,
-          alias: _aliasController.text.trim().isEmpty ? null : _aliasController.text.trim(), // Only send if not empty, or let backend decide
-          apiKey: _apiKeyController.text.trim().isEmpty ? null : _apiKeyController.text.trim(), // Only send if changed
-          apiEndpoint: _apiEndpointController.text.trim(), // Send empty string to clear endpoint
+          alias: _aliasController.text.trim().isEmpty
+              ? null
+              : _aliasController.text
+                  .trim(), // Only send if not empty, or let backend decide
+          apiKey: _apiKeyController.text.trim().isEmpty
+              ? null
+              : _apiKeyController.text.trim(), // Only send if changed
+          apiEndpoint: _apiEndpointController.text
+              .trim(), // Send empty string to clear endpoint
         ));
       } else {
         bloc.add(AddAiConfig(
@@ -101,11 +113,14 @@ class _AddEditAiConfigDialogState extends State<AddEditAiConfigDialog> {
           provider: _selectedProvider!,
           modelName: _selectedModel!,
           apiKey: _apiKeyController.text.trim(),
-          alias: _aliasController.text.trim().isEmpty ? _selectedModel : _aliasController.text.trim(), // Default alias to model name if empty
+          alias: _aliasController.text.trim().isEmpty
+              ? _selectedModel
+              : _aliasController.text
+                  .trim(), // Default alias to model name if empty
           apiEndpoint: _apiEndpointController.text.trim(),
         ));
       }
-       // Listen for completion state change to close dialog
+      // Listen for completion state change to close dialog
     }
   }
 
@@ -115,30 +130,34 @@ class _AddEditAiConfigDialogState extends State<AddEditAiConfigDialog> {
 
     return BlocListener<AiConfigBloc, AiConfigState>(
       listener: (context, state) {
-         // Update local lists and loading states based on Bloc state
-          setState(() {
-             _providers = state.availableProviders;
-             _isLoadingProviders = false; // Assuming load finishes once providers appear
+        // Update local lists and loading states based on Bloc state
+        setState(() {
+          _providers = state.availableProviders;
+          _isLoadingProviders =
+              false; // Assuming load finishes once providers appear
 
-             if (state.selectedProviderForModels == _selectedProvider) {
-                 _models = state.modelsForProvider;
-                 _isLoadingModels = false;
-             } else if (_selectedProvider != null && state.selectedProviderForModels != _selectedProvider){
-                // Handle case where Bloc state is for a different provider than selected
-                _isLoadingModels = false; // Stop loading indicator
-             }
+          if (state.selectedProviderForModels == _selectedProvider) {
+            _models = state.modelsForProvider;
+            _isLoadingModels = false;
+          } else if (_selectedProvider != null &&
+              state.selectedProviderForModels != _selectedProvider) {
+            // Handle case where Bloc state is for a different provider than selected
+            _isLoadingModels = false; // Stop loading indicator
+          }
 
-              // Handle save completion or error
-             if (_isSaving) {
-                if (state.actionStatus == AiConfigActionStatus.success || state.actionStatus == AiConfigActionStatus.error) {
-                   _isSaving = false;
-                   if (state.actionStatus == AiConfigActionStatus.success && mounted) {
-                      Navigator.of(context).pop(); // Close dialog on success
-                   }
-                    // Error message is handled by the main screen's listener
-                }
-             }
-          });
+          // Handle save completion or error
+          if (_isSaving) {
+            if (state.actionStatus == AiConfigActionStatus.success ||
+                state.actionStatus == AiConfigActionStatus.error) {
+              _isSaving = false;
+              if (state.actionStatus == AiConfigActionStatus.success &&
+                  mounted) {
+                Navigator.of(context).pop(); // Close dialog on success
+              }
+              // Error message is handled by the main screen's listener
+            }
+          }
+        });
       },
       child: AlertDialog(
         // title: Text(_isEditMode ? l10n.editConfigTitle : l10n.addConfigTitle), // TODO: Add l10n
@@ -153,12 +172,13 @@ class _AddEditAiConfigDialogState extends State<AddEditAiConfigDialog> {
                 DropdownButtonFormField<String>(
                   value: _selectedProvider,
                   // hint: Text(l10n.selectProviderHint), // TODO: Add l10n
-                  hint: Text('选择提供商'), // Placeholder
+                  hint: const Text('选择提供商'), // Placeholder
                   isExpanded: true,
                   onChanged: _isEditMode
                       ? null // Cannot change provider when editing
                       : (String? newValue) {
-                          if (newValue != null && newValue != _selectedProvider) {
+                          if (newValue != null &&
+                              newValue != _selectedProvider) {
                             setState(() {
                               _selectedProvider = newValue;
                               _selectedModel = null; // Reset model
@@ -167,32 +187,44 @@ class _AddEditAiConfigDialogState extends State<AddEditAiConfigDialog> {
                             _loadModels(newValue);
                           }
                         },
-                  items: _providers.map<DropdownMenuItem<String>>((String value) {
+                  items:
+                      _providers.map<DropdownMenuItem<String>>((String value) {
                     return DropdownMenuItem<String>(
                       value: value,
                       child: Text(value),
                     );
                   }).toList(),
                   // validator: (value) => value == null ? l10n.providerRequired : null, // TODO: Add l10n
-                  validator: (value) => value == null ? '请选择提供商' : null, // Placeholder
+                  validator: (value) =>
+                      value == null ? '请选择提供商' : null, // Placeholder
                   decoration: InputDecoration(
-                      // labelText: l10n.providerLabel, // TODO: Add l10n
-                      labelText: '提供商', // Placeholder
-                      border: OutlineInputBorder(),
-                      suffixIcon: _isLoadingProviders ? Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(strokeWidth: 2)) : null,
+                    // labelText: l10n.providerLabel, // TODO: Add l10n
+                    labelText: '提供商', // Placeholder
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _isLoadingProviders
+                        ? const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : null,
                   ),
-                   disabledHint: _isEditMode ? Text(_selectedProvider ?? '') : null, // Show selected value when disabled
-                   style: _isEditMode ? TextStyle(color: Theme.of(context).disabledColor) : null,
+                  disabledHint: _isEditMode
+                      ? Text(_selectedProvider ?? '')
+                      : null, // Show selected value when disabled
+                  style: _isEditMode
+                      ? TextStyle(color: Theme.of(context).disabledColor)
+                      : null,
                 ),
                 const SizedBox(height: 16),
 
                 // --- Model Dropdown ---
                 DropdownButtonFormField<String>(
                   value: _selectedModel,
-                   // hint: Text(l10n.selectModelHint), // TODO: Add l10n
-                   hint: Text('选择模型'), // Placeholder
-                   isExpanded: true,
-                  onChanged: _isEditMode || _selectedProvider == null || _isLoadingModels
+                  // hint: Text(l10n.selectModelHint), // TODO: Add l10n
+                  hint: const Text('选择模型'), // Placeholder
+                  isExpanded: true,
+                  onChanged: _isEditMode ||
+                          _selectedProvider == null ||
+                          _isLoadingModels
                       ? null // Cannot change model when editing or provider not selected or loading
                       : (String? newValue) {
                           setState(() {
@@ -205,29 +237,38 @@ class _AddEditAiConfigDialogState extends State<AddEditAiConfigDialog> {
                       child: Text(value, overflow: TextOverflow.ellipsis),
                     );
                   }).toList(),
-                   // validator: (value) => value == null ? l10n.modelRequired : null, // TODO: Add l10n
-                   validator: (value) => value == null ? '请选择模型' : null, // Placeholder
-                   decoration: InputDecoration(
-                      // labelText: l10n.modelLabel, // TODO: Add l10n
-                      labelText: '模型', // Placeholder
-                      border: OutlineInputBorder(),
-                      suffixIcon: _isLoadingModels ? Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(strokeWidth: 2)) : null,
-                   ),
-                   disabledHint: _isEditMode ? Text(_selectedModel ?? '') : null, // Show selected value when disabled
-                   style: _isEditMode ? TextStyle(color: Theme.of(context).disabledColor) : null,
+                  // validator: (value) => value == null ? l10n.modelRequired : null, // TODO: Add l10n
+                  validator: (value) =>
+                      value == null ? '请选择模型' : null, // Placeholder
+                  decoration: InputDecoration(
+                    // labelText: l10n.modelLabel, // TODO: Add l10n
+                    labelText: '模型', // Placeholder
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _isLoadingModels
+                        ? const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : null,
+                  ),
+                  disabledHint: _isEditMode
+                      ? Text(_selectedModel ?? '')
+                      : null, // Show selected value when disabled
+                  style: _isEditMode
+                      ? TextStyle(color: Theme.of(context).disabledColor)
+                      : null,
                 ),
                 const SizedBox(height: 16),
 
                 // --- Alias ---
                 TextFormField(
                   controller: _aliasController,
-                   decoration: InputDecoration(
-                        // labelText: l10n.aliasLabel, // TODO: Add l10n
-                        labelText: '别名 (可选)', // Placeholder
-                        // hintText: l10n.aliasHint( _selectedModel ?? 'model'), // TODO: Add l10n
-                        hintText: '例如：我的${_selectedModel ?? '模型'}', // Placeholder
-                        border: OutlineInputBorder()),
-                   // No validator, alias is optional or defaults
+                  decoration: InputDecoration(
+                      // labelText: l10n.aliasLabel, // TODO: Add l10n
+                      labelText: '别名 (可选)', // Placeholder
+                      // hintText: l10n.aliasHint( _selectedModel ?? 'model'), // TODO: Add l10n
+                      hintText: '例如：我的${_selectedModel ?? '模型'}', // Placeholder
+                      border: const OutlineInputBorder()),
+                  // No validator, alias is optional or defaults
                 ),
                 const SizedBox(height: 16),
 
@@ -238,11 +279,12 @@ class _AddEditAiConfigDialogState extends State<AddEditAiConfigDialog> {
                   decoration: InputDecoration(
                       // labelText: l10n.apiKeyLabel, // TODO: Add l10n
                       labelText: 'API Key', // Placeholder
-                       // hintText: _isEditMode ? l10n.apiKeyEditHint : null, // TODO: Add l10n
-                       hintText: _isEditMode ? '留空则不更新' : null, // Placeholder
-                      border: OutlineInputBorder()),
+                      // hintText: _isEditMode ? l10n.apiKeyEditHint : null, // TODO: Add l10n
+                      hintText: _isEditMode ? '留空则不更新' : null, // Placeholder
+                      border: const OutlineInputBorder()),
                   validator: (value) {
-                    if (!_isEditMode && (value == null || value.trim().isEmpty)) {
+                    if (!_isEditMode &&
+                        (value == null || value.trim().isEmpty)) {
                       // return l10n.apiKeyRequired; // TODO: Add l10n
                       return 'API Key 不能为空'; // Placeholder
                     }
@@ -254,7 +296,7 @@ class _AddEditAiConfigDialogState extends State<AddEditAiConfigDialog> {
                 // --- API Endpoint ---
                 TextFormField(
                   controller: _apiEndpointController,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                       // labelText: l10n.apiEndpointLabel, // TODO: Add l10n
                       labelText: 'API Endpoint (可选)', // Placeholder
                       // hintText: l10n.apiEndpointHint, // TODO: Add l10n
@@ -270,14 +312,18 @@ class _AddEditAiConfigDialogState extends State<AddEditAiConfigDialog> {
           TextButton(
             onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
             // child: Text(l10n.cancel), // TODO: Add l10n
-            child: Text('取消'), // Placeholder
+            child: const Text('取消'), // Placeholder
           ),
           ElevatedButton(
             onPressed: _isSaving ? null : _submitForm,
-             child: _isSaving
-                 ? SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                 // : Text(_isEditMode ? l10n.saveChanges : l10n.add), // TODO: Add l10n
-                 : Text(_isEditMode ? '保存更改' : '添加'), // Placeholder
+            child: _isSaving
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                // : Text(_isEditMode ? l10n.saveChanges : l10n.add), // TODO: Add l10n
+                : Text(_isEditMode ? '保存更改' : '添加'), // Placeholder
           ),
         ],
       ),
@@ -287,4 +333,4 @@ class _AddEditAiConfigDialogState extends State<AddEditAiConfigDialog> {
 
 // TODO: Add localization strings: editConfigTitle, addConfigTitle, selectProviderHint, providerRequired, providerLabel,
 // selectModelHint, modelRequired, modelLabel, aliasLabel, aliasHint, apiKeyLabel, apiKeyEditHint, apiKeyRequired,
-// apiEndpointLabel, apiEndpointHint, cancel, saveChanges, add 
+// apiEndpointLabel, apiEndpointHint, cancel, saveChanges, add

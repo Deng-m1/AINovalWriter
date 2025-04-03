@@ -1,15 +1,15 @@
-import 'package:ainoval/blocs/novel_list/novel_list_bloc.dart';
 import 'package:ainoval/blocs/novel_import/novel_import_bloc.dart';
+import 'package:ainoval/blocs/novel_list/novel_list_bloc.dart';
 import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/screens/editor/editor_screen.dart';
 import 'package:ainoval/screens/novel_list/widgets/continue_writing_section.dart';
 import 'package:ainoval/screens/novel_list/widgets/empty_novel_view.dart';
 import 'package:ainoval/screens/novel_list/widgets/header_section.dart';
+import 'package:ainoval/screens/novel_list/widgets/import_novel_dialog.dart';
 import 'package:ainoval/screens/novel_list/widgets/loading_view.dart';
 import 'package:ainoval/screens/novel_list/widgets/novel_card.dart';
 import 'package:ainoval/screens/novel_list/widgets/novel_list_error_view.dart';
 import 'package:ainoval/screens/novel_list/widgets/search_filter_bar.dart';
-import 'package:ainoval/screens/novel_list/widgets/import_novel_dialog.dart';
 import 'package:ainoval/services/api_service/repositories/novel_repository.dart';
 import 'package:ainoval/utils/date_formatter.dart';
 import 'package:flutter/material.dart';
@@ -99,7 +99,7 @@ class MainBackground extends StatelessWidget {
           height: double.infinity,
           decoration: BoxDecoration(
             image: DecorationImage(
-              image: AssetImage('assets/images/background.jpg'),
+              image: const AssetImage('assets/images/background.jpg'),
               fit: BoxFit.cover,
               colorFilter: ColorFilter.mode(
                 Colors.black.withOpacity(0.1),
@@ -218,134 +218,135 @@ class MainCard extends StatelessWidget {
 
     return BlocProvider(
       create: (context) => NovelImportBloc(novelRepository: novelRepository),
-      child: Builder(
-        builder: (context) {
-          return ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: maxWidth,
-              maxHeight: maxHeight,
+      child: Builder(builder: (context) {
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+          ),
+          child: Card(
+            elevation: 12,
+            margin: const EdgeInsets.symmetric(vertical: 24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16.0),
             ),
-            child: Card(
-              elevation: 12,
-              margin: const EdgeInsets.symmetric(vertical: 24),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16.0),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 标题栏
-                  HeaderSection(
-                    onCreateNovel: () => _showCreateNovelDialog(context),
-                    onImportNovel: () => _showImportNovelDialog(context),
-                  ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 标题栏
+                HeaderSection(
+                  onCreateNovel: () => _showCreateNovelDialog(context),
+                  onImportNovel: () => _showImportNovelDialog(context),
+                ),
 
-                  // 标题下方说明文本
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 8,
-                    ),
+                // 标题下方说明文本
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 8,
+                  ),
+                  color: Colors.white,
+                  child: Row(
+                    children: [
+                      Text(
+                        '这是你的个人小说库，你想今天写哪一部？',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      const Spacer(),
+                      // 添加帮助按钮
+                      IconButton(
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('帮助文档将在下一个版本中提供')),
+                          );
+                        },
+                        icon: Icon(
+                          Icons.help_outline,
+                          size: 18,
+                          color: Colors.grey.shade600,
+                        ),
+                        tooltip: '帮助',
+                        splashRadius: 20,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 继续写作区域
+                const ContinueWritingSection(),
+
+                // 搜索和过滤工具栏
+                SearchFilterBar(
+                  searchController: searchController,
+                  isGridView: isGridView,
+                  onSearchChanged: (query) {
+                    context
+                        .read<NovelListBloc>()
+                        .add(SearchNovels(query: query));
+                  },
+                  onViewTypeChanged: onViewTypeChanged,
+                  onFilterPressed: () => _showFilterOptions(context),
+                  onSortPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('排序功能将在下一个迭代中实现')),
+                    );
+                  },
+                  onGroupPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('分组功能将在下一个迭代中实现')),
+                    );
+                  },
+                ),
+
+                // 主要内容区域（小说列表）
+                Expanded(
+                  child: Container(
                     color: Colors.white,
-                    child: Row(
-                      children: [
-                        Text(
-                          '这是你的个人小说库，你想今天写哪一部？',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade600,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                        const Spacer(),
-                        // 添加帮助按钮
-                        IconButton(
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('帮助文档将在下一个版本中提供')),
-                            );
-                          },
-                          icon: Icon(
-                            Icons.help_outline,
-                            size: 18,
-                            color: Colors.grey.shade600,
-                          ),
-                          tooltip: '帮助',
-                          splashRadius: 20,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // 继续写作区域
-                  const ContinueWritingSection(),
-
-                  // 搜索和过滤工具栏
-                  SearchFilterBar(
-                    searchController: searchController,
-                    isGridView: isGridView,
-                    onSearchChanged: (query) {
-                      context.read<NovelListBloc>().add(SearchNovels(query: query));
-                    },
-                    onViewTypeChanged: onViewTypeChanged,
-                    onFilterPressed: () => _showFilterOptions(context),
-                    onSortPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('排序功能将在下一个迭代中实现')),
-                      );
-                    },
-                    onGroupPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('分组功能将在下一个迭代中实现')),
-                      );
-                    },
-                  ),
-
-                  // 主要内容区域（小说列表）
-                  Expanded(
-                    child: Container(
-                      color: Colors.white,
-                      child: BlocBuilder<NovelListBloc, NovelListState>(
-                        builder: (context, state) {
-                          if (state is NovelListInitial) {
-                            context.read<NovelListBloc>().add(LoadNovels());
-                            return const LoadingView();
-                          } else if (state is NovelListLoading) {
-                            return const LoadingView();
-                          } else if (state is NovelListLoaded) {
-                            if (state.novels.isEmpty) {
-                              return EmptyNovelView(
-                                onCreateTap: () => _showCreateNovelDialog(context),
-                              );
-                            }
-
-                            return NovelListSection(
-                              novels: state.novels,
-                              isGridView: isGridView,
-                            );
-                          } else if (state is NovelListError) {
-                            return NovelListErrorView(
-                              message: state.message,
-                              onRetry: () {
-                                context.read<NovelListBloc>().add(LoadNovels());
-                              },
+                    child: BlocBuilder<NovelListBloc, NovelListState>(
+                      builder: (context, state) {
+                        if (state is NovelListInitial) {
+                          context.read<NovelListBloc>().add(LoadNovels());
+                          return const LoadingView();
+                        } else if (state is NovelListLoading) {
+                          return const LoadingView();
+                        } else if (state is NovelListLoaded) {
+                          if (state.novels.isEmpty) {
+                            return EmptyNovelView(
+                              onCreateTap: () =>
+                                  _showCreateNovelDialog(context),
                             );
                           }
-                          return const LoadingView();
-                        },
-                      ),
+
+                          return NovelListSection(
+                            novels: state.novels,
+                            isGridView: isGridView,
+                          );
+                        } else if (state is NovelListError) {
+                          return NovelListErrorView(
+                            message: state.message,
+                            onRetry: () {
+                              context.read<NovelListBloc>().add(LoadNovels());
+                            },
+                          );
+                        }
+                        return const LoadingView();
+                      },
                     ),
                   ),
+                ),
 
-                  // 底部版本信息
-                  VersionFooter(),
-                ],
-              ),
+                // 底部版本信息
+                const VersionFooter(),
+              ],
             ),
-          );
-        }
-      ),
+          ),
+        );
+      }),
     );
   }
 
@@ -499,7 +500,16 @@ class MainCard extends StatelessWidget {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => const ImportNovelDialog(),
+      builder: (dialogContext) {
+        // 获取已经在父级创建的NovelImportBloc
+        final novelImportBloc = context.read<NovelImportBloc>();
+        
+        // 使用BlocProvider.value包装ImportNovelDialog
+        return BlocProvider.value(
+          value: novelImportBloc,
+          child: const ImportNovelDialog(),
+        );
+      },
     );
   }
 }

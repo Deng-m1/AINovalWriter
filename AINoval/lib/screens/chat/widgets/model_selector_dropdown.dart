@@ -1,19 +1,18 @@
-import 'package:flutter/material.dart';
-import 'package:ainoval/models/user_ai_model_config_model.dart';
 import 'package:ainoval/blocs/ai_config/ai_config_bloc.dart';
+import 'package:ainoval/models/user_ai_model_config_model.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class ModelSelectorDropdown extends StatefulWidget {
-  final UserAIModelConfigModel? selectedModel;
-  final Function(UserAIModelConfigModel?) onModelSelected;
-  final bool compact;
-
   const ModelSelectorDropdown({
     Key? key,
     required this.onModelSelected,
     this.selectedModel,
     this.compact = true,
   }) : super(key: key);
+  final UserAIModelConfigModel? selectedModel;
+  final Function(UserAIModelConfigModel?) onModelSelected;
+  final bool compact;
 
   @override
   State<ModelSelectorDropdown> createState() => _ModelSelectorDropdownState();
@@ -51,8 +50,8 @@ class _ModelSelectorDropdownState extends State<ModelSelectorDropdown> {
       List<UserAIModelConfigModel> configs,
       UserAIModelConfigModel? currentSelection) {
     final itemCount = configs.isEmpty ? 1 : configs.length;
-    final double itemHeight = 40.0;
-    final double verticalPadding = 8.0;
+    const double itemHeight = 40.0;
+    const double verticalPadding = 8.0;
     final double menuHeight =
         itemHeight * itemCount.clamp(1, 6) + (verticalPadding * 2);
 
@@ -107,7 +106,7 @@ class _ModelSelectorDropdownState extends State<ModelSelectorDropdown> {
         final config = configs[index];
         final isSelected = currentSelection?.id == config.id;
         final displayName =
-            "${config.provider}/${config.alias.isNotEmpty ? config.alias : config.modelName}";
+            '${config.provider}/${config.alias.isNotEmpty ? config.alias : config.modelName}';
 
         return InkWell(
           onTap: () {
@@ -261,6 +260,6 @@ class _ModelSelectorDropdownState extends State<ModelSelectorDropdown> {
       return '选择模型';
     }
     final namePart = model.alias.isNotEmpty ? model.alias : model.modelName;
-    return "${model.provider}/$namePart";
+    return '${model.provider}/$namePart';
   }
 }

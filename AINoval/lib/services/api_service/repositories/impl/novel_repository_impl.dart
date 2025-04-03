@@ -1,13 +1,12 @@
 import 'package:ainoval/config/app_config.dart';
+import 'package:ainoval/models/import_status.dart';
 import 'package:ainoval/models/novel_structure.dart';
 import 'package:ainoval/models/scene_version.dart';
-import 'package:ainoval/models/import_status.dart';
 import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
-
 import 'package:ainoval/services/api_service/repositories/novel_repository.dart';
-import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/utils/date_time_parser.dart';
+import 'package:ainoval/utils/logger.dart';
 
 /// 小说仓库实现
 class NovelRepositoryImpl implements NovelRepository {
@@ -348,7 +347,8 @@ class NovelRepositoryImpl implements NovelRepository {
           '获取导入状态流失败',
           e);
       // 在流处理中，返回带有错误的流而不是抛出异常
-      return Stream.error(e is ApiException ? e : ApiException(-1, '获取导入状态流失败: $e'));
+      return Stream.error(
+          e is ApiException ? e : ApiException(-1, '获取导入状态流失败: $e'));
     }
   }
 

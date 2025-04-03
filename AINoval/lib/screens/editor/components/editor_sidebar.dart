@@ -35,7 +35,6 @@ class _EditorSidebarState extends State<EditorSidebar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      width: 280,
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -92,29 +91,33 @@ class _EditorSidebarState extends State<EditorSidebar> {
       scrolledUnderElevation: 0,
       backgroundColor: Colors.white,
       automaticallyImplyLeading: false,
-      titleSpacing: 8,
+      titleSpacing: 0,
       title: Row(
         children: [
           // 返回按钮
           IconButton(
-            icon: const Icon(Icons.arrow_back, size: 20),
+            icon: const Icon(Icons.arrow_back, size: 18),
             tooltip: '返回小说列表',
-            splashRadius: 20,
+            splashRadius: 18,
             onPressed: () {
               Navigator.pop(context);
             },
             style: IconButton.styleFrom(
               foregroundColor: Colors.grey.shade700,
+              padding: const EdgeInsets.all(6),
+              minimumSize: const Size(34, 34),
             ),
           ),
           // 设置按钮
           IconButton(
-            icon: const Icon(Icons.settings_outlined, size: 20),
+            icon: const Icon(Icons.settings_outlined, size: 18),
             tooltip: '全局设置',
-            splashRadius: 20,
+            splashRadius: 18,
             onPressed: widget.onOpenSettings,
             style: IconButton.styleFrom(
               foregroundColor: Colors.grey.shade700,
+              padding: const EdgeInsets.all(6),
+              minimumSize: const Size(34, 34),
             ),
           ),
           // 标题和作者信息
@@ -127,10 +130,11 @@ class _EditorSidebarState extends State<EditorSidebar> {
                   widget.novel.title,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
-                    fontSize: 15,
+                    fontSize: 14,
                     color: Colors.grey.shade800,
                   ),
                   overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
                 Text(
                   'Deng Binjie', // 使用作者名，此处硬编码，实际应从数据模型获取
@@ -139,28 +143,33 @@ class _EditorSidebarState extends State<EditorSidebar> {
                     fontSize: 12,
                   ),
                   overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ],
             ),
           ),
           // 侧边栏折叠按钮
           IconButton(
-            icon: const Icon(Icons.format_indent_decrease, size: 20),
+            icon: const Icon(Icons.format_indent_decrease, size: 18),
             tooltip: '折叠侧边栏',
-            splashRadius: 20,
+            splashRadius: 18,
             onPressed: widget.onToggleSidebar,
             style: IconButton.styleFrom(
               foregroundColor: Colors.grey.shade700,
+              padding: const EdgeInsets.all(6),
+              minimumSize: const Size(34, 34),
             ),
           ),
           // 调整宽度按钮
           IconButton(
-            icon: const Icon(Icons.swap_horiz, size: 20),
+            icon: const Icon(Icons.swap_horiz, size: 18),
             tooltip: '调整侧边栏宽度',
-            splashRadius: 20,
+            splashRadius: 18,
             onPressed: widget.onAdjustWidth,
             style: IconButton.styleFrom(
               foregroundColor: Colors.grey.shade700,
+              padding: const EdgeInsets.all(6),
+              minimumSize: const Size(34, 34),
             ),
           ),
         ],
@@ -184,32 +193,35 @@ class _EditorSidebarState extends State<EditorSidebar> {
         labelColor: theme.colorScheme.primary,
         unselectedLabelColor: Colors.grey.shade600,
         indicatorColor: theme.colorScheme.primary,
-        indicatorWeight: 3.0, // 增加指示器粗细
+        indicatorWeight: 2.0, // 减小指示器粗细
         indicatorSize: TabBarIndicatorSize.label,
         labelStyle: const TextStyle(
           fontWeight: FontWeight.w600,
-          fontSize: 14,
+          fontSize: 13, // 减小字体大小
         ),
         unselectedLabelStyle: const TextStyle(
           fontWeight: FontWeight.normal,
-          fontSize: 14,
+          fontSize: 13, // 减小字体大小
         ),
         dividerColor: Colors.transparent,
+        isScrollable: false, // 确保不可滚动，平均分配空间
+        labelPadding: const EdgeInsets.symmetric(horizontal: 2.0), // 减小标签内边距
+        padding: const EdgeInsets.symmetric(horizontal: 2.0), // 减小整体内边距
         tabs: const [
           Tab(
-            icon: Icon(Icons.menu_book_outlined, size: 20),
+            icon: Icon(Icons.menu_book_outlined, size: 18), // 减小图标大小
             text: 'Codex',
-            height: 56, // 调整高度
+            height: 48, // 减小高度
           ),
           Tab(
-            icon: Icon(Icons.bookmark_border_outlined, size: 20),
+            icon: Icon(Icons.bookmark_border_outlined, size: 18), // 减小图标大小
             text: 'Snippets',
-            height: 56, // 调整高度
+            height: 48, // 减小高度
           ),
           Tab(
-            icon: Icon(Icons.forum_outlined, size: 20),
+            icon: Icon(Icons.forum_outlined, size: 18), // 减小图标大小
             text: 'Chats',
-            height: 56, // 调整高度
+            height: 48, // 减小高度
           ),
         ],
       ),
@@ -225,7 +237,7 @@ class _EditorSidebarState extends State<EditorSidebar> {
           // 搜索和操作栏
           Container(
             padding:
-                const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0),
+                const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border(
@@ -240,7 +252,7 @@ class _EditorSidebarState extends State<EditorSidebar> {
                 // 搜索框
                 Expanded(
                   child: Container(
-                    height: 36,
+                    height: 34,
                     decoration: BoxDecoration(
                       color: Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(6),
@@ -252,53 +264,57 @@ class _EditorSidebarState extends State<EditorSidebar> {
                     child: TextField(
                       controller: _searchController,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 13,
                         color: Colors.grey.shade800,
                       ),
                       decoration: InputDecoration(
-                        hintText: 'Search all entries...',
+                        hintText: 'Search...',
                         hintStyle: TextStyle(
-                          fontSize: 14,
+                          fontSize: 13,
                           color: Colors.grey.shade500,
                         ),
                         prefixIcon: Icon(
                           Icons.search,
-                          size: 18,
+                          size: 16,
                           color: Colors.grey.shade600,
                         ),
                         suffixIcon: IconButton(
                           icon: Icon(
                             Icons.filter_list,
-                            size: 18,
+                            size: 16,
                             color: Colors.grey.shade600,
                           ),
                           onPressed: () {
                             // TODO: 实现筛选功能
                           },
-                          splashRadius: 20,
+                          splashRadius: 16,
                           tooltip: '筛选',
                           padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
                         ),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
-                          vertical: 8,
-                          horizontal: 12,
+                          vertical: 6,
+                          horizontal: 8,
                         ),
                         isDense: true,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 // 新建条目按钮
                 SizedBox(
-                  height: 36,
+                  height: 34,
                   child: OutlinedButton.icon(
                     onPressed: () {
                       // TODO: 实现创建新条目逻辑
                     },
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('New Entry'),
+                    icon: const Icon(Icons.add, size: 14),
+                    label: const Text('New'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: theme.colorScheme.primary,
                       backgroundColor: Colors.white,
@@ -307,11 +323,11 @@ class _EditorSidebarState extends State<EditorSidebar> {
                         width: 1.0,
                       ),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
+                        horizontal: 6,
                         vertical: 0,
                       ),
                       textStyle: const TextStyle(
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
                       shape: RoundedRectangleBorder(
@@ -320,30 +336,23 @@ class _EditorSidebarState extends State<EditorSidebar> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 2),
                 // Codex 设置按钮
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(4),
+                IconButton(
+                  onPressed: () {
+                    // TODO: 实现 Codex 设置逻辑
+                  },
+                  icon: Icon(
+                    Icons.settings_outlined,
+                    size: 16,
+                    color: Colors.grey.shade700,
                   ),
-                  child: IconButton(
-                    onPressed: () {
-                      // TODO: 实现 Codex 设置逻辑
-                    },
-                    icon: Icon(
-                      Icons.settings_outlined,
-                      size: 18,
-                      color: Colors.grey.shade700,
-                    ),
-                    tooltip: 'Codex 设置',
-                    splashRadius: 20,
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
+                  tooltip: 'Codex 设置',
+                  splashRadius: 16,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
                   ),
                 ),
               ],
@@ -406,38 +415,48 @@ class _EditorSidebarState extends State<EditorSidebar> {
               ),
             ),
           ),
-          const Spacer(),
-          // 帮助按钮
-          _buildBottomBarItem(
-            icon: Icons.help_outline,
-            label: 'Help',
-            onTap: () {
-              // TODO: 实现帮助功能
-            },
-          ),
-          // 提示按钮
-          _buildBottomBarItem(
-            icon: Icons.lightbulb_outline,
-            label: 'Prompts',
-            onTap: () {
-              // TODO: 实现提示功能
-            },
-          ),
-          // 导出按钮
-          _buildBottomBarItem(
-            icon: Icons.download_outlined,
-            label: 'Export',
-            onTap: () {
-              // TODO: 实现导出功能
-            },
-          ),
-          // 保存按钮
-          _buildBottomBarItem(
-            icon: Icons.bookmark_border_outlined,
-            label: 'Saved',
-            onTap: () {
-              // TODO: 实现保存功能
-            },
+          // 使用Expanded包裹Wrap来确保按钮能够在可用空间内自动排列
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  // 帮助按钮
+                  _buildBottomBarItem(
+                    icon: Icons.help_outline,
+                    label: 'Help',
+                    onTap: () {
+                      // TODO: 实现帮助功能
+                    },
+                  ),
+                  // 提示按钮
+                  _buildBottomBarItem(
+                    icon: Icons.lightbulb_outline,
+                    label: 'Prompts',
+                    onTap: () {
+                      // TODO: 实现提示功能
+                    },
+                  ),
+                  // 导出按钮
+                  _buildBottomBarItem(
+                    icon: Icons.download_outlined,
+                    label: 'Export',
+                    onTap: () {
+                      // TODO: 实现导出功能
+                    },
+                  ),
+                  // 保存按钮
+                  _buildBottomBarItem(
+                    icon: Icons.bookmark_border_outlined,
+                    label: 'Saved',
+                    onTap: () {
+                      // TODO: 实现保存功能
+                    },
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -452,8 +471,9 @@ class _EditorSidebarState extends State<EditorSidebar> {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10.0),
+        padding: const EdgeInsets.symmetric(horizontal: 8.0),
         child: Row(
+          mainAxisSize: MainAxisSize.min, // 确保Row只占用所需空间
           children: [
             Icon(
               icon,

@@ -46,7 +46,7 @@ class AppLogger {
       }
 
       final lvlColor = _getLogLevelColor(record.level);
-      final resetColor = '\x1B[0m'; // ANSI 重置颜色代码
+      const resetColor = '\x1B[0m'; // ANSI 重置颜色代码
       final emoji = _getLogEmoji(record.level);
       final timestamp = DateTime.now().toString().substring(0, 19);
       // 格式: 时间戳 [级别] [模块名] Emoji 日志内容
@@ -134,8 +134,9 @@ class AppLogger {
 
   /// 获取日志级别对应的emoji
   static String _getLogEmoji(Level level) {
-    if (level == Level.FINEST || level == Level.FINER || level == Level.FINE)
+    if (level == Level.FINEST || level == Level.FINER || level == Level.FINE) {
       return '🔍'; // 调试
+    }
     if (level == Level.CONFIG || level == Level.INFO) return '📘'; // 信息
     if (level == Level.WARNING) return '⚠️'; // 警告
     if (level == Level.SEVERE) return '❌'; // 错误
@@ -145,10 +146,12 @@ class AppLogger {
 
   /// 获取日志级别对应的ANSI颜色代码
   static String _getLogLevelColor(Level level) {
-    if (level == Level.FINEST || level == Level.FINER || level == Level.FINE)
+    if (level == Level.FINEST || level == Level.FINER || level == Level.FINE) {
       return '\x1B[90m'; // 灰色 (Verbose/Debug)
-    if (level == Level.CONFIG || level == Level.INFO)
+    }
+    if (level == Level.CONFIG || level == Level.INFO) {
       return '\x1B[34m'; // 蓝色 (Info/Config)
+    }
     if (level == Level.WARNING) return '\x1B[33m'; // 黄色 (Warning)
     if (level == Level.SEVERE) return '\x1B[31m'; // 红色 (Error)
     if (level == Level.SHOUT) return '\x1B[35;41m'; // 紫色 + 红色背景 (WTF/Shout)

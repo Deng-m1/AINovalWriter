@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:ainoval/models/user_ai_model_config_model.dart';
 import 'package:ainoval/screens/chat/widgets/model_selector_dropdown.dart';
+import 'package:flutter/material.dart';
 
 class ChatInput extends StatefulWidget {
   const ChatInput({

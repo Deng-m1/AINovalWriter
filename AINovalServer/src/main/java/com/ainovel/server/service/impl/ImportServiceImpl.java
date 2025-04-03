@@ -81,7 +81,7 @@ public class ImportServiceImpl implements ImportService {
                             .subscribeOn(Schedulers.boundedElastic()) // 在弹性线程池执行核心逻辑
                     )
                     .doOnError(e -> { // 处理管道中的错误
-                        log.error("Import pipeline error for job {}: {}", jobId, e.getMessage(), e);
+                        log.error("Import pipeline error for job {}", jobId, e);
                         sink.tryEmitNext(createStatusEvent(jobId, "FAILED", "导入失败: " + e.getMessage()));
                         sink.tryEmitComplete();
                         activeJobSinks.remove(jobId); // 清理 Sink

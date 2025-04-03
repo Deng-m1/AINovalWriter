@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'package:dio/dio.dart';
 
-import 'package:ainoval/config/app_config.dart';
 import 'package:ainoval/models/chat_models.dart';
 import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/services/api_service/repositories/chat_repository.dart';
 import 'package:ainoval/utils/logger.dart';
+import 'package:dio/dio.dart';
 
 /// 聊天仓库实现
 class ChatRepositoryImpl implements ChatRepository {

@@ -6,10 +6,9 @@ import 'package:intl/intl.dart'; // 引入 intl 包用于日期格式化
 import '../../../blocs/chat/chat_bloc.dart';
 import '../../../blocs/chat/chat_event.dart';
 import '../../../blocs/chat/chat_state.dart';
-import '../../../models/chat_models.dart';
 import '../../../models/user_ai_model_config_model.dart'; // Import the model config
-import 'chat_message_bubble.dart'; // 引入 ChatMessageBubble
 import 'chat_input.dart'; // 引入 ChatInput
+import 'chat_message_bubble.dart'; // 引入 ChatMessageBubble
 import 'typing_indicator.dart'; // 引入 TypingIndicator
 
 /// AI聊天侧边栏组件，用于在编辑器右侧显示聊天功能
@@ -211,15 +210,25 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
                 // buildWhen 优化：避免不必要的重建，例如仅在关键状态或错误变化时重建
                 buildWhen: (previous, current) {
                   if (previous is ChatSessionsLoading &&
-                      current is ChatSessionsLoaded) return true;
+                      current is ChatSessionsLoaded) {
+                    return true;
+                  }
                   if (previous is ChatSessionsLoaded &&
-                      current is ChatSessionsLoading) return true; // 从列表返回加载
+                      current is ChatSessionsLoading) {
+                    return true; // 从列表返回加载
+                  }
                   if (previous is ChatSessionLoading &&
-                      current is ChatSessionActive) return true;
+                      current is ChatSessionActive) {
+                    return true;
+                  }
                   if (previous is ChatSessionActive &&
-                      current is ChatSessionLoading) return true; // 从活动返回加载
+                      current is ChatSessionLoading) {
+                    return true; // 从活动返回加载
+                  }
                   if (previous is ChatSessionActive &&
-                      current is ChatSessionsLoaded) return true; // 从活动返回列表
+                      current is ChatSessionsLoaded) {
+                    return true; // 从活动返回列表
+                  }
                   if (current is ChatInitial) return true; // 返回初始状态
                   if (current is ChatError) return true; // 显示错误
 
@@ -264,7 +273,7 @@ class _AIChatSidebarState extends State<AIChatSidebar> {
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Text('错误: ${state.message}',
-                            style: TextStyle(color: Colors.red)),
+                            style: const TextStyle(color: Colors.red)),
                       ),
                     );
                   }
