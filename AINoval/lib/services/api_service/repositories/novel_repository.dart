@@ -65,4 +65,10 @@ abstract class NovelRepository {
   ///
   /// 返回导入状态的实时更新
   Stream<ImportStatus> getImportStatus(String jobId);
+
+  /// 取消导入任务
+  ///
+  /// - [jobId]: 导入任务ID
+  /// - 返回: 是否成功取消
+  Future<bool> cancelImport(String jobId);
 }

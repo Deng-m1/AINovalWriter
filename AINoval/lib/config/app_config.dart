@@ -39,7 +39,7 @@ class AppConfig {
   static String get apiBaseUrl {
     switch (_environment) {
       case Environment.development:
-        return 'http://localhost:18080/api/v1';
+        return 'http://127.0.0.1:18080/api/v1';
       case Environment.production:
         return 'https://api.ainoval.com/api/v1';
     }

@@ -111,10 +111,44 @@ class NovelImportBloc extends Bloc<NovelImportEvent, NovelImportState> {
 
   /// 重置导入状态
   void _onResetImportState(
-      ResetImportState event, Emitter<NovelImportState> emit) {
-    _importStatusSubscription?.cancel();
-    _importStatusSubscription = null;
-    emit(NovelImportInitial());
+      ResetImportState event, Emitter<NovelImportState> emit) async {
+    try {
+      // 如果已经不是InProgress状态，不再重复取消
+      if (state is! NovelImportInProgress) {
+        emit(NovelImportInitial());
+        return;
+      }
+      
+      // 记录当前JobId，避免重复取消
+      final currentState = state as NovelImportInProgress;
+      final jobId = currentState.jobId;
+      
+      // 立即切换到取消中状态，防止重复操作
+      emit(NovelImportInProgress(
+        status: "CANCELLING", 
+        message: "正在取消导入...",
+        jobId: jobId
+      ));
+      
+      // 取消订阅
+      await _importStatusSubscription?.cancel();
+      _importStatusSubscription = null;
+      
+      // 如果有JobId，尝试取消任务
+      if (jobId != null) {
+        // 通知服务器取消任务
+        final success = await novelRepository.cancelImport(jobId);
+        AppLogger.i('NovelImportBloc', 
+          '导入任务取消${success ? '成功' : '失败或已完成'}: $jobId');
+      }
+      
+      // 重置状态
+      emit(NovelImportInitial());
+    } catch (e) {
+      AppLogger.e('NovelImportBloc', '重置导入状态时出错', e);
+      // 即使出错，也要确保状态被重置
+      emit(NovelImportInitial());
+    }
   }
 
   @override
