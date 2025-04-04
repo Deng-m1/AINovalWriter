@@ -75,7 +75,14 @@ class _EditorScreenState extends State<EditorScreen>
     _editorBloc = EditorBloc(
       repository: EditorRepositoryImpl(),
       novelId: widget.novel.id,
-    )..add(const LoadEditorContent());
+    );
+    
+    // 使用分页加载，而不是加载所有内容
+    _editorBloc.add(LoadEditorContentPaginated(
+      novelId: widget.novel.id,
+      // NovelSummary没有lastEditedChapterId字段，所以不传该参数，让后端自行处理
+      chaptersLimit: 5, // 默认前后各加载5章内容
+    ));
 
     // 添加监听器确保数据变化时界面更新
     _editorBloc.stream.listen((state) {
@@ -84,6 +91,9 @@ class _EditorScreenState extends State<EditorScreen>
         setState(() {});
       }
     });
+
+    // 添加滚动监听，实现滚动加载更多场景
+    _scrollController.addListener(_onScroll);
 
     _currentUserId = AppConfig.userId;
     if (_currentUserId == null) {
@@ -858,6 +868,93 @@ class _EditorScreenState extends State<EditorScreen>
     AppLogger.i('EditorScreen',
         '小说总字数计算结果: $totalWordCount (Acts: $actCount, Chapters: $chapterCount, Scenes: $sceneCount)');
     return totalWordCount;
+  }
+
+  // 滚动监听函数，用于实现无限滚动加载
+  void _onScroll() {
+    // 获取当前滚动位置
+    final offset = _scrollController.offset;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    
+    // 如果已经滚动到接近底部，加载更多场景
+    if (offset >= maxScroll - 500) {
+      _loadMoreScenes('down');
+    }
+    
+    // 如果滚动到接近顶部，加载更多场景
+    if (offset <= 500) {
+      _loadMoreScenes('up');
+    }
+  }
+  
+  // 防抖变量，避免频繁触发加载
+  DateTime? _lastLoadTime;
+  String? _lastDirection;
+  String? _lastFromChapterId;
+
+  // 加载更多场景函数
+  void _loadMoreScenes(String direction) {
+    final state = _editorBloc.state;
+    if (state is! EditorLoaded) return;
+    
+    // 如果正在加载中，不重复触发
+    if (state.isLoading) return;
+    
+    // 如果当前没有活动章节，无法加载更多
+    if (state.activeChapterId == null) return;
+    
+    // 从哪个章节开始加载（向上或向下）
+    String fromChapterId;
+    if (direction == 'up') {
+      // 找到当前加载的第一个章节ID
+      fromChapterId = _findFirstChapterId(state.novel) ?? state.activeChapterId!;
+    } else {
+      // 找到当前加载的最后一个章节ID
+      fromChapterId = _findLastChapterId(state.novel) ?? state.activeChapterId!;
+    }
+    
+    // 防抖：避免短时间内多次触发相同的加载请求
+    final now = DateTime.now();
+    if (_lastLoadTime != null && 
+        now.difference(_lastLoadTime!).inSeconds < 2 &&
+        _lastDirection == direction &&
+        _lastFromChapterId == fromChapterId) {
+      return;
+    }
+    
+    _lastLoadTime = now;
+    _lastDirection = direction;
+    _lastFromChapterId = fromChapterId;
+    
+    // 触发加载更多事件
+    _editorBloc.add(LoadMoreScenes(
+      fromChapterId: fromChapterId,
+      direction: direction,
+      chaptersLimit: 3, // 每次加载3章内容
+    ));
+  }
+  
+  // 辅助函数：找到当前加载的第一个章节ID
+  String? _findFirstChapterId(novel_models.Novel novel) {
+    if (novel.acts.isEmpty) return null;
+    for (final act in novel.acts) {
+      if (act.chapters.isNotEmpty) {
+        return act.chapters.first.id;
+      }
+    }
+    return null;
+  }
+  
+  // 辅助函数：找到当前加载的最后一个章节ID
+  String? _findLastChapterId(novel_models.Novel novel) {
+    if (novel.acts.isEmpty) return null;
+    for (int i = novel.acts.length - 1; i >= 0; i--) {
+      final act = novel.acts[i];
+      if (act.chapters.isNotEmpty) {
+        return act.chapters.last.id;
+      }
+    }
+    return null;
   }
 }
 

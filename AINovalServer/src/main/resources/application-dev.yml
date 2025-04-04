@@ -28,13 +28,15 @@ logging:
     root: INFO
     com.ainovel: DEBUG
     # 添加MongoDB查询日志配置
-    org.springframework.data.mongodb: DEBUG
-    org.springframework.data.mongodb.core.ReactiveMongoTemplate: DEBUG
-    org.springframework.data.mongodb.core.MongoTemplate: DEBUG
-    org.springframework.data.mongodb.repository.query: DEBUG
-    org.springframework.web: DEBUG
-    org.springframework.security: DEBUG
-    reactor.netty: DEBUG
+    org.springframework.data.mongodb: WARN
+    com.ainovel.server.service.impl.ImportServiceImpl: DEBUG
+    com.ainovel.server.config.MongoQueryCounterAspect: WARN
+    org.springframework.data.mongodb.core.ReactiveMongoTemplate: WARN
+    org.springframework.data.mongodb.core.MongoTemplate: WARN
+    org.springframework.data.mongodb.repository.query: WARN
+    org.springframework.web: WARN
+    org.springframework.security: WARN
+    reactor.netty: WARN
 
 management:
   endpoints:

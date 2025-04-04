@@ -8,6 +8,14 @@ abstract class EditorRepository {
   /// 获取小说
   Future<Novel?> getNovel(String novelId);
 
+  /// 获取小说详情（分页加载场景）
+  /// 基于上次编辑章节为中心，获取前后指定数量的章节及其场景内容
+  Future<Novel?> getNovelWithPaginatedScenes(String novelId, String lastEditedChapterId, {int chaptersLimit = 5});
+
+  /// 加载更多章节场景
+  /// 根据方向（向上或向下）加载更多章节的场景内容
+  Future<Map<String, List<Scene>>> loadMoreScenes(String novelId, String fromChapterId, String direction, {int chaptersLimit = 5});
+
   /// 保存小说数据
   Future<bool> saveNovel(Novel novel);
 

@@ -67,7 +67,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
+             children: [
               Row(
                 children: [
                   Icon(

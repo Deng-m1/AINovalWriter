@@ -1,7 +1,7 @@
 package com.ainovel.server.service;
 
-import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.http.codec.multipart.FilePart;
 
 import com.ainovel.server.web.dto.ImportStatus;
 
@@ -29,4 +29,12 @@ public interface ImportService {
      * @return 包含导入状态的SSE事件流
      */
     Flux<ServerSentEvent<ImportStatus>> getImportStatusStream(String jobId);
+
+    /**
+     * 取消导入任务
+     *
+     * @param jobId 任务ID
+     * @return 是否成功取消 true:成功 false:失败或任务不存在
+     */
+    Mono<Boolean> cancelImport(String jobId);
 }

@@ -15,10 +15,10 @@ import lombok.extern.slf4j.Slf4j;
 @Configuration
 public class ChatLanguageModelConfig {
 
-    @Value("${ai.openai.api-key:#{environment.OPENAI_API_KEY}}")
+    @Value("${ai.openai.api-key}")
     private String openaiApiKey;
 
-    @Value("${ai.openai.chat-model:gpt-3.5-turbo}")
+    @Value("${ai.openai.chat-model:deepseek/deepseek-v3-base:free}")
     private String openaiChatModel;
 
     @Value("${ai.openai.temperature:0.7}")
@@ -36,7 +36,8 @@ public class ChatLanguageModelConfig {
     public ChatLanguageModel chatLanguageModel() {
         log.info("配置ChatLanguageModel，模型：{}", openaiChatModel);
 
-        return OpenAiChatModel.builder()
+        ChatLanguageModel chatLanguageModel= OpenAiChatModel.builder()
+                .baseUrl("https://openrouter.ai/api/v1")
                 .apiKey(openaiApiKey)
                 .modelName(openaiChatModel)
                 .temperature(temperature)
@@ -44,5 +45,8 @@ public class ChatLanguageModelConfig {
                 .logRequests(true)
                 .logResponses(true)
                 .build();
+        //String message= chatLanguageModel.("1+1=");
+        //log.info(message);
+        return chatLanguageModel;
     }
 }

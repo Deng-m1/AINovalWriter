@@ -248,12 +248,17 @@ class ApiClient {
   /// 导入小说文件
   Future<String> importNovel(List<int> fileBytes, String fileName) async {
     try {
+      // 获取当前用户ID
+      final userId = AppConfig.userId;
+      
       // 创建 MultipartFile
       final formData = FormData.fromMap({
         'file': MultipartFile.fromBytes(
           fileBytes,
           filename: fileName,
         ),
+        // 添加用户ID字段，虽然后端应该能从token中获取，这里作为备用
+        if (userId != null) 'userId': userId,
       });
 
       // 设置接收 JobId 的选项
@@ -617,6 +622,41 @@ class ApiClient {
   /// 根据ID获取小说详情
   Future<dynamic> getNovelDetailById(String id) async {
     return post('/novels/get-with-scenes', data: {'id': id});
+  }
+
+  /// 分页加载小说详情和场景内容
+  /// 基于上次编辑章节为中心，获取前后指定数量的章节及其场景内容
+  Future<dynamic> getNovelWithPaginatedScenes(String novelId, String lastEditedChapterId, {int chaptersLimit = 5}) async {
+    try {
+      AppLogger.i('ApiClient', '分页加载小说详情: $novelId, 中心章节: $lastEditedChapterId, 限制: $chaptersLimit');
+      final response = await post('/novels/get-with-paginated-scenes', data: {
+        'novelId': novelId,
+        'lastEditedChapterId': lastEditedChapterId,
+        'chaptersLimit': chaptersLimit
+      });
+      return response;
+    } catch (e) {
+      AppLogger.e('ApiClient', '分页加载小说详情失败', e);
+      rethrow;
+    }
+  }
+
+  /// 加载更多场景内容
+  /// 根据方向（向上或向下）加载更多章节的场景内容
+  Future<dynamic> loadMoreScenes(String novelId, String fromChapterId, String direction, {int chaptersLimit = 5}) async {
+    try {
+      AppLogger.i('ApiClient', '加载更多场景: $novelId, 从章节: $fromChapterId, 方向: $direction, 限制: $chaptersLimit');
+      final response = await post('/novels/load-more-scenes', data: {
+        'novelId': novelId,
+        'fromChapterId': fromChapterId,
+        'direction': direction,
+        'chaptersLimit': chaptersLimit
+      });
+      return response;
+    } catch (e) {
+      AppLogger.e('ApiClient', '加载更多场景失败', e);
+      rethrow;
+    }
   }
 
   /// 创建小说

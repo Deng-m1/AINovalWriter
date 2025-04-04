@@ -32,9 +32,11 @@ import com.ainovel.server.web.dto.ChapterScenesDto;
 import com.ainovel.server.web.dto.IdDto;
 import com.ainovel.server.web.dto.ImportStatus;
 import com.ainovel.server.web.dto.JobIdResponse;
+import com.ainovel.server.web.dto.LoadMoreScenesRequestDto;
 import com.ainovel.server.web.dto.NovelChapterDto;
 import com.ainovel.server.web.dto.NovelChapterSceneDto;
 import com.ainovel.server.web.dto.NovelWithScenesDto;
+import com.ainovel.server.web.dto.PaginatedScenesRequestDto;
 import com.ainovel.server.web.dto.SceneContentUpdateDto;
 import com.ainovel.server.web.dto.SceneRestoreDto;
 import com.ainovel.server.web.dto.SceneSearchDto;
@@ -91,6 +93,43 @@ public class NovelController extends ReactiveBaseController {
     @PostMapping("/get-with-scenes")
     public Mono<NovelWithScenesDto> getNovelWithScenes(@RequestBody IdDto idDto) {
         return novelService.getNovelWithAllScenes(idDto.getId());
+    }
+
+    /**
+     * 获取小说详情及其部分场景内容（分页加载） 基于上次编辑章节为中心，获取前后指定数量的章节
+     *
+     * @param paginatedScenesRequestDto 包含小说ID和分页参数的DTO
+     * @return 小说及其分页加载的场景数据
+     */
+    @PostMapping("/get-with-paginated-scenes")
+    public Mono<NovelWithScenesDto> getNovelWithPaginatedScenes(@RequestBody PaginatedScenesRequestDto paginatedScenesRequestDto) {
+        String novelId = paginatedScenesRequestDto.getNovelId();
+        String lastEditedChapterId = paginatedScenesRequestDto.getLastEditedChapterId();
+        int chaptersLimit = paginatedScenesRequestDto.getChaptersLimit();
+
+        log.info("获取小说分页场景数据: novelId={}, lastEditedChapterId={}, chaptersLimit={}",
+                novelId, lastEditedChapterId, chaptersLimit);
+
+        return novelService.getNovelWithPaginatedScenes(novelId, lastEditedChapterId, chaptersLimit);
+    }
+
+    /**
+     * 加载更多场景内容 根据方向（向上或向下）加载更多章节的场景内容
+     *
+     * @param loadMoreScenesRequestDto 包含小说ID、方向和章节数量的DTO
+     * @return 加载的更多场景数据，按章节组织
+     */
+    @PostMapping("/load-more-scenes")
+    public Mono<Map<String, List<Scene>>> loadMoreScenes(@RequestBody LoadMoreScenesRequestDto loadMoreScenesRequestDto) {
+        String novelId = loadMoreScenesRequestDto.getNovelId();
+        String fromChapterId = loadMoreScenesRequestDto.getFromChapterId();
+        String direction = loadMoreScenesRequestDto.getDirection();
+        int chaptersLimit = loadMoreScenesRequestDto.getChaptersLimit();
+
+        log.info("加载更多场景: novelId={}, fromChapterId={}, direction={}, chaptersLimit={}",
+                novelId, fromChapterId, direction, chaptersLimit);
+
+        return novelService.loadMoreScenes(novelId, fromChapterId, direction, chaptersLimit);
     }
 
     /**
@@ -418,11 +457,26 @@ public class NovelController extends ReactiveBaseController {
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Mono<ResponseEntity<JobIdResponse>> importNovel(
             @RequestPart("file") FilePart filePart,
+            @RequestPart(value = "userId", required = false) String formUserId,
             @CurrentUser String currentUserId) {
 
         log.info("接收到小说导入请求: {}，大小: {}", filePart.filename(), filePart.headers().getContentLength());
 
-        return importService.startImport(filePart, currentUserId)
+        // 如果当前用户ID为空，尝试使用表单中的用户ID
+        String userId = currentUserId;
+        if (userId == null || userId.isEmpty()) {
+            if (formUserId != null && !formUserId.isEmpty()) {
+                userId = formUserId;
+                log.info("使用表单中的用户ID: {}", userId);
+            } else {
+                log.error("未能获取用户ID，无法导入小说");
+                return Mono.just(ResponseEntity
+                        .status(HttpStatus.UNAUTHORIZED)
+                        .body(new JobIdResponse("错误：未能识别用户身份")));
+            }
+        }
+
+        return importService.startImport(filePart, userId)
                 .map(jobId -> ResponseEntity
                 .status(HttpStatus.ACCEPTED)
                 .body(new JobIdResponse(jobId)));
@@ -437,5 +491,35 @@ public class NovelController extends ReactiveBaseController {
     @GetMapping(value = "/import/{jobId}/status", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<ImportStatus>> getImportStatus(@PathVariable String jobId) {
         return importService.getImportStatusStream(jobId);
+    }
+
+    /**
+     * 取消导入任务
+     *
+     * @param jobId 任务ID
+     * @return 操作结果
+     */
+    @PostMapping("/import/{jobId}/cancel")
+    public Mono<ResponseEntity<Map<String, Object>>> cancelImport(@PathVariable String jobId) {
+        log.info("收到取消导入任务请求: {}", jobId);
+
+        return importService.cancelImport(jobId)
+                .map(success -> {
+                    if (success) {
+                        return ResponseEntity.ok(
+                                Map.of(
+                                        "status", "success",
+                                        "message", "导入任务已成功取消"
+                                )
+                        );
+                    } else {
+                        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                                Map.of(
+                                        "status", "failed",
+                                        "message", "导入任务取消失败，任务可能不存在或已完成"
+                                )
+                        );
+                    }
+                });
     }
 }

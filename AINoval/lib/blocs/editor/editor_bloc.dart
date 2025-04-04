@@ -19,6 +19,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   })  : repository = repository,
         super(EditorInitial()) {
     on<LoadEditorContent>(_onLoadContent);
+    on<LoadEditorContentPaginated>(_onLoadContentPaginated);
+    on<LoadMoreScenes>(_onLoadMoreScenes);
     on<UpdateContent>(_onUpdateContent);
     on<SaveContent>(_onSaveContent);
     on<UpdateSceneContent>(_onUpdateSceneContent);
@@ -86,6 +88,123 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       ));
     } catch (e) {
       emit(EditorError(message: e.toString()));
+    }
+  }
+
+  Future<void> _onLoadContentPaginated(
+      LoadEditorContentPaginated event, Emitter<EditorState> emit) async {
+    emit(EditorLoading());
+
+    try {
+      // 获取小说数据（分页），如果lastEditedChapterId为null，使用空字符串
+      final String lastEditedChapterId = event.lastEditedChapterId ?? '';
+      
+      final novel = await repository.getNovelWithPaginatedScenes(
+        event.novelId,
+        lastEditedChapterId,
+        chaptersLimit: event.chaptersLimit,
+      );
+
+      if (novel == null) {
+        emit(const EditorError(message: '无法加载小说数据'));
+        return;
+      }
+
+      // 获取编辑器设置
+      final settings = await repository.getEditorSettings();
+
+      // 设置默认的活动Act、Chapter和Scene，优先使用lastEditedChapterId
+      String? activeActId;
+      String? activeChapterId = novel.lastEditedChapterId;
+      String? activeSceneId;
+
+      // 如果有lastEditedChapterId，找到对应的Act和Scene
+      if (activeChapterId != null && activeChapterId.isNotEmpty) {
+        // 查找包含lastEditedChapterId的Act
+        for (final act in novel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == activeChapterId) {
+              activeActId = act.id;
+              // 如果章节有场景，选择第一个场景
+              if (chapter.scenes.isNotEmpty) {
+                activeSceneId = chapter.scenes.first.id;
+              }
+              break;
+            }
+          }
+          if (activeActId != null) break;
+        }
+      }
+
+      // 如果没有找到活动章节，使用第一个可用的
+      if (activeActId == null && novel.acts.isNotEmpty) {
+        activeActId = novel.acts.first.id;
+        
+        if (novel.acts.first.chapters.isNotEmpty) {
+          activeChapterId = novel.acts.first.chapters.first.id;
+          
+          if (novel.acts.first.chapters.first.scenes.isNotEmpty) {
+            activeSceneId = novel.acts.first.chapters.first.scenes.first.id;
+          }
+        }
+      }
+
+      emit(EditorLoaded(
+        novel: novel,
+        settings: settings,
+        activeActId: activeActId,
+        activeChapterId: activeChapterId,
+        activeSceneId: activeSceneId,
+        isDirty: false,
+        isSaving: false,
+      ));
+    } catch (e) {
+      emit(EditorError(message: '加载小说失败: ${e.toString()}'));
+    }
+  }
+
+  Future<void> _onLoadMoreScenes(
+      LoadMoreScenes event, Emitter<EditorState> emit) async {
+    // 确保当前状态是已加载状态
+    final currentState = state;
+    if (currentState is! EditorLoaded) {
+      emit(const EditorError(message: '无法加载更多场景：编辑器尚未加载'));
+      return;
+    }
+    
+    // 标记为正在加载更多
+    emit(currentState.copyWith(isLoading: true));
+    
+    try {
+      // 调用加载更多场景的API
+      final newScenes = await repository.loadMoreScenes(
+        novelId,
+        event.fromChapterId,
+        event.direction,
+        chaptersLimit: event.chaptersLimit,
+      );
+      
+      if (newScenes.isEmpty) {
+        // 没有更多场景可加载，恢复原状态
+        emit(currentState.copyWith(isLoading: false));
+        return;
+      }
+      
+      // 将新加载的场景合并到当前小说结构中
+      final updatedNovel = _mergeNewScenes(currentState.novel, newScenes);
+      
+      emit(currentState.copyWith(
+        novel: updatedNovel,
+        isLoading: false,
+      ));
+    } catch (e) {
+      AppLogger.e('Blocs/editor/editor_bloc', '加载更多场景失败', e);
+      
+      // 出错时恢复原状态，但标记加载已结束
+      emit(currentState.copyWith(
+        isLoading: false,
+        errorMessage: '加载更多场景失败: ${e.toString()}',
+      ));
     }
   }
 
@@ -1228,6 +1347,78 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         ));
       }
     }
+  }
+
+  // 辅助方法：将新加载的场景合并到当前小说结构中
+  novel_models.Novel _mergeNewScenes(
+      novel_models.Novel currentNovel, 
+      Map<String, List<novel_models.Scene>> newScenes) {
+    // 深拷贝当前小说以避免直接修改状态
+    final List<novel_models.Act> updatedActs = List.from(currentNovel.acts);
+    
+    // 遍历新加载的场景，按章节ID归类
+    newScenes.forEach((chapterId, scenes) {
+      // 在现有结构中查找对应的章节
+      bool chapterFound = false;
+      
+      for (int actIndex = 0; actIndex < updatedActs.length; actIndex++) {
+        final novel_models.Act act = updatedActs[actIndex];
+        final List<novel_models.Chapter> updatedChapters = List.from(act.chapters);
+        
+        for (int chapterIndex = 0; chapterIndex < updatedChapters.length; chapterIndex++) {
+          final novel_models.Chapter chapter = updatedChapters[chapterIndex];
+          
+          if (chapter.id == chapterId) {
+            // 找到对应章节，更新其场景列表
+            chapterFound = true;
+            
+            // 创建已有场景ID集合，用于去重
+            final existingSceneIds = chapter.scenes.map((s) => s.id).toSet();
+            
+            // 过滤掉已存在的场景，只添加新场景
+            final List<novel_models.Scene> newUniqueScenesForChapter = scenes
+                .where((scene) => !existingSceneIds.contains(scene.id))
+                .toList();
+            
+            if (newUniqueScenesForChapter.isEmpty) {
+              AppLogger.i('Blocs/editor/editor_bloc', 
+                  '章节 $chapterId 没有新的场景需要添加');
+              break;
+            }
+            
+            // 添加新场景
+            final List<novel_models.Scene> mergedScenes = [
+              ...chapter.scenes, 
+              ...newUniqueScenesForChapter
+            ];
+            
+            // 创建更新后的章节
+            final updatedChapter = chapter.copyWith(scenes: mergedScenes);
+            updatedChapters[chapterIndex] = updatedChapter;
+            
+            // 更新Act中的chapters列表
+            updatedActs[actIndex] = act.copyWith(chapters: updatedChapters);
+            
+            AppLogger.i('Blocs/editor/editor_bloc', 
+                '已将 ${newUniqueScenesForChapter.length} 个新场景合并到章节 $chapterId');
+            break;
+          }
+        }
+        
+        if (chapterFound) break;
+      }
+      
+      // 如果没有找到对应章节，记录日志
+      if (!chapterFound) {
+        AppLogger.w('Blocs/editor/editor_bloc', 
+            '未找到对应章节 $chapterId，无法合并 ${scenes.length} 个场景');
+      }
+    });
+    
+    // 创建更新后的Novel对象
+    return currentNovel.copyWith(
+      acts: updatedActs,
+    );
   }
 
   @override

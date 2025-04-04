@@ -185,6 +185,27 @@
             <artifactId>langchain4j-chroma</artifactId>
             <version>${langchain4j.version}</version>
         </dependency>
+        
+        <!-- LangChain4j 本地嵌入模型 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-embeddings</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        
+        <!-- AllMiniLmL6V2 嵌入模型 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-embeddings-all-minilm-l6-v2</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        
+        <!-- AllMiniLmL6V2 量化嵌入模型 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-embeddings-all-minilm-l6-v2-q</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
 
         <!-- Java Diff Utils -->
         <dependency>

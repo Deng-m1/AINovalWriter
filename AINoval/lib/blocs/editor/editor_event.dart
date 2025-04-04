@@ -11,6 +11,38 @@ class LoadEditorContent extends EditorEvent {
   const LoadEditorContent();
 }
 
+/// 使用分页加载编辑器内容事件
+class LoadEditorContentPaginated extends EditorEvent {
+  final String novelId;
+  final String? lastEditedChapterId;
+  final int chaptersLimit;
+
+  const LoadEditorContentPaginated({
+    required this.novelId,
+    this.lastEditedChapterId,
+    this.chaptersLimit = 5,
+  });
+  
+  @override
+  List<Object?> get props => [novelId, lastEditedChapterId, chaptersLimit];
+}
+
+/// 加载更多场景事件
+class LoadMoreScenes extends EditorEvent {
+  final String fromChapterId;
+  final String direction; // "up" 或 "down"
+  final int chaptersLimit;
+
+  const LoadMoreScenes({
+    required this.fromChapterId,
+    required this.direction,
+    this.chaptersLimit = 5,
+  });
+  
+  @override
+  List<Object?> get props => [fromChapterId, direction, chaptersLimit];
+}
+
 class UpdateContent extends EditorEvent {
   const UpdateContent({required this.content});
   final String content;

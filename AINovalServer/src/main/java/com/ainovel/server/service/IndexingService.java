@@ -69,4 +69,12 @@ public interface IndexingService {
      * @return 场景文档流
      */
     Flux<Document> loadNovelSceneDocuments(String novelId);
+
+    /**
+     * 取消正在进行的索引任务
+     *
+     * @param taskId 任务ID (通常是小说ID或者小说ID:场景ID的格式)
+     * @return 是否成功标记为取消
+     */
+    boolean cancelIndexingTask(String taskId);
 }

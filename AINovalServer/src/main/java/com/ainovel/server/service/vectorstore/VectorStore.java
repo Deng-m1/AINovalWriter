@@ -1,5 +1,6 @@
 package com.ainovel.server.service.vectorstore;
 
+import java.util.List;
 import java.util.Map;
 
 import com.ainovel.server.domain.model.KnowledgeChunk;
@@ -12,6 +13,8 @@ import reactor.core.publisher.Mono;
  */
 public interface VectorStore {
 
+
+
     /**
      * 存储向量
      *
@@ -21,6 +24,14 @@ public interface VectorStore {
      * @return 存储ID
      */
     Mono<String> storeVector(String content, float[] vector, Map<String, Object> metadata);
+
+    /**
+     * 批量存储向量
+     *
+     * @param vectorDataList 向量数据列表
+     * @return 存储ID列表
+     */
+    Mono<List<String>> storeVectorsBatch(List<VectorData> vectorDataList);
 
     /**
      * 存储知识块
@@ -76,4 +87,32 @@ public interface VectorStore {
      * @return 操作结果
      */
     Mono<Void> deleteBySourceId(String novelId, String sourceType, String sourceId);
+
+    /**
+     * 向量数据类
+     */
+    class VectorData {
+
+        private final String content;
+        private final float[] vector;
+        private final Map<String, Object> metadata;
+
+        public VectorData(String content, float[] vector, Map<String, Object> metadata) {
+            this.content = content;
+            this.vector = vector;
+            this.metadata = metadata;
+        }
+
+        public String getContent() {
+            return content;
+        }
+
+        public float[] getVector() {
+            return vector;
+        }
+
+        public Map<String, Object> getMetadata() {
+            return metadata;
+        }
+    }
 }

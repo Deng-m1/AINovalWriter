@@ -51,32 +51,49 @@ class _EditorMainAreaState extends State<EditorMainArea> {
     final veryLightGrey = Colors.grey.shade100; // 使用更浅的灰色或自定义颜色 #F8F9FA
     // 或者 Color(0xFFF8F9FA);
 
-    return Container(
-      // 1. 使用更柔和的背景色
-      color: veryLightGrey,
-      child: SingleChildScrollView(
-        controller: widget.scrollController,
-        child: Center(
-          child: ConstrainedBox(
-            // 3. 限制内容最大宽度
-            constraints: const BoxConstraints(maxWidth: 1100), // 保持或调整最大宽度
-            child: Padding(
-              // 调整内边距，增加呼吸空间
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 动态构建Acts
-                  ...widget.novel.acts.map((act) => _buildActSection(act)),
+    // 获取当前EditorLoaded状态，检查是否正在加载更多场景
+    bool isLoadingMore = false;
+    if (widget.editorBloc.state is EditorLoaded) {
+      final state = widget.editorBloc.state as EditorLoaded;
+      isLoadingMore = state.isLoading;
+    }
 
-                  // 添加新Act按钮
-                  _AddActButton(editorBloc: widget.editorBloc),
-                ],
+    return Stack(
+      children: [
+        Container(
+          // 1. 使用更柔和的背景色
+          color: veryLightGrey,
+          child: SingleChildScrollView(
+            controller: widget.scrollController,
+            child: Center(
+              child: ConstrainedBox(
+                // 3. 限制内容最大宽度
+                constraints: const BoxConstraints(maxWidth: 1100), // 保持或调整最大宽度
+                child: Padding(
+                  // 调整内边距，增加呼吸空间
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 顶部加载指示器（向上滚动时加载更多）
+                      if (isLoadingMore) _buildLoadingIndicator(),
+                      
+                      // 动态构建Acts
+                      ...widget.novel.acts.map((act) => _buildActSection(act)),
+
+                      // 添加新Act按钮
+                      _AddActButton(editorBloc: widget.editorBloc),
+                      
+                      // 底部加载指示器（向下滚动时加载更多）
+                      if (isLoadingMore) _buildLoadingIndicator(),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -215,6 +232,37 @@ class _EditorMainAreaState extends State<EditorMainArea> {
     return Document.fromJson([
       {'insert': '\n'}
     ]);
+  }
+
+  // 构建加载指示器
+  Widget _buildLoadingIndicator() {
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: const Center(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
+              ),
+            ),
+            SizedBox(width: 16),
+            Text(
+              "加载更多内容...",
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -136,10 +136,15 @@ class EditorRepositoryImpl implements EditorRepository {
       if (backendNovel.containsKey('author') &&
           backendNovel['author'] != null) {
         final authorData = backendNovel['author'];
-        author = Author(
-          id: authorData['id'],
-          username: authorData['username'],
-        );
+        if (!authorData.containsKey('username') || authorData['username'] == null){
+           authorData['username']='unknown';
+        }
+        if (authorData.containsKey('id') && authorData['id'] != null) {
+          author = Author(
+            id: authorData['id'],
+            username: authorData['username'] ?? 'unknown',
+          );
+        }
       }
 
       // 提取Acts和Chapters
@@ -255,6 +260,171 @@ class EditorRepositoryImpl implements EditorRepository {
           '获取小说时发生未知错误',
           e);
       return null;
+    }
+  }
+
+  /// 获取小说详情（分页加载场景）
+  /// 基于上次编辑章节为中心，获取前后指定数量的章节及其场景内容
+  @override
+  Future<Novel?> getNovelWithPaginatedScenes(String novelId, String lastEditedChapterId, {int chaptersLimit = 5}) async {
+    try {
+      AppLogger.i(
+          'EditorRepositoryImpl/getNovelWithPaginatedScenes', 
+          '从API获取小说(分页): novelId=$novelId, lastChapter=$lastEditedChapterId, limit=$chaptersLimit');
+      
+      // 使用新的分页API获取数据
+      final data = await _apiClient.getNovelWithPaginatedScenes(
+        novelId, 
+        lastEditedChapterId,
+        chaptersLimit: chaptersLimit
+      );
+
+      // 转换数据格式
+      final novel = _convertBackendNovelWithScenesToFrontend(data);
+      
+      // 将小说基本信息保存到本地（不包含场景内容）
+      await _localStorageService.saveNovel(novel);
+      
+      // 将场景内容分别保存到本地
+      for (final act in novel.acts) {
+        for (final chapter in act.chapters) {
+          for (final scene in chapter.scenes) {
+            await _localStorageService.saveSceneContent(
+              novelId, 
+              act.id, 
+              chapter.id, 
+              scene.id, 
+              scene
+            );
+          }
+        }
+      }
+      
+      AppLogger.i(
+          'EditorRepositoryImpl/getNovelWithPaginatedScenes', 
+          '从API获取小说(分页)成功: $novelId, 返回章节数: ${novel.acts.fold(0, (sum, act) => sum + act.chapters.length)}');
+      return novel;
+    } catch (e) {
+      AppLogger.e(
+          'EditorRepositoryImpl/getNovelWithPaginatedScenes',
+          '从API获取小说(分页)失败',
+          e);
+          
+      // 如果分页加载失败，尝试回退到本地存储
+      try {
+        final localNovel = await _localStorageService.getNovel(novelId);
+        if (localNovel != null) {
+          AppLogger.i('EditorRepositoryImpl/getNovelWithPaginatedScenes', 
+              '分页加载失败，回退到本地存储小说: $novelId');
+          return localNovel;
+        }
+      } catch (localError) {
+        AppLogger.e(
+            'EditorRepositoryImpl/getNovelWithPaginatedScenes',
+            '本地存储回退也失败',
+            localError);
+      }
+      return null;
+    }
+  }
+
+  /// 加载更多章节场景
+  /// 根据方向（向上或向下）加载更多章节的场景内容
+  @override
+  Future<Map<String, List<Scene>>> loadMoreScenes(String novelId, String fromChapterId, String direction, {int chaptersLimit = 5}) async {
+    try {
+      AppLogger.i(
+          'EditorRepositoryImpl/loadMoreScenes', 
+          '加载更多场景: novelId=$novelId, fromChapter=$fromChapterId, direction=$direction, limit=$chaptersLimit');
+      
+      // 调用API加载更多场景
+      final data = await _apiClient.loadMoreScenes(
+        novelId, 
+        fromChapterId, 
+        direction,
+        chaptersLimit: chaptersLimit
+      );
+      
+      // 转换数据格式 - data是Map<String, List<Map<String, dynamic>>>
+      final Map<String, List<Scene>> result = {};
+      
+      if (data is Map) {
+        data.forEach((chapterId, scenes) {
+          if (scenes is List) {
+            result[chapterId] = scenes
+                .map((sceneData) => _convertBackendSceneToFrontend(sceneData))
+                .toList();
+                
+            // 对每个场景保存到本地存储
+            // 注意：这里我们需要知道actId，但API可能没有返回，需要从之前的数据中查找
+            _saveScenesToLocalStorage(novelId, chapterId, result[chapterId]!);
+          }
+        });
+      }
+      
+      AppLogger.i(
+          'EditorRepositoryImpl/loadMoreScenes', 
+          '加载更多场景成功: $novelId, 返回章节数: ${result.length}');
+      return result;
+    } catch (e) {
+      AppLogger.e(
+          'EditorRepositoryImpl/loadMoreScenes',
+          '加载更多场景失败',
+          e);
+      // 返回空映射表示加载失败
+      return {};
+    }
+  }
+  
+  /// 辅助方法：将场景保存到本地存储
+  Future<void> _saveScenesToLocalStorage(String novelId, String chapterId, List<Scene> scenes) async {
+    try {
+      // 获取当前小说结构以找到正确的actId
+      final novel = await _localStorageService.getNovel(novelId);
+      if (novel == null) {
+        AppLogger.w('EditorRepositoryImpl/_saveScenesToLocalStorage', 
+            '无法保存场景到本地，小说结构不存在: $novelId');
+        return;
+      }
+      
+      // 查找chapter对应的act
+      String? actId;
+      for (final act in novel.acts) {
+        for (final chapter in act.chapters) {
+          if (chapter.id == chapterId) {
+            actId = act.id;
+            break;
+          }
+        }
+        if (actId != null) break;
+      }
+      
+      if (actId == null) {
+        AppLogger.w('EditorRepositoryImpl/_saveScenesToLocalStorage', 
+            '无法保存场景到本地，找不到章节对应的act: $chapterId');
+        return;
+      }
+      
+      // 保存每个场景
+      for (final scene in scenes) {
+        await _localStorageService.saveSceneContent(
+          novelId, 
+          actId, 
+          chapterId, 
+          scene.id, 
+          scene
+        );
+        AppLogger.v('EditorRepositoryImpl/_saveScenesToLocalStorage', 
+            '场景保存到本地: ${scene.id}');
+      }
+      
+      AppLogger.i('EditorRepositoryImpl/_saveScenesToLocalStorage', 
+          '成功保存 ${scenes.length} 个场景到本地，章节: $chapterId');
+    } catch (e) {
+      AppLogger.e(
+          'EditorRepositoryImpl/_saveScenesToLocalStorage',
+          '保存场景到本地失败',
+          e);
     }
   }
 
