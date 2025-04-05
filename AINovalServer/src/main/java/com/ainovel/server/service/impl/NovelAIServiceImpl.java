@@ -5,7 +5,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
+import dev.langchain4j.rag.content.Content;
+import dev.langchain4j.rag.content.retriever.ContentRetriever;
+import dev.langchain4j.rag.query.Query;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -20,13 +24,14 @@ import com.ainovel.server.service.NovelService;
 import com.ainovel.server.service.PromptService;
 import com.ainovel.server.service.UserService;
 import com.ainovel.server.service.ai.AIModelProvider;
-import com.ainovel.server.service.rag.NovelRagAssistant;
+import com.ainovel.server.service.NovelRagAssistant;
 
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.retriever.Retriever;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * 小说AI服务实现类 专门处理与小说创作相关的AI功能
@@ -44,11 +49,8 @@ public class NovelAIServiceImpl implements NovelAIService {
     // 缓存用户的AI模型提供商
     private final Map<String, Map<String, AIModelProvider>> userProviders = new ConcurrentHashMap<>();
 
-    // 是否使用LangChain4j实现
-    private boolean useLangChain4j = true;
-
     @Autowired
-    private Retriever<TextSegment> contentRetriever;
+    private ContentRetriever contentRetriever;
 
     @Autowired
     private NovelRagAssistant novelRagAssistant;
@@ -292,8 +294,14 @@ public class NovelAIServiceImpl implements NovelAIService {
         }
 
         // 使用ContentRetriever检索相关上下文
+        // 将可能阻塞的操作放在boundedElastic调度器上执行
         return Mono.fromCallable(() -> {
-            List<TextSegment> relevantSegments = contentRetriever.findRelevant(queryText);
+            List<Content> relevantContents = contentRetriever.retrieve(Query.from(queryText));
+            
+            // 将Content转换为TextSegment
+            List<TextSegment> relevantSegments = relevantContents.stream()
+                .map(Content::textSegment)
+                .collect(Collectors.toList());
 
             if (relevantSegments.isEmpty()) {
                 log.info("RAG未找到相关上下文，使用数据库检索");
@@ -328,7 +336,9 @@ public class NovelAIServiceImpl implements NovelAIService {
             }
 
             return request;
-        }).onErrorResume(e -> {
+        })
+        .subscribeOn(Schedulers.boundedElastic()) // 在boundedElastic调度器上执行可能阻塞的操作
+        .onErrorResume(e -> {
             log.error("使用RAG检索上下文时出错", e);
             return getNovelContextFromDatabase(request);
         });
@@ -343,6 +353,7 @@ public class NovelAIServiceImpl implements NovelAIService {
     private Mono<AIRequest> getNovelContextFromDatabase(AIRequest request) {
         // 原有的从数据库获取上下文的逻辑
         return knowledgeService.retrieveRelevantContext(extractQueryTextFromRequest(request), request.getNovelId())
+                .subscribeOn(Schedulers.boundedElastic())  // 在boundedElastic调度器上执行可能阻塞的操作
                 .map(context -> {
                     if (context != null && !context.isEmpty()) {
                         log.info("从知识库中获取到相关上下文");
@@ -407,12 +418,12 @@ public class NovelAIServiceImpl implements NovelAIService {
 
             // 添加元数据信息（如果存在）
             if (segment.metadata() != null) {
-                Map<String, String> metadata = segment.metadata().asMap();
+                Map<String, Object> metadata = segment.metadata().toMap();
                 if (metadata.containsKey("title")) {
                     builder.append("标题: ").append(metadata.get("title")).append("\n");
                 }
                 if (metadata.containsKey("sourceType")) {
-                    String sourceType = metadata.get("sourceType");
+                    String sourceType = metadata.get("sourceType").toString();
                     if ("scene".equals(sourceType)) {
                         builder.append("类型: 场景\n");
                     } else if ("novel_metadata".equals(sourceType)) {
@@ -680,6 +691,7 @@ public class NovelAIServiceImpl implements NovelAIService {
      * @param userId 用户ID
      * @return 操作结果
      */
+    @Override
     public Mono<Void> clearUserProviderCache(String userId) {
         return Mono.fromRunnable(() -> userProviders.remove(userId));
     }
@@ -689,6 +701,7 @@ public class NovelAIServiceImpl implements NovelAIService {
      *
      * @return 操作结果
      */
+    @Override
     public Mono<Void> clearAllProviderCache() {
         return Mono.fromRunnable(userProviders::clear);
     }

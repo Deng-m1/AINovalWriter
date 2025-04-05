@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>剧情推演 - AINovalWriter 原型</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide-static@latest"></script>
+    <style>
+        /* 自定义滚动条样式 (可选) */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* cool-gray-300 */
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; /* cool-gray-400 */
+        }
+        /* 添加简单的加载动画 (可选) */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .loading-spinner {
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #4f46e5; /* indigo-600 */
+            border-radius: 50%;
+            width: 1rem;
+            height: 1rem;
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased flex flex-col h-screen">
+
+    <nav class="bg-white shadow-md w-full z-10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 text-indigo-600 font-bold text-xl">
+                        AINovalWriter
+                    </div>
+                    <div class="hidden md:block">
+                        <div class="ml-10 flex items-baseline space-x-4">
+                            <a href="#" class="text-gray-500 hover:bg-gray-100 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">小说列表</a>
+                            <a href="#" class="text-gray-500 hover:bg-gray-100 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">编辑器</a>
+                            <a href="#" class="text-gray-500 hover:bg-gray-100 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">知识库</a>
+                            <a href="#" class="bg-indigo-100 text-indigo-700 px-3 py-2 rounded-md text-sm font-medium" aria-current="page">剧情推演</a>
+                            <a href="#" class="text-gray-500 hover:bg-gray-100 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">AI聊天</a>
+                            <a href="#" class="text-gray-500 hover:bg-gray-100 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">设置</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-4 flex items-center md:ml-6">
+                        <button type="button" class="bg-white p-1 rounded-full text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            <span class="sr-only">View notifications</span>
+                            <img class="h-6 w-6" src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/bell.svg" alt="通知图标">
+                        </button>
+                        <div class="ml-3 relative">
+                            <div>
+                                <button type="button" class="max-w-xs bg-gray-800 rounded-full flex items-center text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white" id="user-menu-button" aria-expanded="false" aria-haspopup="true">
+                                    <span class="sr-only">Open user menu</span>
+                                    <img class="h-8 w-8 rounded-full" src="https://placehold.co/32x32/E0E7FF/4F46E5?text=U" alt="用户头像">
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-1 overflow-y-auto p-6 lg:p-8">
+        <div class="max-w-7xl mx-auto">
+            <h1 class="text-2xl font-semibold text-gray-900 mb-6">剧情推演 - 《我的异世界冒险》</h1>
+
+            <div class="bg-white p-6 rounded-lg shadow mb-8">
+                <h2 class="text-lg font-medium text-gray-900 mb-4">生成选项</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                        <label for="target-chapter" class="block text-sm font-medium text-gray-700">目标章节/剧情点</label>
+                        <input type="text" name="target-chapter" id="target-chapter" value="第五章之后" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="例如：第五章之后，或当前场景梗概">
+                        <p class="mt-1 text-xs text-gray-500">指定您想为哪个部分生成后续剧情。</p>
+                    </div>
+                    <div>
+                        <label for="num-options" class="block text-sm font-medium text-gray-700">生成选项数量</label>
+                        <select id="num-options" name="num-options" class="mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm">
+                            <option>2</option>
+                            <option selected>3</option>
+                            <option>4</option>
+                            <option>5</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-3">
+                        <label for="author-guidance" class="block text-sm font-medium text-gray-700">作者偏好/引导 (可选)</label>
+                        <textarea id="author-guidance" name="author-guidance" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="例如：希望侧重角色A的成长；引入新的反派；避免涉及魔法元素..."></textarea>
+                        <p class="mt-1 text-xs text-gray-500">告诉 AI 您对下一段剧情的期望或限制。</p>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button type="button" id="generate-button" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/brain-circuit.svg" alt="生成图标" class="w-4 h-4 mr-2">
+                        生成剧情大纲
+                    </button>
+                </div>
+            </div>
+
+            <div id="results-area">
+                <h2 class="text-lg font-medium text-gray-900 mb-4">生成结果</h2>
+
+                <div id="loading-state" class="hidden flex items-center justify-center py-10 text-gray-500">
+                    <div class="loading-spinner mr-2"></div>
+                    正在生成剧情选项，请稍候...
+                </div>
+
+                <div id="empty-state" class="text-center py-10 bg-white rounded-lg shadow">
+                    <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/file-question.svg" alt="空状态图标" class="mx-auto h-12 w-12 text-gray-400">
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">尚未生成剧情</h3>
+                    <p class="mt-1 text-sm text-gray-500">请在上方配置选项后点击“生成剧情大纲”。</p>
+                </div>
+
+                <div id="results-grid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="bg-white rounded-lg shadow overflow-hidden flex flex-col">
+                        <div class="p-5 flex-1">
+                            <h3 class="text-base font-semibold text-indigo-700 mb-2">剧情选项 1：意外的盟友</h3>
+                            <div class="text-sm text-gray-600 space-y-2">
+                                <p>主角一行人在逃亡途中，误入一片古老的森林，遭遇前所未见的魔法生物袭击。</p>
+                                <p>危急关头，一个之前被认为是敌对势力的神秘角色（角色B）突然出现，帮助他们击退了敌人，但其动机不明。</p>
+                                <p>主角需要在警惕中决定是否接受这位“盟友”的同行，同时森林深处似乎隐藏着更大的秘密。结尾留下角色B意味深长的眼神特写。</p>
+                            </div>
+                        </div>
+                        <div class="bg-gray-50 p-4 flex justify-end">
+                            <button type="button" class="select-outline-button inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/check-circle.svg" alt="选择图标" class="w-3 h-3 mr-1.5">
+                                选择此大纲
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-lg shadow overflow-hidden flex flex-col ring-2 ring-indigo-500"> <div class="p-5 flex-1">
+                            <h3 class="text-base font-semibold text-indigo-700 mb-2">剧情选项 2：过去的阴影</h3>
+                            <div class="text-sm text-gray-600 space-y-2">
+                                <p>主角偶然发现了一件遗物，这件遗物揭示了他/她家族一段不为人知的黑暗历史，与当前追杀他们的敌人有着千丝万缕的联系。</p>
+                                <p>这个发现让主角陷入深深的自我怀疑和道德困境，也让团队内部产生了信任危机。</p>
+                                <p>敌人似乎也察觉到了遗物的存在，加紧了追捕。主角必须在面对家族过去和保护团队之间做出艰难抉择。</p>
+                            </div>
+                        </div>
+                        <div class="bg-gray-50 p-4 flex justify-end">
+                             <button type="button" class="select-outline-button inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/check-circle.svg" alt="选择图标" class="w-3 h-3 mr-1.5">
+                                已选择
+                            </button>
+                        </div>
+                    </div>
+
+                     <div class="bg-white rounded-lg shadow overflow-hidden flex flex-col">
+                        <div class="p-5 flex-1">
+                            <h3 class="text-base font-semibold text-indigo-700 mb-2">剧情选项 3：力量的代价</h3>
+                            <div class="text-sm text-gray-600 space-y-2">
+                                <p>为了应对日益强大的敌人，主角决定寻求一种禁忌的古代力量。寻找力量的过程充满艰险，需要付出巨大代价。</p>
+                                <p>在获取力量的过程中，主角的心性开始受到影响，变得越来越冷酷和不择手段，引起了同伴（角色C）的担忧和反对。</p>
+                                <p>虽然获得了强大的力量，但主角也可能因此失去重要的东西。结尾暗示这种力量可能带来反噬。</p>
+                            </div>
+                        </div>
+                        <div class="bg-gray-50 p-4 flex justify-end">
+                            <button type="button" class="select-outline-button inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/check-circle.svg" alt="选择图标" class="w-3 h-3 mr-1.5">
+                                选择此大纲
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="action-buttons" class="hidden mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                     <div class="flex items-center gap-4">
+                        <button type="button" id="regenerate-button" class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/refresh-cw.svg" alt="刷新图标" class="w-4 h-4 mr-2">
+                            重新生成
+                        </button>
+                    </div>
+                   <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+                       <input type="text" id="regenerate-hint" class="flex-grow rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="输入提示以优化生成...">
+                       <button type="button" id="regenerate-with-hint-button" class="inline-flex justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                           <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/lightbulb.svg" alt="提示图标" class="w-4 h-4 mr-2">
+                           提供提示并重试
+                       </button>
+                   </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // 简单的交互模拟 (非功能性)
+        const generateButton = document.getElementById('generate-button');
+        const loadingState = document.getElementById('loading-state');
+        const emptyState = document.getElementById('empty-state');
+        const resultsGrid = document.getElementById('results-grid');
+        const actionButtons = document.getElementById('action-buttons');
+        const selectButtons = document.querySelectorAll('.select-outline-button');
+
+        generateButton.addEventListener('click', () => {
+            // 隐藏空状态，显示加载状态
+            emptyState.classList.add('hidden');
+            loadingState.classList.remove('hidden');
+            resultsGrid.classList.add('hidden');
+            actionButtons.classList.add('hidden');
+
+            // 模拟 AI 请求耗时
+            setTimeout(() => {
+                // 隐藏加载状态，显示结果和操作按钮
+                loadingState.classList.add('hidden');
+                resultsGrid.classList.remove('hidden');
+                actionButtons.classList.remove('hidden');
+                // 重置选中状态
+                 selectButtons.forEach(btn => {
+                    btn.classList.remove('bg-indigo-600', 'text-white', 'hover:bg-indigo-700', 'border-transparent');
+                    btn.classList.add('bg-white', 'text-gray-700', 'hover:bg-gray-50', 'border-gray-300');
+                    btn.innerHTML = `<img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/check-circle.svg" alt="选择图标" class="w-3 h-3 mr-1.5"> 选择此大纲`;
+                 });
+            }, 1500); // 模拟 1.5 秒延迟
+        });
+
+        // 模拟选择大纲
+        selectButtons.forEach(button => {
+            button.addEventListener('click', (event) => {
+                // 移除所有按钮的选中样式
+                 selectButtons.forEach(btn => {
+                    btn.classList.remove('bg-indigo-600', 'text-white', 'hover:bg-indigo-700', 'border-transparent');
+                    btn.classList.add('bg-white', 'text-gray-700', 'hover:bg-gray-50', 'border-gray-300');
+                    btn.innerHTML = `<img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/check-circle.svg" alt="选择图标" class="w-3 h-3 mr-1.5"> 选择此大纲`;
+                    // 移除卡片的选中样式
+                    btn.closest('.bg-white').classList.remove('ring-2', 'ring-indigo-500');
+                 });
+
+                // 添加选中样式到当前按钮
+                event.currentTarget.classList.remove('bg-white', 'text-gray-700', 'hover:bg-gray-50', 'border-gray-300');
+                event.currentTarget.classList.add('bg-indigo-600', 'text-white', 'hover:bg-indigo-700', 'border-transparent');
+                event.currentTarget.innerHTML = `<img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/check-circle.svg" alt="选择图标" class="w-3 h-3 mr-1.5"> 已选择`;
+
+                 // 添加选中样式到当前卡片
+                 event.currentTarget.closest('.bg-white').classList.add('ring-2', 'ring-indigo-500');
+
+                // 在实际应用中，这里会触发将选定大纲保存到小说结构的逻辑
+                console.log('选择了大纲:', event.currentTarget.closest('.bg-white').querySelector('h3').textContent);
+            });
+        });
+
+         // 模拟重新生成
+        const regenerateButton = document.getElementById('regenerate-button');
+        const regenerateWithHintButton = document.getElementById('regenerate-with-hint-button');
+
+        regenerateButton.addEventListener('click', () => {
+             // 隐藏结果，显示加载状态
+            loadingState.classList.remove('hidden');
+            resultsGrid.classList.add('hidden');
+            actionButtons.classList.add('hidden');
+             // 模拟 AI 请求耗时
+            setTimeout(() => {
+                // 隐藏加载状态，显示新结果和操作按钮
+                loadingState.classList.add('hidden');
+                resultsGrid.classList.remove('hidden'); // 实际会更新内容
+                actionButtons.classList.remove('hidden');
+                 // 重置选中状态
+                 selectButtons.forEach(btn => {
+                    btn.classList.remove('bg-indigo-600', 'text-white', 'hover:bg-indigo-700', 'border-transparent');
+                    btn.classList.add('bg-white', 'text-gray-700', 'hover:bg-gray-50', 'border-gray-300');
+                    btn.innerHTML = `<img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/check-circle.svg" alt="选择图标" class="w-3 h-3 mr-1.5"> 选择此大纲`;
+                    btn.closest('.bg-white').classList.remove('ring-2', 'ring-indigo-500');
+                 });
+                console.log('重新生成...');
+            }, 1500);
+        });
+
+         regenerateWithHintButton.addEventListener('click', () => {
+             const hint = document.getElementById('regenerate-hint').value;
+              // 隐藏结果，显示加载状态
+            loadingState.classList.remove('hidden');
+            resultsGrid.classList.add('hidden');
+            actionButtons.classList.add('hidden');
+             // 模拟 AI 请求耗时
+            setTimeout(() => {
+                // 隐藏加载状态，显示新结果和操作按钮
+                loadingState.classList.add('hidden');
+                resultsGrid.classList.remove('hidden'); // 实际会更新内容
+                actionButtons.classList.remove('hidden');
+                 // 重置选中状态
+                 selectButtons.forEach(btn => {
+                    btn.classList.remove('bg-indigo-600', 'text-white', 'hover:bg-indigo-700', 'border-transparent');
+                    btn.classList.add('bg-white', 'text-gray-700', 'hover:bg-gray-50', 'border-gray-300');
+                    btn.innerHTML = `<img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/check-circle.svg" alt="选择图标" class="w-3 h-3 mr-1.5"> 选择此大纲`;
+                    btn.closest('.bg-white').classList.remove('ring-2', 'ring-indigo-500');
+                 });
+                console.log('根据提示重新生成:', hint);
+                document.getElementById('regenerate-hint').value = ''; // 清空提示输入框
+            }, 1500);
+        });
+
+    </script>
+
+</body>
+</html>

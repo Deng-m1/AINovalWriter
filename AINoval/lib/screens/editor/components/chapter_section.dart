@@ -54,6 +54,15 @@ class _ChapterSectionState extends State<ChapterSection> {
     super.dispose();
   }
 
+  void _loadScenes() {
+    // 触发加载当前章节的场景
+    widget.editorBloc.add(LoadMoreScenes(
+      fromChapterId: widget.chapterId,
+      direction: 'center', // 指定为中心加载
+      chaptersLimit: 1, // 只加载当前章节
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -93,11 +102,23 @@ class _ChapterSectionState extends State<ChapterSection> {
                 ),
               ),
               const SizedBox(width: 8), // 增加间距
+              
+              // 如果场景为空，显示加载按钮
+              if (widget.scenes.isEmpty)
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 20),
+                  onPressed: _loadScenes,
+                  tooltip: '加载场景',
+                  color: Colors.grey.shade600,
+                  splashRadius: 20,
+                ),
+                
               // 更多操作按钮 (PopupMenuButton 待实现)
               IconButton(
                 icon: const Icon(Icons.more_vert, size: 20),
                 onPressed: () {
-                  // TODO: 实现 Chapter 的更多操作菜单（重命名、删除、移动等）
+                  // 显示章节操作菜单
+                  _showChapterMenu(context);
                 },
                 tooltip: 'Chapter Actions',
                 color: Colors.grey.shade600,
@@ -109,18 +130,104 @@ class _ChapterSectionState extends State<ChapterSection> {
 
         // 场景列表
         // 通过 Column 自动排列，间距由 SceneEditor 的 margin 控制
-        Column(children: widget.scenes),
+        if (widget.scenes.isEmpty)
+          // 显示加载场景的引导
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 16.0),
+            child: Center(
+              child: Column(
+                children: [
+                  Text(
+                    '章节 "${widget.title}" 还没有加载场景。',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: _loadScenes,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('加载场景'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Column(children: widget.scenes),
 
         // 添加新场景按钮
-        _AddSceneButton(
-          actId: widget.actId,
-          chapterId: widget.chapterId,
-          editorBloc: widget.editorBloc,
-        ),
+        if (widget.scenes.isNotEmpty) // 只有当已经有场景时才显示添加按钮
+          _AddSceneButton(
+            actId: widget.actId,
+            chapterId: widget.chapterId,
+            editorBloc: widget.editorBloc,
+          ),
       ],
     );
-    // GestureDetector 已移除，因为 Column 覆盖了区域
-    // onTap 在 SceneEditor 内部处理
+  }
+  
+  // 显示章节操作菜单
+  void _showChapterMenu(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(100, 100, 0, 0), // 这个位置会根据点击位置自动调整
+      items: [
+        if (widget.scenes.isEmpty)
+          PopupMenuItem(
+            child: ListTile(
+              leading: const Icon(Icons.refresh),
+              title: const Text('加载场景'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              onTap: () {
+                Navigator.pop(context);
+                _loadScenes();
+              },
+            ),
+          ),
+        PopupMenuItem(
+          child: ListTile(
+            leading: const Icon(Icons.add),
+            title: const Text('添加新场景'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            onTap: () {
+              Navigator.pop(context);
+              // 触发添加新Scene事件
+              final newSceneId = DateTime.now().millisecondsSinceEpoch.toString();
+              widget.editorBloc.add(AddNewScene(
+                novelId: widget.editorBloc.novelId,
+                actId: widget.actId,
+                chapterId: widget.chapterId,
+                sceneId: newSceneId,
+              ));
+            },
+          ),
+        ),
+        PopupMenuItem(
+          child: ListTile(
+            leading: const Icon(Icons.edit),
+            title: const Text('重命名章节'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            onTap: () {
+              Navigator.pop(context);
+              // 聚焦到标题编辑框
+              // 通过setState强制刷新使标题进入编辑状态
+              setState(() {});
+            },
+          ),
+        ),
+        // 后面可以添加更多选项如删除等
+      ],
+    );
   }
 }
 
@@ -154,17 +261,6 @@ class _AddSceneButton extends StatelessWidget {
               chapterId: chapterId,
               sceneId: newSceneId,
             ));
-
-            // 延迟一帧后再添加场景，确保活动章节状态已更新
-            Future.microtask(() {
-              // 触发添加新Scene事件
-              editorBloc.add(AddNewScene(
-                novelId: editorBloc.novelId,
-                actId: actId,
-                chapterId: chapterId,
-                sceneId: newSceneId,
-              ));
-            });
           },
           icon: const Icon(Icons.add, size: 18),
           label: const Text('New Scene'),

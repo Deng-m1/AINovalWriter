@@ -180,6 +180,7 @@ class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
         lastEditTime: novel.updatedAt,
         wordCount: novel.wordCount,
         completionPercentage: 0.0,
+        lastEditedChapterId: novel.lastEditedChapterId,
       )).toList();
       emit(NovelListLoaded(novels: novelSummaries));
     } catch (e) {

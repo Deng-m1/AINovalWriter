@@ -3,12 +3,15 @@ package com.ainovel.server.service.vectorstore;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
 
 import com.ainovel.server.domain.model.KnowledgeChunk;
+import com.ainovel.server.exception.VectorStoreException;
 
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
@@ -19,125 +22,260 @@ import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+import reactor.util.retry.Retry;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Chroma向量存储实现 基于LangChain4j的ChromaEmbeddingStore
  */
 @Slf4j
+@Service
 public class ChromaVectorStore implements VectorStore {
 
     private final EmbeddingStore<TextSegment> embeddingStore;
-
+    private final String collectionName;
+    private final int maxRetries;
+    private final int retryDelayMs;
+    private final ConcurrentHashMap<String, AtomicLong> lastErrorTime = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AtomicInteger> errorCount = new ConcurrentHashMap<>();
+    private static final int ERROR_THRESHOLD_MS = 1000; // 1秒内不重试
+    private static final int EXPECTED_DIMENSION = 384; // 期望的向量维度
+    private static final boolean AUTO_ADJUST_DIMENSION = true; // 是否自动调整向量维度
+    private static final int BATCH_SIZE = 10; // 批量处理大小
+    private static final int MAX_ERROR_COUNT = 5; // 最大错误次数
 
     /**
      * 创建Chroma向量存储
+     *
      * @param chromaUrl Chroma服务URL
      * @param collectionName 集合名称
      */
-    public ChromaVectorStore(@Value("${vectorstore.chroma.url:http://localhost:18000}") String chromaUrl,
-            @Value("${vectorstore.chroma.collection:ainovel}") String collectionName) {
-        this(chromaUrl, collectionName, true);
+    public ChromaVectorStore(
+            @Value("${vectorstore.chroma.url:http://localhost:18000}") String chromaUrl,
+            @Value("${vectorstore.chroma.collection:ainovel}") String collectionName,
+            @Value("${vectorstore.chroma.max-retries:3}") int maxRetries,
+            @Value("${vectorstore.chroma.retry-delay-ms:1000}") int retryDelayMs) {
+        this.collectionName = collectionName;
+        this.maxRetries = maxRetries;
+        this.retryDelayMs = retryDelayMs;
+        this.embeddingStore = initializeStore(chromaUrl, collectionName);
     }
 
     /**
-     * 创建Chroma向量存储
-     * @param chromaUrl Chroma服务URL
-     * @param collectionName 集合名称
-     * @param reuseCollection 是否重用已存在的集合
+     * 初始化向量存储
      */
-    public ChromaVectorStore(String chromaUrl, String collectionName, boolean reuseCollection) {
-        log.info("初始化Chroma向量存储，URL: {}, 集合: {}, 重用集合: {}", chromaUrl, collectionName, reuseCollection);
-        
-        // 如果不需要重用集合，则创建一个唯一命名的集合
-        String actualCollectionName;
-        if (!reuseCollection) {
-            actualCollectionName = collectionName + "_" + UUID.randomUUID().toString().substring(0, 8);
-            log.info("使用唯一命名的Chroma集合: {}", actualCollectionName);
+    private EmbeddingStore<TextSegment> initializeStore(String chromaUrl, String collectionName) {
+        log.info("初始化Chroma向量存储，URL: {}, 集合: {}", chromaUrl, collectionName);
+
+        try {
+            return ChromaEmbeddingStore.builder()
+                    .baseUrl(chromaUrl)
+                    .collectionName(collectionName + UUID.randomUUID().toString())
+                    .build();
+        } catch (Exception e) {
+            log.error("初始化Chroma向量存储失败", e);
+            throw new VectorStoreException("初始化向量存储失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 验证向量维度 如果维度不匹配且启用了自动调整，则调整向量维度
+     */
+    private float[] validateAndAdjustEmbeddingDimension(float[] vector) {
+        if (vector == null || vector.length == 0) {
+            throw new VectorStoreException("向量不能为空");
+        }
+
+        if (vector.length == EXPECTED_DIMENSION) {
+            return vector; // 维度匹配，直接返回
+        }
+
+        if (!AUTO_ADJUST_DIMENSION) {
+            // 不自动调整维度，抛出异常
+            throw new VectorStoreException(
+                    String.format("向量维度 %d 与期望维度 %d 不匹配",
+                            vector.length, EXPECTED_DIMENSION)
+            );
+        }
+
+        // 自动调整向量维度
+        log.warn("向量维度 {} 与期望维度 {} 不匹配，正在自动调整", vector.length, EXPECTED_DIMENSION);
+        return adjustVectorDimension(vector);
+    }
+
+    /**
+     * 调整向量维度 如果原始维度小于期望维度，则用0填充 如果原始维度大于期望维度，则截断
+     */
+    private float[] adjustVectorDimension(float[] originalVector) {
+        float[] adjustedVector = new float[EXPECTED_DIMENSION];
+
+        if (originalVector.length < EXPECTED_DIMENSION) {
+            // 原始维度小于期望维度，用0填充
+            System.arraycopy(originalVector, 0, adjustedVector, 0, originalVector.length);
+            // 剩余部分默认为0
         } else {
-            actualCollectionName = collectionName;
+            // 原始维度大于期望维度，截断
+            System.arraycopy(originalVector, 0, adjustedVector, 0, EXPECTED_DIMENSION);
         }
-        
-        // 尝试创建或连接到集合
-        EmbeddingStore<TextSegment> store = null;
-        int maxRetries = 3;
-        int retryCount = 0;
-        boolean success = false;
-        
-        while (!success && retryCount < maxRetries) {
-            try {
-                if (retryCount > 0) {
-                    // 如果是重试，则使用唯一命名的集合
-                    actualCollectionName = collectionName + "_retry_" + UUID.randomUUID().toString().substring(0, 8);
-                    log.info("重试 #{}: 使用新的集合名称: {}", retryCount, actualCollectionName);
+
+        return adjustedVector;
+    }
+
+    /**
+     * 检查错误冷却时间
+     */
+    private boolean isInErrorCooldown(String operation) {
+        AtomicLong lastError = lastErrorTime.get(operation);
+        if (lastError != null) {
+            long timeSinceLastError = System.currentTimeMillis() - lastError.get();
+            return timeSinceLastError < ERROR_THRESHOLD_MS;
+        }
+        return false;
+    }
+
+    /**
+     * 记录错误时间
+     */
+    private void recordError(String operation) {
+        lastErrorTime.computeIfAbsent(operation, k -> new AtomicLong(0)).set(System.currentTimeMillis());
+        errorCount.computeIfAbsent(operation, k -> new AtomicInteger(0)).incrementAndGet();
+    }
+
+    /**
+     * 重置错误计数
+     */
+    private void resetErrorCount(String operation) {
+        errorCount.computeIfAbsent(operation, k -> new AtomicInteger(0)).set(0);
+    }
+
+    /**
+     * 获取当前错误计数
+     */
+    private int getErrorCount(String operation) {
+        return errorCount.computeIfAbsent(operation, k -> new AtomicInteger(0)).get();
+    }
+
+    /**
+     * 执行带重试的操作
+     */
+    private <T> Mono<T> withRetry(Mono<T> operation, String operationName) {
+        return operation
+                .retryWhen(Retry.backoff(maxRetries, Duration.ofMillis(retryDelayMs))
+                        .filter(throwable -> throwable instanceof VectorStoreException)
+                        .doBeforeRetry(signal -> log.warn("重试 {} 操作，第 {} 次尝试", operationName, signal.totalRetries() + 1)))
+                .onErrorResume(e -> {
+                    log.error("{} 操作在 {} 次尝试后失败", operationName, maxRetries, e);
+                    return Mono.error(new VectorStoreException(operationName + " 操作失败: " + e.getMessage(), e));
+                });
+    }
+
+    /**
+     * 批量存储向量
+     */
+    @Override
+    public Mono<List<String>> storeVectorsBatch(List<VectorData> vectorDataList) {
+        if (vectorDataList.isEmpty()) {
+            return Mono.just(new ArrayList<>());
+        }
+
+        return Mono.fromCallable(() -> {
+            List<String> ids = new ArrayList<>();
+            for (VectorData data : vectorDataList) {
+                try {
+                    // 验证并可能调整向量维度
+                    float[] adjustedVector = validateAndAdjustEmbeddingDimension(data.getVector());
+                    String id = UUID.randomUUID().toString();
+
+                    // 转换元数据
+                    Metadata langchainMetadata = new Metadata();
+                    if (data.getMetadata() != null) {
+                        data.getMetadata().forEach((key, value) -> langchainMetadata.put(key, value.toString()));
+                    }
+
+                    // 创建文本段落
+                    TextSegment segment = TextSegment.from(data.getContent(), langchainMetadata);
+
+                    // 创建嵌入
+                    Embedding embedding = Embedding.from(adjustedVector);
+
+                    // 存储嵌入
+                    embeddingStore.add(embedding, segment);
+
+                    ids.add(id);
+                } catch (Exception e) {
+                    log.error("批量存储向量时出错: {}", e.getMessage());
+                    // 继续处理其他向量
                 }
-                
-                store = ChromaEmbeddingStore.builder()
-                        .baseUrl(chromaUrl)
-                        .collectionName(actualCollectionName)
-                        .build();
-                
-                log.info("成功创建或连接到Chroma集合: {}", actualCollectionName);
-                success = true;
-            } catch (Exception e) {
-                retryCount++;
-                
-                // 如果是集合已存在错误，并且我们想要重用集合
-                if (e.getMessage() != null && 
-                    e.getMessage().contains("Collection " + actualCollectionName + " already exists") && 
-                    reuseCollection) {
-                    // 这是我们期望的情况，但LangChain4j的ChromaEmbeddingStore不支持直接连接到现有集合
-                    // 我们需要修改VectorStoreConfig，使用随机集合名称
-                    log.warn("集合 {} 已存在，但无法直接连接。请考虑在配置中启用随机集合名称。", actualCollectionName);
-                    throw new RuntimeException("集合已存在，但无法直接连接: " + e.getMessage(), e);
-                }
-                
-                if (retryCount >= maxRetries) {
-                    log.error("在 {} 次尝试后初始化Chroma向量存储失败", maxRetries, e);
-                    throw new RuntimeException("初始化Chroma向量存储失败: " + e.getMessage(), e);
-                }
-                
-                log.warn("初始化Chroma向量存储失败，将重试 ({}/{}): {}", retryCount, maxRetries, e.getMessage());
             }
-        }
-        
-        this.embeddingStore = store;
+            return ids;
+        })
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(ids -> {
+                    if (ids.isEmpty()) {
+                        return Mono.error(new VectorStoreException("批量存储向量失败：所有向量处理均失败"));
+                    }
+                    return Mono.just(ids);
+                });
     }
 
     @Override
     public Mono<String> storeVector(String content, float[] vector, Map<String, Object> metadata) {
+        // 检查错误计数
+        if (getErrorCount("store") >= MAX_ERROR_COUNT) {
+            return Mono.error(new VectorStoreException("向量存储服务暂时不可用，请稍后再试"));
+        }
+
+        // 检查冷却时间
+        if (isInErrorCooldown("store")) {
+            return Mono.delay(Duration.ofMillis(ERROR_THRESHOLD_MS))
+                    .flatMap(tick -> storeVector(content, vector, metadata));
+        }
+
         log.info("存储向量，内容长度: {}, 元数据: {}", content.length(), metadata);
 
-        return Mono.fromCallable(() -> {
-            String id = UUID.randomUUID().toString();
+        Mono<String> operation = Mono.fromCallable(() -> {
+            try {
+                // 验证并可能调整向量维度
+                float[] adjustedVector = validateAndAdjustEmbeddingDimension(vector);
+                String id = UUID.randomUUID().toString();
 
-            // 转换元数据
-            Metadata langchainMetadata = new Metadata();
-            if (metadata != null) {
-                metadata.forEach((key, value) -> langchainMetadata.put(key, value.toString()));
+                // 转换元数据
+                Metadata langchainMetadata = new Metadata();
+                if (metadata != null) {
+                    metadata.forEach((key, value) -> langchainMetadata.put(key, value.toString()));
+                }
+
+                // 创建文本段落
+                TextSegment segment = TextSegment.from(content, langchainMetadata);
+
+                // 创建嵌入
+                Embedding embedding = Embedding.from(adjustedVector);
+
+                // 存储嵌入
+                embeddingStore.add(embedding, segment);
+
+                // 成功存储后重置错误计数
+                resetErrorCount("store");
+
+                return id;
+            } catch (Exception e) {
+                recordError("store");
+                throw new VectorStoreException("存储向量失败: " + e.getMessage(), e);
             }
+        })
+                .subscribeOn(Schedulers.boundedElastic());
 
-            // 创建文本段落
-            TextSegment segment = TextSegment.from(content, langchainMetadata);
-
-            // 创建嵌入
-            Embedding embedding = Embedding.from(vector);
-
-            // 存储嵌入
-            embeddingStore.add(embedding, segment);
-
-            return id;
-        }).onErrorResume(e -> {
-            log.error("存储向量失败", e);
-            return Mono.error(new RuntimeException("存储向量失败: " + e.getMessage()));
-        });
+        return withRetry(operation, "存储向量");
     }
 
     @Override
     public Mono<String> storeKnowledgeChunk(KnowledgeChunk chunk) {
-        log.info("存储知识块，ID: {}, 小说ID: {}", chunk.getId(), chunk.getNovelId());
-
         if (chunk.getVectorEmbedding() == null || chunk.getVectorEmbedding().getVector() == null) {
-            return Mono.error(new IllegalArgumentException("知识块缺少向量嵌入"));
+            return Mono.error(new VectorStoreException("知识块缺少向量嵌入"));
         }
 
         // 创建元数据
@@ -158,44 +296,67 @@ public class ChromaVectorStore implements VectorStore {
 
     @Override
     public Flux<SearchResult> search(float[] queryVector, Map<String, Object> filter, int limit) {
+        // 检查错误计数
+        if (getErrorCount("search") >= MAX_ERROR_COUNT) {
+            return Flux.error(new VectorStoreException("向量搜索服务暂时不可用，请稍后再试"));
+        }
+
+        // 检查冷却时间
+        if (isInErrorCooldown("search")) {
+            return Mono.delay(Duration.ofMillis(ERROR_THRESHOLD_MS))
+                    .flatMapMany(tick -> search(queryVector, filter, limit));
+        }
+
         log.info("搜索向量，过滤条件: {}, 限制: {}", filter, limit);
 
-        return Mono.fromCallable(() -> {
-            // 创建查询嵌入
-            Embedding queryEmbedding = Embedding.from(queryVector);
+        Mono<List<SearchResult>> operation = Mono.fromCallable(() -> {
+            try {
+                // 验证并可能调整向量维度
+                float[] adjustedVector = validateAndAdjustEmbeddingDimension(queryVector);
 
-            // 执行搜索
-            List<EmbeddingMatch<TextSegment>> matches = embeddingStore.findRelevant(queryEmbedding, limit);
+                // 创建查询嵌入
+                Embedding queryEmbedding = Embedding.from(adjustedVector);
 
-            // 转换结果
-            return matches.stream()
-                    .map(match -> {
-                        SearchResult result = new SearchResult();
-                        result.setContent(match.embedded().text());
-                        result.setScore(match.score());
+                // 执行搜索
+                List<EmbeddingMatch<TextSegment>> matches = embeddingStore.findRelevant(queryEmbedding, limit);
 
-                        // 提取元数据
-                        Metadata metadata = match.embedded().metadata();
-                        if (metadata != null) {
-                            Map<String, Object> resultMetadata = metadata.asMap().entrySet().stream()
-                                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-                            result.setMetadata(resultMetadata);
+                // 转换结果
+                List<SearchResult> results = matches.stream()
+                        .map(match -> {
+                            SearchResult result = new SearchResult();
+                            result.setContent(match.embedded().text());
+                            result.setScore(match.score());
 
-                            // 设置ID（如果存在）
-                            if (metadata.get("id") != null) {
-                                result.setId(metadata.get("id").toString());
+                            // 提取元数据
+                            Metadata metadata = match.embedded().metadata();
+                            if (metadata != null) {
+                                Map<String, Object> resultMetadata = metadata.asMap().entrySet().stream()
+                                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                                result.setMetadata(resultMetadata);
+
+                                // 设置ID（如果存在）
+                                if (metadata.get("id") != null) {
+                                    result.setId(metadata.get("id").toString());
+                                }
                             }
-                        }
 
-                        return result;
-                    })
-                    .collect(Collectors.toList());
+                            return result;
+                        })
+                        .collect(Collectors.toList());
+
+                // 成功搜索后重置错误计数
+                resetErrorCount("search");
+
+                return results;
+            } catch (Exception e) {
+                recordError("search");
+                throw new VectorStoreException("搜索向量失败: " + e.getMessage(), e);
+            }
         })
-                .flatMapMany(Flux::fromIterable)
-                .onErrorResume(e -> {
-                    log.error("搜索向量失败", e);
-                    return Flux.error(new RuntimeException("搜索向量失败: " + e.getMessage()));
-                });
+                .subscribeOn(Schedulers.boundedElastic());
+
+        return withRetry(operation, "搜索向量")
+                .flatMapMany(Flux::fromIterable);
     }
 
     @Override
@@ -208,20 +369,42 @@ public class ChromaVectorStore implements VectorStore {
     @Override
     public Mono<Void> deleteByNovelId(String novelId) {
         log.info("删除小说的向量，小说ID: {}", novelId);
-
-        // 注意：ChromaEmbeddingStore目前不支持按元数据删除
-        // 这里需要先获取所有匹配的ID，然后逐个删除
-        // 这是一个简化实现，实际应用中可能需要更复杂的逻辑
-        return Mono.error(new UnsupportedOperationException("当前版本不支持按小说ID删除"));
+        // TODO: 实现按小说ID删除向量的功能
+        return Mono.empty();
     }
 
     @Override
     public Mono<Void> deleteBySourceId(String novelId, String sourceType, String sourceId) {
         log.info("删除源的向量，小说ID: {}, 源类型: {}, 源ID: {}", novelId, sourceType, sourceId);
-
-        // 注意：ChromaEmbeddingStore目前不支持按元数据删除
-        // 这里需要先获取所有匹配的ID，然后逐个删除
-        // 这是一个简化实现，实际应用中可能需要更复杂的逻辑
-        return Mono.error(new UnsupportedOperationException("当前版本不支持按源ID删除"));
+        // TODO: 实现按源ID删除向量的功能
+        return Mono.empty();
     }
+
+    /**
+     * 向量数据内部类
+     */
+//    private static class VectorData {
+//
+//        final String content;
+//        final float[] vector;
+//        final Map<String, Object> metadata;
+//
+//        VectorData(String content, float[] vector, Map<String, Object> metadata) {
+//            this.content = content;
+//            this.vector = vector;
+//            this.metadata = metadata;
+//        }
+//
+//        String getContent() {
+//            return content;
+//        }
+//
+//        float[] getVector() {
+//            return vector;
+//        }
+//
+//        Map<String, Object> getMetadata() {
+//            return metadata;
+//        }
+//    }
 }

@@ -1,18 +1,11 @@
 part of 'ai_config_bloc.dart';
 
 enum AiConfigStatus { initial, loading, loaded, error }
+
 enum AiConfigActionStatus { initial, loading, success, error } // 用于跟踪增删改等操作的状态
 
 class AiConfigState extends Equatable {
-  final AiConfigStatus status; // 主要加载状态
-  final AiConfigActionStatus actionStatus; // 操作状态 (添加/更新/删除/验证/设置默认)
-  final List<UserAIModelConfigModel> configs;
-  final List<String> availableProviders;
-  final List<String> modelsForProvider;
-  final String? selectedProviderForModels; // 跟踪当前正在查看哪个提供商的模型
-  final String? errorMessage;
-  final String? actionErrorMessage; // 操作的特定错误消息
-  final String? loadingConfigId; // <<< 添加此行: ID of the config currently undergoing an action
+  // <<< 添加此行: ID of the config currently undergoing an action
 
   const AiConfigState({
     this.status = AiConfigStatus.initial,
@@ -25,14 +18,23 @@ class AiConfigState extends Equatable {
     this.actionErrorMessage,
     this.loadingConfigId, // <<< 添加此行
   });
+  final AiConfigStatus status; // 主要加载状态
+  final AiConfigActionStatus actionStatus; // 操作状态 (添加/更新/删除/验证/设置默认)
+  final List<UserAIModelConfigModel> configs;
+  final List<String> availableProviders;
+  final List<String> modelsForProvider;
+  final String? selectedProviderForModels; // 跟踪当前正在查看哪个提供商的模型
+  final String? errorMessage;
+  final String? actionErrorMessage; // 操作的特定错误消息
+  final String? loadingConfigId;
 
   // 获取已验证的配置，用于选择器
   List<UserAIModelConfigModel> get validatedConfigs =>
       configs.where((c) => c.isValidated).toList();
 
-   // 获取默认配置
-  UserAIModelConfigModel? get defaultConfig => configs.firstWhereOrNull((c) => c.isDefault);
-
+  // 获取默认配置
+  UserAIModelConfigModel? get defaultConfig =>
+      configs.firstWhereOrNull((c) => c.isDefault);
 
   AiConfigState copyWith({
     AiConfigStatus? status,
@@ -52,10 +54,15 @@ class AiConfigState extends Equatable {
       actionStatus: actionStatus ?? this.actionStatus,
       configs: configs ?? this.configs,
       availableProviders: availableProviders ?? this.availableProviders,
-      modelsForProvider: clearModels ? [] : modelsForProvider ?? this.modelsForProvider,
-      selectedProviderForModels: clearModels ? null : selectedProviderForModels ?? this.selectedProviderForModels,
+      modelsForProvider:
+          clearModels ? [] : modelsForProvider ?? this.modelsForProvider,
+      selectedProviderForModels: clearModels
+          ? null
+          : selectedProviderForModels ?? this.selectedProviderForModels,
       errorMessage: errorMessage != null ? errorMessage() : this.errorMessage,
-      actionErrorMessage: actionErrorMessage != null ? actionErrorMessage() : this.actionErrorMessage,
+      actionErrorMessage: actionErrorMessage != null
+          ? actionErrorMessage()
+          : this.actionErrorMessage,
       loadingConfigId: loadingConfigId ?? this.loadingConfigId, // <<< 添加此行
     );
   }
@@ -72,4 +79,4 @@ class AiConfigState extends Equatable {
         actionErrorMessage,
         loadingConfigId, // <<< 添加此行
       ];
-} 
+}

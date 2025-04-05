@@ -1,13 +1,13 @@
 import 'package:ainoval/config/app_config.dart';
+import 'package:ainoval/models/import_status.dart';
 import 'package:ainoval/models/novel_structure.dart';
 import 'package:ainoval/models/scene_version.dart';
-import 'package:ainoval/models/import_status.dart';
 import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
-
+import 'package:ainoval/services/api_service/base/sse_client.dart';
 import 'package:ainoval/services/api_service/repositories/novel_repository.dart';
-import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/utils/date_time_parser.dart';
+import 'package:ainoval/utils/logger.dart';
 
 /// 小说仓库实现
 class NovelRepositoryImpl implements NovelRepository {
@@ -19,14 +19,19 @@ class NovelRepositoryImpl implements NovelRepository {
   /// 内部构造函数
   NovelRepositoryImpl._internal({
     ApiClient? apiClient,
-  }) : _apiClient = apiClient ?? ApiClient();
+    SseClient? sseClient,
+  })  : _apiClient = apiClient ?? ApiClient(),
+        _sseClient = sseClient ?? SseClient();
 
   /// 创建NovelRepositoryImpl单例
   static final NovelRepositoryImpl _instance = NovelRepositoryImpl._internal();
   final ApiClient _apiClient;
+  final SseClient _sseClient;
 
   /// 获取当前用户ID
   String? get _currentUserId => AppConfig.userId;
+  /// 获取当前认证 Token
+  String? get _authToken => AppConfig.authToken;
 
   /// 工厂方法获取单例
   static NovelRepositoryImpl getInstance() {
@@ -144,59 +149,6 @@ class NovelRepositoryImpl implements NovelRepository {
     }
   }
 
-  /// 更新小说
-  @override
-  Future<Novel> updateNovel(Novel novel) async {
-    try {
-      // 将前端模型转换为后端模型
-      final novelJson = {
-        'id': novel.id,
-        'title': novel.title,
-        'coverImage': novel.coverImagePath,
-        // 确保包含作者信息
-        'author': novel.author?.toJson() ??
-            {
-              'id': AppConfig.userId ?? '',
-              'username': AppConfig.username ?? 'user'
-            },
-        'structure': {
-          'acts': novel.acts
-              .map((act) => {
-                    'id': act.id,
-                    'title': act.title,
-                    'order': act.order,
-                    'chapters': act.chapters
-                        .map((chapter) => {
-                              'id': chapter.id,
-                              'title': chapter.title,
-                              'order': chapter.order,
-                              // 确保发送 scenes 以便后端处理
-                              'scenes': chapter.scenes
-                                  .map((scene) => scene.toJson())
-                                  .toList(),
-                            })
-                        .toList(),
-                  })
-              .toList(),
-        },
-      };
-
-      final data = await _apiClient.updateNovel(novelJson);
-      final updatedNovel = _convertToSingleNovel(data);
-
-      if (updatedNovel == null) {
-        throw ApiException(-1, '更新小说失败：服务器返回数据格式不正确');
-      }
-
-      return updatedNovel;
-    } catch (e) {
-      AppLogger.e(
-          'Services/api_service/repositories/impl/novel_repository_impl',
-          '更新小说失败',
-          e);
-      rethrow;
-    }
-  }
 
   /// 删除小说
   @override
@@ -340,15 +292,60 @@ class NovelRepositoryImpl implements NovelRepository {
   /// 获取导入任务状态流
   @override
   Stream<ImportStatus> getImportStatus(String jobId) {
+    final String path = '/novels/import/$jobId/status';
+    final String connectionId = 'import_$jobId';
+    
     try {
-      return _apiClient.getImportStatusStream(jobId);
+      AppLogger.i(
+          'Services/api_service/repositories/impl/novel_repository_impl',
+          'Subscribing to SSE stream for job: $jobId at path: $path using SseClient');
+      return _sseClient.streamEvents<ImportStatus>(
+        path: path,
+        parser: ImportStatus.fromJson,
+        eventName: 'import-status',
+        connectionId: connectionId,
+      );
+    } catch (e, stack) {
+      AppLogger.e(
+          'Services/api_service/repositories/impl/novel_repository_impl',
+          '获取导入状态流失败 (同步)',
+          e,
+          stack);
+      return Stream.error(
+          e is ApiException ? e : ApiException(-1, '获取导入状态流失败: $e'), stack);
+    }
+  }
+
+  /// 取消导入任务
+  @override
+  Future<bool> cancelImport(String jobId) async {
+    final String connectionId = 'import_$jobId';
+    
+    try {
+      AppLogger.i(
+          'Services/api_service/repositories/impl/novel_repository_impl',
+          '取消导入任务 $jobId: 发送请求到服务器');
+      
+      // 首先，通过API向服务器发送取消请求
+      final bool apiCanceled = await _apiClient.cancelImport(jobId);
+      
+      // 然后，尝试取消SSE连接
+      final bool sseCanceled = await _sseClient.cancelConnection(connectionId);
+      
+      // 只要有一个成功就算成功
+      final bool success = apiCanceled || sseCanceled;
+      
+      AppLogger.i(
+          'Services/api_service/repositories/impl/novel_repository_impl',
+          '取消导入任务 $jobId: ${success ? '成功' : '失败或已完成'} (API: $apiCanceled, SSE: $sseCanceled)');
+          
+      return success;
     } catch (e) {
       AppLogger.e(
           'Services/api_service/repositories/impl/novel_repository_impl',
-          '获取导入状态流失败',
+          '取消导入任务失败',
           e);
-      // 在流处理中，返回带有错误的流而不是抛出异常
-      return Stream.error(e is ApiException ? e : ApiException(-1, '获取导入状态流失败: $e'));
+      return false;
     }
   }
 

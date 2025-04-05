@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plan 视图原型</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定义滚动条样式 (可选) */
+        ::-webkit-scrollbar {
+            height: 8px;
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a1a1a1;
+        }
+        /* 强制 body 使用 Inter 字体 */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* 简单的拖拽指示器 */
+        .drag-handle::before {
+            content: '⠿'; /* Unicode character for drag handle */
+            display: inline-block;
+            color: #9ca3af; /* gray-400 */
+            margin-right: 4px;
+            cursor: grab;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-100 text-gray-800 flex flex-col h-screen">
+
+    <header class="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center space-x-1">
+            <button class="p-1.5 rounded hover:bg-gray-100 text-gray-600">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/edit-3.svg" alt="Write" class="w-5 h-5"/>
+            </button>
+            <button class="p-1.5 rounded hover:bg-gray-100 text-gray-600">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/message-circle.svg" alt="Chat" class="w-5 h-5"/>
+            </button>
+            <button class="p-1.5 rounded hover:bg-gray-100 text-gray-600">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/check-square.svg" alt="Review" class="w-5 h-5"/>
+            </button>
+            <button class="p-1.5 rounded bg-gray-200 text-gray-900 font-medium">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/layout-grid.svg" alt="Plan" class="w-5 h-5"/>
+            </button>
+            <button class="p-1.5 rounded hover:bg-gray-100 text-gray-600">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/share.svg" alt="Export" class="w-5 h-5"/>
+            </button>
+             <button class="p-1.5 rounded hover:bg-gray-100 text-gray-600">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/settings-2.svg" alt="More" class="w-5 h-5"/>
+            </button>
+        </div>
+        <div class="flex items-center space-x-1">
+             <span class="text-sm text-gray-500 mr-2">Word Count: 1234</span>
+            <button class="p-1.5 rounded hover:bg-gray-100 text-gray-600">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/upload.svg" alt="Share" class="w-5 h-5"/>
+            </button>
+            <button class="p-1.5 rounded hover:bg-gray-100 text-gray-600">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/settings.svg" alt="Settings" class="w-5 h-5"/>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-grow p-6 overflow-y-auto">
+        <section class="mb-8">
+            <div class="flex items-center mb-4">
+                <button class="p-1 rounded hover:bg-gray-200 mr-2 text-gray-500">
+                     <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/chevron-down.svg" alt="Expand/Collapse" class="w-5 h-5"/>
+                </button>
+                <h2 class="text-xl font-semibold text-gray-800">Act 1</h2>
+                <button class="ml-3 p-1 rounded hover:bg-gray-200 text-gray-500">
+                     <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/plus-circle.svg" alt="Add Chapter" class="w-5 h-5"/>
+                </button>
+                 <button class="ml-1 p-1 rounded hover:bg-gray-200 text-gray-500">
+                     <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/more-horizontal.svg" alt="Act Options" class="w-5 h-5"/>
+                </button>
+            </div>
+
+            <div class="flex space-x-6 overflow-x-auto pb-4">
+
+                <div class="bg-white rounded-lg border border-gray-200 p-4 w-72 flex-shrink-0 flex flex-col">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="font-semibold text-gray-700">Chapter 1</h3>
+                        <button class="p-1 rounded hover:bg-gray-100 text-gray-500">
+                             <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/more-horizontal.svg" alt="Chapter Options" class="w-4 h-4"/>
+                        </button>
+                    </div>
+                    <div class="space-y-3 flex-grow">
+                        <article class="bg-gray-50 rounded border border-gray-200 p-3 cursor-pointer hover:shadow-sm">
+                            <div class="flex justify-between items-start mb-1">
+                                <h4 class="text-sm font-medium text-gray-800">Scene 1</h4>
+                                <div class="flex space-x-1 text-gray-400">
+                                    <button class="p-0.5 rounded hover:bg-gray-200">
+                                        <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/edit.svg" alt="Edit Scene" class="w-3.5 h-3.5"/>
+                                    </button>
+                                     <button class="p-0.5 rounded hover:bg-gray-200">
+                                         <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/more-horizontal.svg" alt="Scene Options" class="w-3.5 h-3.5"/>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-600 line-clamp-2">大纲：主角遇到第一个挑战，需要做出艰难的选择...</p>
+                        </article>
+                        <article class="bg-gray-50 rounded border border-gray-200 p-3 cursor-pointer hover:shadow-sm">
+                            <div class="flex justify-between items-start mb-1">
+                                <h4 class="text-sm font-medium text-gray-800">Scene 2</h4>
+                                <div class="flex space-x-1 text-gray-400">
+                                     <button class="p-0.5 rounded hover:bg-gray-200">
+                                        <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/edit.svg" alt="Edit Scene" class="w-3.5 h-3.5"/>
+                                    </button>
+                                     <button class="p-0.5 rounded hover:bg-gray-200">
+                                         <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/more-horizontal.svg" alt="Scene Options" class="w-3.5 h-3.5"/>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-600 line-clamp-2">Act 1 Summary: 回忆过去的片段，揭示角色的动机。</p>
+                        </article>
+                         </div>
+                     <button class="mt-3 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 p-2 rounded w-full flex items-center justify-center">
+                        <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/plus.svg" alt="Add" class="w-4 h-4 mr-1"/>
+                        New Scene
+                    </button>
+                </div>
+
+                <div class="bg-white rounded-lg border border-gray-200 p-4 w-72 flex-shrink-0 flex flex-col">
+                     <div class="flex items-center justify-between mb-3">
+                        <h3 class="font-semibold text-gray-700">Chapter 2</h3>
+                         <button class="p-1 rounded hover:bg-gray-100 text-gray-500">
+                             <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/more-horizontal.svg" alt="Chapter Options" class="w-4 h-4"/>
+                        </button>
+                    </div>
+                     <div class="space-y-3 flex-grow">
+                        <article class="bg-gray-50 rounded border border-gray-200 p-3 cursor-pointer hover:shadow-sm">
+                            <div class="flex justify-between items-start mb-1">
+                                <h4 class="text-sm font-medium text-gray-800">Scene 1</h4>
+                                <div class="flex space-x-1 text-gray-400">
+                                     <button class="p-0.5 rounded hover:bg-gray-200">
+                                        <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/edit.svg" alt="Edit Scene" class="w-3.5 h-3.5"/>
+                                    </button>
+                                     <button class="p-0.5 rounded hover:bg-gray-200">
+                                         <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/more-horizontal.svg" alt="Scene Options" class="w-3.5 h-3.5"/>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-600 line-clamp-2">冲突升级，引入新的盟友或敌人。</p>
+                        </article>
+                        </div>
+                     <button class="mt-3 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 p-2 rounded w-full flex items-center justify-center">
+                         <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/plus.svg" alt="Add" class="w-4 h-4 mr-1"/>
+                        New Scene
+                    </button>
+                </div>
+
+                <div class="flex-shrink-0 w-72">
+                    <button class="bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg border border-gray-200 w-full h-full flex items-center justify-center text-sm p-4">
+                         <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/plus.svg" alt="Add" class="w-4 h-4 mr-1"/>
+                        New Chapter
+                    </button>
+                </div>
+
+            </div> </section> </main>
+
+    <footer class="bg-white border-t border-gray-200 px-4 py-2 flex items-center justify-start space-x-3 flex-shrink-0">
+        <button class="flex items-center text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-2 py-1 rounded">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/plus-square.svg" alt="Add Act" class="w-4 h-4 mr-1.5"/>
+            Add Act
+        </button>
+         <button class="flex items-center text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-2 py-1 rounded">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/list-ordered.svg" alt="Outline Settings" class="w-4 h-4 mr-1.5"/>
+            Outline Settings
+        </button>
+        <button class="flex items-center text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-2 py-1 rounded">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/filter.svg" alt="Filter" class="w-4 h-4 mr-1.5"/>
+            Filter
+        </button>
+         <button class="flex items-center text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-2 py-1 rounded">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/sliders-horizontal.svg" alt="Options" class="w-4 h-4 mr-1.5"/>
+            Options
+        </button>
+    </footer>
+
+</body>
+</html>

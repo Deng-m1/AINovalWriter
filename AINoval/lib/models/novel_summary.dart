@@ -10,6 +10,7 @@ class NovelSummary extends Equatable {
     this.wordCount = 0,
     this.seriesName = '',
     this.completionPercentage = 0.0,
+    this.lastEditedChapterId,
   });
   
   // 从JSON转换方法
@@ -22,6 +23,7 @@ class NovelSummary extends Equatable {
       wordCount: json['wordCount'] ?? 0,
       seriesName: json['seriesName'] ?? '',
       completionPercentage: json['completionPercentage']?.toDouble() ?? 0.0,
+      lastEditedChapterId: json['lastEditedChapterId'],
     );
   }
   final String id;
@@ -31,6 +33,7 @@ class NovelSummary extends Equatable {
   final int wordCount;
   final String seriesName;
   final double completionPercentage;
+  final String? lastEditedChapterId;
   
   @override
   List<Object?> get props => [
@@ -40,7 +43,8 @@ class NovelSummary extends Equatable {
     lastEditTime, 
     wordCount, 
     seriesName, 
-    completionPercentage
+    completionPercentage,
+    lastEditedChapterId
   ];
   
   // 转换为JSON方法
@@ -53,6 +57,7 @@ class NovelSummary extends Equatable {
       'wordCount': wordCount,
       'seriesName': seriesName,
       'completionPercentage': completionPercentage,
+      'lastEditedChapterId': lastEditedChapterId,
     };
   }
 } 

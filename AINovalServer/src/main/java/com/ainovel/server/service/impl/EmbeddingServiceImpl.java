@@ -3,6 +3,9 @@ package com.ainovel.server.service.impl;
 import java.util.HashMap;
 import java.util.Map;
 
+import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
+import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModelFactory;
+import dev.langchain4j.model.embedding.onnx.allminilml6v2q.AllMiniLmL6V2QuantizedEmbeddingModel;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -10,7 +13,6 @@ import com.ainovel.server.service.EmbeddingService;
 
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
@@ -29,15 +31,15 @@ public class EmbeddingServiceImpl implements EmbeddingService {
     // 默认嵌入模型名称
     private final String defaultEmbeddingModel;
     
-    // OpenAI API密钥
-    private final String openaiApiKey;
+    // 是否使用量化模型（量化模型速度更快但精度略低）
+    private final boolean useQuantizedModel;
     
     public EmbeddingServiceImpl(
-            @Value("${ai.embedding.default-model:text-embedding-3-small}") String defaultEmbeddingModel,
-            @Value("${ai.openai.api-key:#{environment.OPENAI_API_KEY}}") String openaiApiKey) {
+            @Value("${ai.embedding.default-model:all-minilm-l6-v2}") String defaultEmbeddingModel,
+            @Value("${ai.embedding.use-quantized:true}") boolean useQuantizedModel) {
         this.defaultEmbeddingModel = defaultEmbeddingModel;
-        this.openaiApiKey = openaiApiKey;
-        log.info("初始化嵌入服务，默认模型: {}", defaultEmbeddingModel);
+        this.useQuantizedModel = useQuantizedModel;
+        log.info("初始化嵌入服务，默认模型: {}, 使用量化模型: {}", defaultEmbeddingModel, useQuantizedModel);
     }
     
     /**
@@ -67,6 +69,7 @@ public class EmbeddingServiceImpl implements EmbeddingService {
         
         return Mono.fromCallable(() -> {
             EmbeddingModel embeddingModel = getOrCreateEmbeddingModel(modelName);
+            log.info("生成向量模型成功");
             Embedding embedding = embeddingModel.embed(text).content();
             return embedding.vector();
         }).onErrorResume(e -> {
@@ -87,24 +90,39 @@ public class EmbeddingServiceImpl implements EmbeddingService {
             return model;
         }
         
-        // 验证API密钥
-        if (openaiApiKey == null || openaiApiKey.isEmpty()) {
-            throw new IllegalStateException("未设置OpenAI API密钥");
-        }
-        
         // 创建新模型
-        if (modelName.startsWith("text-embedding")) {
-            // OpenAI嵌入模型
-            model = OpenAiEmbeddingModel.builder()
-                    .apiKey(openaiApiKey)
-                    .modelName(modelName)
-                    .build();
+        if ("all-minilm-l6-v2".equals(modelName)) {
+            // 使用本地的 AllMiniLmL6V2 模型
+            if (useQuantizedModel) {
+                // 使用量化版本（更小更快，但精度略低）
+                // 通过反射创建量化版本的模型
+                try {
+                    model = new AllMiniLmL6V2QuantizedEmbeddingModel();
+
+                    log.info("创建量化版 AllMiniLmL6V2 嵌入模型");
+                } catch (Exception e) {
+                    log.error("创建量化版 AllMiniLmL6V2 嵌入模型失败", e);
+                    throw new RuntimeException("创建量化版 AllMiniLmL6V2 嵌入模型失败: " + e.getMessage());
+                }
+            } else {
+                // 使用完整版本
+                try {
+                    model=new AllMiniLmL6V2EmbeddingModel();
+                    log.info("创建完整版 AllMiniLmL6V2 嵌入模型");
+                } catch (Exception e) {
+                    log.error("创建完整版 AllMiniLmL6V2 嵌入模型失败", e);
+                    throw new RuntimeException("创建完整版 AllMiniLmL6V2 嵌入模型失败: " + e.getMessage());
+                }
+            }
         } else {
-            // 默认使用OpenAI嵌入模型
-            model = OpenAiEmbeddingModel.builder()
-                    .apiKey(openaiApiKey)
-                    .modelName(defaultEmbeddingModel)
-                    .build();
+            // 默认使用量化版本的 AllMiniLmL6V2 模型
+            try {
+                model=new AllMiniLmL6V2EmbeddingModel();
+                log.info("创建默认量化版 AllMiniLmL6V2 嵌入模型");
+            } catch (Exception e) {
+                log.error("创建默认量化版 AllMiniLmL6V2 嵌入模型失败", e);
+                throw new RuntimeException("创建默认量化版 AllMiniLmL6V2 嵌入模型失败: " + e.getMessage());
+            }
         }
         
         // 缓存模型

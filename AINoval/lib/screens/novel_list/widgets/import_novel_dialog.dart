@@ -4,25 +4,67 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 /// 小说导入对话框
-class ImportNovelDialog extends StatelessWidget {
+class ImportNovelDialog extends StatefulWidget {
   /// 创建小说导入对话框
   const ImportNovelDialog({super.key});
+
+  @override
+  State<ImportNovelDialog> createState() => _ImportNovelDialogState();
+}
+
+class _ImportNovelDialogState extends State<ImportNovelDialog> {
+  // 存储BLoC引用，避免在dispose中访问context
+  late final NovelImportBloc _importBloc;
+  
+  @override
+  void initState() {
+    super.initState();
+    
+    // 获取并保存BLoC引用
+    _importBloc = context.read<NovelImportBloc>();
+    
+    // 初始化时延迟检查，确保 context 已经准备好
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 检查状态并在需要时重置
+      final state = _importBloc.state;
+      if (state is NovelImportSuccess || state is NovelImportFailure) {
+        _importBloc.add(ResetImportState());
+      }
+    });
+  }
+
+   @override
+   void dispose() {
+     // 确保在对话框关闭时只触发一次重置
+     final state = _importBloc.state;
+     if (state is NovelImportInProgress && state.status != "CANCELLING") {
+       _importBloc.add(ResetImportState());
+     }
+     super.dispose();
+   }
 
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<NovelImportBloc, NovelImportState>(
       listener: (context, state) {
         if (state is NovelImportSuccess) {
-          context.read<NovelListBloc>().add(LoadNovels());
-          Navigator.of(context).pop();
-          // 显示成功消息
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('导入成功: ${state.message}'),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          // 延迟关闭对话框，给用户一个成功的视觉反馈
+          Future.delayed(const Duration(milliseconds: 800), () {
+            if (context.mounted) {
+              // 重置导入状态，确保下次打开对话框时状态为初始状态
+              _importBloc.add(ResetImportState());
+              context.read<NovelListBloc>().add(LoadNovels());
+              Navigator.of(context).pop();
+              // 显示成功消息
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('导入成功: ${state.message}'),
+                  backgroundColor: Colors.green,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          });
         }
       },
       builder: (context, state) {
@@ -53,7 +95,7 @@ class ImportNovelDialog extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      if (state is! NovelImportInProgress)
+                      if (state is! NovelImportInProgress && state is! NovelImportSuccess)
                         IconButton(
                           icon: const Icon(Icons.close),
                           onPressed: () => Navigator.of(context).pop(),
@@ -112,7 +154,11 @@ class ImportNovelDialog extends StatelessWidget {
           LinearProgressIndicator(
             value: state.status == 'PREPARING' || state.status == 'UPLOADING' 
                 ? null  // 不确定进度时使用不确定进度条
-                : state.progress,
+                : state.progress > 0 ? state.progress : null,
+            backgroundColor: Colors.grey.shade200,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              Theme.of(context).colorScheme.primary,
+            ),
           ),
           
           const SizedBox(height: 24),
@@ -131,7 +177,7 @@ class ImportNovelDialog extends StatelessWidget {
           
           const SizedBox(height: 8),
           
-          // 二级状态文本 (可选)
+          // 二级状态文本
           Text(
             _getStatusDescription(state.status),
             textAlign: TextAlign.center,
@@ -139,6 +185,65 @@ class ImportNovelDialog extends StatelessWidget {
               fontSize: 14,
               color: Colors.grey.shade600,
             ),
+          ),
+          
+          // 添加调试信息，在开发环境下显示
+          if (state.jobId != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  color: Colors.grey.shade100,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '任务ID: ${state.jobId}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    Text(
+                      '状态: ${state.status}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      );
+    } else if (state is NovelImportSuccess) {
+      return Column(
+        children: [
+          Icon(
+            Icons.check_circle_outline,
+            size: 64,
+            color: Colors.green.shade600,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '导入成功',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.green.shade700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            state.message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 14),
           ),
         ],
       );
@@ -164,6 +269,39 @@ class ImportNovelDialog extends StatelessWidget {
             state.message,
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '可能的原因:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red.shade700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '• 文件编码不是UTF-8\n'
+                  '• 文件格式不正确\n'
+                  '• 文件可能已损坏\n'
+                  '• 服务器暂时无法处理',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.red.shade900,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       );
@@ -205,10 +343,25 @@ class ImportNovelDialog extends StatelessWidget {
         iconColor = theme.colorScheme.primary;
     }
     
-    return Icon(
-      iconData,
-      size: 48,
-      color: iconColor,
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: Stack(
+        children: [
+          Icon(
+            iconData,
+            size: 48,
+            color: iconColor,
+          ),
+          if (status == 'PROCESSING' || status == 'INDEXING')
+            Positioned.fill(
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(iconColor),
+              ),
+            ),
+        ],
+      ),
     );
   }
   
@@ -243,7 +396,7 @@ class ImportNovelDialog extends StatelessWidget {
           ),
           const SizedBox(width: 16),
           FilledButton.icon(
-            onPressed: () => context.read<NovelImportBloc>().add(ImportNovelFile()),
+            onPressed: () => _importBloc.add(ImportNovelFile()),
             icon: const Icon(Icons.upload_file),
             label: const Text('选择文件'),
           ),
@@ -252,17 +405,16 @@ class ImportNovelDialog extends StatelessWidget {
     } else if (state is NovelImportInProgress) {
       return Center(
         child: TextButton.icon(
-          onPressed: state.status == 'UPLOADING' || state.status == 'PREPARING'
-              ? () {
-                  context.read<NovelImportBloc>().add(ResetImportState());
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('已取消导入'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
-              : null, // 其他状态不允许取消
+          onPressed: () {
+            _importBloc.add(ResetImportState());
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('已取消导入'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            Navigator.of(context).pop();
+          },
           icon: const Icon(Icons.cancel),
           label: const Text('取消导入'),
         ),
@@ -272,17 +424,33 @@ class ImportNovelDialog extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           OutlinedButton.icon(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              _importBloc.add(ResetImportState());
+              Navigator.of(context).pop();
+            },
             icon: const Icon(Icons.close),
             label: const Text('关闭'),
           ),
           const SizedBox(width: 16),
           FilledButton.icon(
-            onPressed: () => context.read<NovelImportBloc>().add(ImportNovelFile()),
+            onPressed: () {
+              _importBloc.add(ResetImportState());
+              _importBloc.add(ImportNovelFile());
+            },
             icon: const Icon(Icons.refresh),
             label: const Text('重试'),
           ),
         ],
+      );
+    } else if (state is NovelImportSuccess) {
+      return FilledButton.icon(
+        onPressed: () {
+          _importBloc.add(ResetImportState());
+          context.read<NovelListBloc>().add(LoadNovels());
+          Navigator.of(context).pop();
+        },
+        icon: const Icon(Icons.check),
+        label: const Text('完成'),
       );
     }
     

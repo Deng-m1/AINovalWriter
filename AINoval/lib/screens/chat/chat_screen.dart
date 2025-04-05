@@ -258,8 +258,10 @@ class _ChatScreenState extends State<ChatScreen> {
             // 允许从加载状态转换
             if ((previous is ChatSessionsLoading ||
                     previous is ChatSessionLoading) &&
-                (current is ChatSessionsLoaded || current is ChatSessionActive))
+                (current is ChatSessionsLoaded ||
+                    current is ChatSessionActive)) {
               return true;
+            }
             // 允许错误和初始状态
             if (current is ChatError || current is ChatInitial) return true;
             // 在 ChatSessionActive 内更新的条件
@@ -279,11 +281,15 @@ class _ChatScreenState extends State<ChatScreen> {
                   previous.error != current.error;
             }
             // 从活动会话返回列表
-            if (previous is ChatSessionActive && current is ChatSessionsLoaded)
+            if (previous is ChatSessionActive &&
+                current is ChatSessionsLoaded) {
               return true;
+            }
             // 从列表进入活动会话
-            if (previous is ChatSessionsLoaded && current is ChatSessionActive)
+            if (previous is ChatSessionsLoaded &&
+                current is ChatSessionActive) {
               return true;
+            }
 
             // 其他情况，如果类型不同则重建
             return previous.runtimeType != current.runtimeType;
@@ -460,7 +466,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Padding(
                     // 改进空列表提示
                     padding: EdgeInsets.symmetric(vertical: 32.0),
-                    child: Text("没有找到任何对话记录"),
+                    child: Text('没有找到任何对话记录'),
                   ))
                 : ListView.builder(
                     shrinkWrap: true, // 在 Column 中需要
@@ -680,26 +686,26 @@ class _ChatScreenState extends State<ChatScreen> {
             } else {
               // 处理其他未能获取列表的状态
               return const SizedBox(
-                  height: 100, child: Center(child: Text("无法加载会话列表")));
+                  height: 100, child: Center(child: Text('无法加载会话列表')));
             }
           },
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
             style: TextButton.styleFrom(
                 foregroundColor: colorScheme.onSurfaceVariant),
+            child: const Text('关闭'),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context); // 先关闭对话框
               _createNewSession(); // 再打开创建对话框
             },
-            child: const Text('新建对话'),
             style: TextButton.styleFrom(
                 foregroundColor: colorScheme.primary,
                 textStyle: const TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('新建对话'),
           ),
         ],
       ),

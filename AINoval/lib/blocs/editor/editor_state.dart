@@ -21,6 +21,7 @@ class EditorLoaded extends EditorState {
     this.activeSceneId,
     this.isDirty = false,
     this.isSaving = false,
+    this.isLoading = false,
     this.lastSaveTime,
     this.errorMessage,
   });
@@ -31,6 +32,7 @@ class EditorLoaded extends EditorState {
   final String? activeSceneId;
   final bool isDirty;
   final bool isSaving;
+  final bool isLoading;
   final DateTime? lastSaveTime;
   final String? errorMessage;
   
@@ -43,6 +45,7 @@ class EditorLoaded extends EditorState {
     activeSceneId,
     isDirty,
     isSaving,
+    isLoading,
     lastSaveTime,
     errorMessage,
   ];
@@ -55,6 +58,7 @@ class EditorLoaded extends EditorState {
     String? activeSceneId,
     bool? isDirty,
     bool? isSaving,
+    bool? isLoading,
     DateTime? lastSaveTime,
     String? errorMessage,
   }) {
@@ -66,6 +70,7 @@ class EditorLoaded extends EditorState {
       activeSceneId: activeSceneId ?? this.activeSceneId,
       isDirty: isDirty ?? this.isDirty,
       isSaving: isSaving ?? this.isSaving,
+      isLoading: isLoading ?? this.isLoading,
       lastSaveTime: lastSaveTime ?? this.lastSaveTime,
       errorMessage: errorMessage ?? this.errorMessage,
     );

@@ -4,18 +4,6 @@ import '../utils/date_time_parser.dart'; // Import the parser
 /// 用户 AI 模型配置模型 (对应后端的 UserAIModelConfigResponse)
 @immutable // Good practice for value objects
 class UserAIModelConfigModel {
-  final String id;
-  final String userId;
-  final String provider;
-  final String modelName;
-  final String alias;
-  final String? apiEndpoint; // nullable
-  final bool isValidated;
-  final String? validationError; // nullable
-  final bool isDefault;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-
   const UserAIModelConfigModel({
     required this.id,
     required this.userId,
@@ -36,7 +24,8 @@ class UserAIModelConfigModel {
     String safeString(String key, [String defaultValue = '']) {
       return json[key] is String ? json[key] as String : defaultValue;
     }
-     // Helper to safely get bool, providing a default if null or wrong type
+
+    // Helper to safely get bool, providing a default if null or wrong type
     bool safeBool(String key, [bool defaultValue = false]) {
       return json[key] is bool ? json[key] as bool : defaultValue;
     }
@@ -55,6 +44,17 @@ class UserAIModelConfigModel {
       updatedAt: parseBackendDateTime(json['updatedAt']), // Use the parser
     );
   }
+  final String id;
+  final String userId;
+  final String provider;
+  final String modelName;
+  final String alias;
+  final String? apiEndpoint; // nullable
+  final bool isValidated;
+  final String? validationError; // nullable
+  final bool isDefault;
+  final DateTime createdAt;
+  final DateTime updatedAt;
 
   // 转换为JSON方法
   Map<String, dynamic> toJson() {

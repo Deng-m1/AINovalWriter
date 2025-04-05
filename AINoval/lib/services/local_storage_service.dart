@@ -69,7 +69,7 @@ class LocalStorageService {
         final jsonMap = novel.toJson();
         final jsonString = jsonEncode(jsonMap);
         AppLogger.v('LocalStorageService',
-            'saveNovels: Serializing Novel ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}. JSON: $jsonString');
+            'saveNovels: Serializing Novel ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}');
         return jsonString;
       }).toList();
 
@@ -149,7 +149,20 @@ class LocalStorageService {
   // 设置当前正在编辑的小说ID
   Future<void> setCurrentNovelId(String id) async {
     final prefs = await _ensureInitialized();
+    final previousId = prefs.getString(_currentNovelKey);
+    
+    // 如果前一个小说ID存在且与新ID不同，清理前一个小说的同步标记
+    if (previousId != null && previousId.isNotEmpty && previousId != id) {
+      AppLogger.i('LocalStorageService', '小说ID切换: $previousId -> $id');
+      
+      // 如果是设置为空ID（特殊情况，如app关闭），不触发清理
+      if (id.isNotEmpty) {
+        await clearNovelSyncFlags(previousId);
+      }
+    }
+    
     await prefs.setString(_currentNovelKey, id);
+    AppLogger.i('LocalStorageService', '当前小说ID已设置为: $id');
   }
 
   // 获取章节内容
@@ -616,6 +629,74 @@ class LocalStorageService {
       AppLogger.i('LocalStorageService', '从队列移除待发送消息: localId=$localId');
     } else {
       AppLogger.w('LocalStorageService', '尝试移除待发送消息，但未找到: localId=$localId');
+    }
+  }
+
+  // 清理所有同步标记
+  Future<void> clearAllSyncFlags() async {
+    final prefs = await _ensureInitialized();
+    final syncTypes = ['novel', 'scene', 'editor', 'chat_session'];
+    
+    for (final type in syncTypes) {
+      final syncKey = 'syncList_$type';
+      await prefs.remove(syncKey);
+    }
+    
+    AppLogger.i('LocalStorageService', '已清理所有同步标记');
+  }
+  
+  // 清理指定小说的同步标记
+  Future<void> clearNovelSyncFlags(String novelId) async {
+    if (novelId.isEmpty) return;
+    
+    final prefs = await _ensureInitialized();
+    
+    // 清理小说本身的同步标记
+    final novelSyncKey = 'syncList_novel';
+    final novelSyncList = prefs.getStringList(novelSyncKey) ?? [];
+    if (novelSyncList.contains(novelId)) {
+      novelSyncList.remove(novelId);
+      await prefs.setStringList(novelSyncKey, novelSyncList);
+      AppLogger.i('LocalStorageService', '已清理小说同步标记: $novelId');
+    }
+    
+    // 清理场景同步标记
+    final sceneSyncKey = 'syncList_scene';
+    final sceneSyncList = prefs.getStringList(sceneSyncKey) ?? [];
+    final updatedSceneSyncList = sceneSyncList.where((sceneKey) {
+      final parts = sceneKey.split('_');
+      return parts.isEmpty || parts[0] != novelId;
+    }).toList();
+    
+    if (updatedSceneSyncList.length != sceneSyncList.length) {
+      await prefs.setStringList(sceneSyncKey, updatedSceneSyncList);
+      AppLogger.i('LocalStorageService', 
+        '已清理场景同步标记: ${sceneSyncList.length - updatedSceneSyncList.length} 个场景，小说ID: $novelId');
+    }
+    
+    // 清理编辑器内容同步标记
+    final editorSyncKey = 'syncList_editor';
+    final editorSyncList = prefs.getStringList(editorSyncKey) ?? [];
+    final updatedEditorSyncList = editorSyncList.where((contentKey) {
+      final parts = contentKey.split('_');
+      return parts.isEmpty || parts[0] != novelId;
+    }).toList();
+    
+    if (updatedEditorSyncList.length != editorSyncList.length) {
+      await prefs.setStringList(editorSyncKey, updatedEditorSyncList);
+      AppLogger.i('LocalStorageService', 
+        '已清理编辑器内容同步标记: ${editorSyncList.length - updatedEditorSyncList.length} 个内容，小说ID: $novelId');
+    }
+    
+    // 清理聊天会话同步标记
+    // 注意：这需要先获取所有会话，然后检查它们的metadata中的novelId
+    final sessions = await getSessionsToSync();
+    final sessionsToRemove = sessions.where((session) => 
+      session.metadata != null && session.metadata!['novelId'] == novelId).toList();
+    
+    for (final session in sessionsToRemove) {
+      await clearSyncFlagByType('chat_session', session.id);
+      AppLogger.i('LocalStorageService', '已清理聊天会话同步标记: ${session.id}，小说ID: $novelId');
     }
   }
 }

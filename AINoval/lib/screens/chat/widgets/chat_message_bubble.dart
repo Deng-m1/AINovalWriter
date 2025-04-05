@@ -156,7 +156,7 @@ class ChatMessageBubble extends StatelessWidget {
           MarkdownBody(
             data: message.content.isEmpty &&
                     message.status == MessageStatus.pending
-                ? "思考中..."
+                ? '思考中...'
                 : message.content,
             styleSheet: MarkdownStyleSheet(
               p: textTheme.bodyMedium?.copyWith(
@@ -243,7 +243,7 @@ class ChatMessageBubble extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            message.content.isEmpty ? "发生错误" : message.content, // 默认错误消息
+            message.content.isEmpty ? '发生错误' : message.content, // 默认错误消息
             softWrap: true, // Ensure error text wraps
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.error,

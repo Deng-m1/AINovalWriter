@@ -458,7 +458,7 @@ class NovelActionsMenu extends StatelessWidget {
               '删除',
               style: TextStyle(fontSize: 14, color: Colors.red.shade700),
             ),
-            contentPadding: EdgeInsets.symmetric(horizontal: 8),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             dense: true,
           ),
         ),
@@ -816,15 +816,14 @@ class WaveClipper extends CustomClipper<Path> {
 
 /// 网格绘制器
 class GridPainter extends CustomPainter {
-  final Color color;
-  final double lineWidth;
-  final double spacing;
-
   GridPainter({
     required this.color,
     required this.lineWidth,
     required this.spacing,
   });
+  final Color color;
+  final double lineWidth;
+  final double spacing;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -850,13 +849,12 @@ class GridPainter extends CustomPainter {
 
 /// 圆形绘制器
 class CirclePainter extends CustomPainter {
-  final Color color;
-  final Color baseColor;
-
   CirclePainter({
     required this.color,
     required this.baseColor,
   });
+  final Color color;
+  final Color baseColor;
 
   @override
   void paint(Canvas canvas, Size size) {

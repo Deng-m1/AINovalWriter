@@ -6,9 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 // import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 class AiConfigForm extends StatefulWidget {
-  final UserAIModelConfigModel? configToEdit;
-  final String userId;
-  final VoidCallback onCancel; // Callback when cancel is pressed
+  // Callback when cancel is pressed
   // Optional: Callback on successful save if specific action needed besides hiding form
   // final VoidCallback? onSaveSuccess;
 
@@ -19,6 +17,9 @@ class AiConfigForm extends StatefulWidget {
     this.configToEdit,
     // this.onSaveSuccess,
   });
+  final UserAIModelConfigModel? configToEdit;
+  final String userId;
+  final VoidCallback onCancel;
 
   @override
   State<AiConfigForm> createState() => _AiConfigFormState();
@@ -45,9 +46,11 @@ class _AiConfigFormState extends State<AiConfigForm> {
   void initState() {
     super.initState();
     // Initialize controllers
-    _aliasController = TextEditingController(text: widget.configToEdit?.alias ?? '');
+    _aliasController =
+        TextEditingController(text: widget.configToEdit?.alias ?? '');
     _apiKeyController = TextEditingController(); // API key is never pre-filled
-    _apiEndpointController = TextEditingController(text: widget.configToEdit?.apiEndpoint ?? '');
+    _apiEndpointController =
+        TextEditingController(text: widget.configToEdit?.apiEndpoint ?? '');
 
     // <<< Reset selections if in Add mode >>>
     if (!_isEditMode) {
@@ -67,28 +70,32 @@ class _AiConfigFormState extends State<AiConfigForm> {
       final bloc = context.read<AiConfigBloc>();
       // Pre-populate lists from current Bloc state if available
       // This helps if Bloc already has data when form initializes
-       if (_providers.isEmpty) {
-           _providers = bloc.state.availableProviders;
-       }
-       if (_models.isEmpty && _selectedProvider != null && bloc.state.selectedProviderForModels == _selectedProvider) {
-          _models = bloc.state.modelsForProvider;
-       }
+      if (_providers.isEmpty) {
+        _providers = bloc.state.availableProviders;
+      }
+      if (_models.isEmpty &&
+          _selectedProvider != null &&
+          bloc.state.selectedProviderForModels == _selectedProvider) {
+        _models = bloc.state.modelsForProvider;
+      }
 
-      // --- Trigger loading --- 
-       // Always try to load providers when the form inits, 
-       // as the list might be stale or empty (especially in add mode).
-       // The BlocListener will handle the loading indicator state.
-       _loadProviders();
+      // --- Trigger loading ---
+      // Always try to load providers when the form inits,
+      // as the list might be stale or empty (especially in add mode).
+      // The BlocListener will handle the loading indicator state.
+      _loadProviders();
 
       // If editing and provider is selected, ensure models are loaded.
       if (_isEditMode && _selectedProvider != null) {
-         // Check if models for this provider are already in Bloc state
-         if (bloc.state.selectedProviderForModels != _selectedProvider || bloc.state.modelsForProvider.isEmpty) {
-             _loadModels(_selectedProvider!); // Load if not present or empty
-         } else if (_models.isEmpty) { // Or if our local list is empty
-            _models = bloc.state.modelsForProvider; // Populate from Bloc
-            setState(() {}); // Update UI if models were populated synchronously
-         }
+        // Check if models for this provider are already in Bloc state
+        if (bloc.state.selectedProviderForModels != _selectedProvider ||
+            bloc.state.modelsForProvider.isEmpty) {
+          _loadModels(_selectedProvider!); // Load if not present or empty
+        } else if (_models.isEmpty) {
+          // Or if our local list is empty
+          _models = bloc.state.modelsForProvider; // Populate from Bloc
+          setState(() {}); // Update UI if models were populated synchronously
+        }
       }
     });
   }
@@ -103,37 +110,46 @@ class _AiConfigFormState extends State<AiConfigForm> {
     super.dispose();
   }
 
-   void _loadProviders() {
-     if (!mounted) return; // Check if widget is still in the tree
-     setState(() { _isLoadingProviders = true; });
-     context.read<AiConfigBloc>().add(LoadAvailableProviders());
-   }
+  void _loadProviders() {
+    if (!mounted) return; // Check if widget is still in the tree
+    setState(() {
+      _isLoadingProviders = true;
+    });
+    context.read<AiConfigBloc>().add(LoadAvailableProviders());
+  }
 
-   void _loadModels(String provider) {
-     if (!mounted) return;
-     setState(() {
-       _isLoadingModels = true;
-       // Reset model only if it's not edit mode or if provider actually changes
-       if (!_isEditMode || provider != _selectedProvider) {
-         _selectedModel = null;
-       }
-       _models = []; // Clear previous models for the dropdown
-     });
-     context.read<AiConfigBloc>().add(LoadModelsForProvider(provider: provider));
-   }
+  void _loadModels(String provider) {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingModels = true;
+      // Reset model only if it's not edit mode or if provider actually changes
+      if (!_isEditMode || provider != _selectedProvider) {
+        _selectedModel = null;
+      }
+      _models = []; // Clear previous models for the dropdown
+    });
+    context.read<AiConfigBloc>().add(LoadModelsForProvider(provider: provider));
+  }
 
   void _submitForm() {
     if (_formKey.currentState!.validate()) {
-      setState(() { _isSaving = true; });
+      setState(() {
+        _isSaving = true;
+      });
       final bloc = context.read<AiConfigBloc>();
 
       if (_isEditMode) {
         bloc.add(UpdateAiConfig(
           userId: widget.userId,
           configId: widget.configToEdit!.id,
-          alias: _aliasController.text.trim().isEmpty ? null : _aliasController.text.trim(),
-          apiKey: _apiKeyController.text.trim().isEmpty ? null : _apiKeyController.text.trim(),
-          apiEndpoint: _apiEndpointController.text.trim(), // Send empty string to clear
+          alias: _aliasController.text.trim().isEmpty
+              ? null
+              : _aliasController.text.trim(),
+          apiKey: _apiKeyController.text.trim().isEmpty
+              ? null
+              : _apiKeyController.text.trim(),
+          apiEndpoint:
+              _apiEndpointController.text.trim(), // Send empty string to clear
         ));
       } else {
         bloc.add(AddAiConfig(
@@ -141,7 +157,9 @@ class _AiConfigFormState extends State<AiConfigForm> {
           provider: _selectedProvider!,
           modelName: _selectedModel!,
           apiKey: _apiKeyController.text.trim(),
-          alias: _aliasController.text.trim().isEmpty ? _selectedModel : _aliasController.text.trim(),
+          alias: _aliasController.text.trim().isEmpty
+              ? _selectedModel
+              : _aliasController.text.trim(),
           apiEndpoint: _apiEndpointController.text.trim(),
         ));
       }
@@ -162,32 +180,37 @@ class _AiConfigFormState extends State<AiConfigForm> {
 
         // --- Provider Loading & List Update ---
         // Stop loading if providers are loaded OR if there's a general error message (potential load failure)
-        if (_isLoadingProviders && (state.availableProviders.isNotEmpty || state.errorMessage != null)) {
+        if (_isLoadingProviders &&
+            (state.availableProviders.isNotEmpty ||
+                state.errorMessage != null)) {
           _isLoadingProviders = false;
           needsSetState = true;
         }
         if (state.availableProviders != _providers) {
-           _providers = state.availableProviders;
-           needsSetState = true;
+          _providers = state.availableProviders;
+          needsSetState = true;
         }
 
         // --- Model Loading & List Update ---
         // Stop loading if models for the selected provider are loaded OR if there's a general error message
         if (state.selectedProviderForModels == _selectedProvider) {
-            if (_isLoadingModels && (state.modelsForProvider.isNotEmpty || state.errorMessage != null)) {
-              _isLoadingModels = false;
-              needsSetState = true;
-            }
-            if (state.modelsForProvider != _models) {
-               _models = state.modelsForProvider;
-               if (!_models.contains(_selectedModel)) {
-                  _selectedModel = null;
-               }
-               needsSetState = true;
-            }
-        } else if (_isLoadingModels) { // If we were loading models, but state is for a different provider or error
+          if (_isLoadingModels &&
+              (state.modelsForProvider.isNotEmpty ||
+                  state.errorMessage != null)) {
             _isLoadingModels = false;
             needsSetState = true;
+          }
+          if (state.modelsForProvider != _models) {
+            _models = state.modelsForProvider;
+            if (!_models.contains(_selectedModel)) {
+              _selectedModel = null;
+            }
+            needsSetState = true;
+          }
+        } else if (_isLoadingModels) {
+          // If we were loading models, but state is for a different provider or error
+          _isLoadingModels = false;
+          needsSetState = true;
         }
 
         // --- Saving State Update ---
@@ -195,8 +218,8 @@ class _AiConfigFormState extends State<AiConfigForm> {
         if (_isSaving && state.actionStatus != AiConfigActionStatus.loading) {
           // <<< Check if the action that just finished was a success >>>
           if (state.actionStatus == AiConfigActionStatus.success) {
-             // If *this form* was saving and it succeeded, trigger the cancel callback to close it.
-             widget.onCancel(); 
+            // If *this form* was saving and it succeeded, trigger the cancel callback to close it.
+            widget.onCancel();
           }
           // Always reset _isSaving regardless of success/error
           _isSaving = false;
@@ -204,11 +227,13 @@ class _AiConfigFormState extends State<AiConfigForm> {
         }
 
         if (needsSetState) {
-           setState(() {});
+          setState(() {});
         }
       },
-      child: SingleChildScrollView( // Allows scrolling if content overflows
-        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0), // Add some padding
+      child: SingleChildScrollView(
+        // Allows scrolling if content overflows
+        padding: const EdgeInsets.symmetric(
+            vertical: 8.0, horizontal: 4.0), // Add some padding
         child: Form(
           key: _formKey,
           child: Column(
@@ -222,18 +247,22 @@ class _AiConfigFormState extends State<AiConfigForm> {
                 labelText: '提供商', // Placeholder
                 items: _providers,
                 isLoading: _isLoadingProviders,
-                onChanged: _isEditMode ? null : (String? newValue) {
-                  if (newValue != null && newValue != _selectedProvider) {
-                    setState(() {
-                      _selectedProvider = newValue;
-                      _selectedModel = null; // Reset model
-                      _models = []; // Clear models
-                    });
-                    _loadModels(newValue);
-                  }
-                },
-                validator: (value) => value == null ? '请选择提供商' : null, // Placeholder
-                disabledHintValue: _selectedProvider, // Show value when disabled
+                onChanged: _isEditMode
+                    ? null
+                    : (String? newValue) {
+                        if (newValue != null && newValue != _selectedProvider) {
+                          setState(() {
+                            _selectedProvider = newValue;
+                            _selectedModel = null; // Reset model
+                            _models = []; // Clear models
+                          });
+                          _loadModels(newValue);
+                        }
+                      },
+                validator: (value) =>
+                    value == null ? '请选择提供商' : null, // Placeholder
+                disabledHintValue:
+                    _selectedProvider, // Show value when disabled
               ),
               const SizedBox(height: 16),
 
@@ -244,15 +273,21 @@ class _AiConfigFormState extends State<AiConfigForm> {
                 labelText: '模型', // Placeholder
                 items: _models,
                 isLoading: _isLoadingModels,
-                 // Disable if editing, or no provider selected, or models loading, or no models available
-                 onChanged: (_isEditMode || _selectedProvider == null || _isLoadingModels || _models.isEmpty)
-                     ? null
-                     : (String? newValue) {
-                         if (newValue != null) {
-                           setState(() { _selectedModel = newValue; });
-                         }
-                       },
-                validator: (value) => value == null ? '请选择模型' : null, // Placeholder
+                // Disable if editing, or no provider selected, or models loading, or no models available
+                onChanged: (_isEditMode ||
+                        _selectedProvider == null ||
+                        _isLoadingModels ||
+                        _models.isEmpty)
+                    ? null
+                    : (String? newValue) {
+                        if (newValue != null) {
+                          setState(() {
+                            _selectedModel = newValue;
+                          });
+                        }
+                      },
+                validator: (value) =>
+                    value == null ? '请选择模型' : null, // Placeholder
                 disabledHintValue: _selectedModel, // Show value when disabled
               ),
               const SizedBox(height: 16),
@@ -263,8 +298,9 @@ class _AiConfigFormState extends State<AiConfigForm> {
                 decoration: InputDecoration(
                   labelText: '别名 (可选)', // Placeholder
                   hintText: '例如：我的 ${_selectedModel ?? '模型'}', // Placeholder
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0), // Adjust padding
+                  border: const OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(
+                      vertical: 12.0, horizontal: 12.0), // Adjust padding
                 ),
                 // No validator, alias is optional
               ),
@@ -277,8 +313,9 @@ class _AiConfigFormState extends State<AiConfigForm> {
                 decoration: InputDecoration(
                   labelText: 'API Key', // Placeholder
                   hintText: _isEditMode ? '留空则不更新' : null, // Placeholder
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0),
+                  border: const OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(
+                      vertical: 12.0, horizontal: 12.0),
                 ),
                 validator: (value) {
                   if (!_isEditMode && (value == null || value.trim().isEmpty)) {
@@ -292,11 +329,12 @@ class _AiConfigFormState extends State<AiConfigForm> {
               // --- API Endpoint ---
               TextFormField(
                 controller: _apiEndpointController,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'API Endpoint (可选)', // Placeholder
                   hintText: '例如： https://api.openai.com/v1', // Placeholder
                   border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0),
+                  contentPadding:
+                      EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0),
                 ),
                 // No validator, endpoint is optional
               ),
@@ -308,13 +346,17 @@ class _AiConfigFormState extends State<AiConfigForm> {
                 children: [
                   TextButton(
                     onPressed: _isSaving ? null : widget.onCancel,
-                    child: Text('取消'), // Placeholder
+                    child: const Text('取消'), // Placeholder
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
                     onPressed: _isSaving ? null : _submitForm,
                     child: _isSaving
-                        ? SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
                         : Text(_isEditMode ? '保存更改' : '添加'), // Placeholder
                   ),
                 ],
@@ -338,7 +380,8 @@ class _AiConfigFormState extends State<AiConfigForm> {
     required String? disabledHintValue,
   }) {
     return DropdownButtonFormField<String>(
-      value: items.contains(value) ? value : null, // Ensure value exists in items
+      value:
+          items.contains(value) ? value : null, // Ensure value exists in items
       hint: Text(hintText),
       isExpanded: true,
       onChanged: onChanged,
@@ -351,14 +394,26 @@ class _AiConfigFormState extends State<AiConfigForm> {
       validator: validator,
       decoration: InputDecoration(
         labelText: labelText,
-        border: OutlineInputBorder(),
-        contentPadding: EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0), // Adjust padding
+        border: const OutlineInputBorder(),
+        contentPadding: const EdgeInsets.symmetric(
+            vertical: 12.0, horizontal: 12.0), // Adjust padding
         suffixIcon: isLoading
-            ? Padding(padding: EdgeInsets.all(10.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
+            ? const Padding(
+                padding: EdgeInsets.all(10.0),
+                child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2)))
             : null,
       ),
-      disabledHint: disabledHintValue != null ? Text(disabledHintValue, overflow: TextOverflow.ellipsis, style: TextStyle(color: Theme.of(context).disabledColor)) : null,
-      style: onChanged == null ? TextStyle(color: Theme.of(context).disabledColor) : null,
+      disabledHint: disabledHintValue != null
+          ? Text(disabledHintValue,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: Theme.of(context).disabledColor))
+          : null,
+      style: onChanged == null
+          ? TextStyle(color: Theme.of(context).disabledColor)
+          : null,
     );
   }
-} 
+}

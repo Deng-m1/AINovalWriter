@@ -9,9 +9,10 @@ abstract class AiConfigEvent extends Equatable {
 
 /// 加载所有配置
 class LoadAiConfigs extends AiConfigEvent {
-  final String userId; // 实际应用中应从认证状态获取
+  // 实际应用中应从认证状态获取
   const LoadAiConfigs({required this.userId});
-    @override
+  final String userId;
+  @override
   List<Object?> get props => [userId];
 }
 
@@ -20,21 +21,14 @@ class LoadAvailableProviders extends AiConfigEvent {}
 
 /// 加载指定提供商的模型
 class LoadModelsForProvider extends AiConfigEvent {
-  final String provider;
   const LoadModelsForProvider({required this.provider});
-    @override
+  final String provider;
+  @override
   List<Object?> get props => [provider];
 }
 
 /// 添加配置
 class AddAiConfig extends AiConfigEvent {
-  final String userId;
-  final String provider;
-  final String modelName;
-  final String apiKey;
-  final String? alias;
-  final String? apiEndpoint;
-
   const AddAiConfig({
     required this.userId,
     required this.provider,
@@ -43,18 +37,19 @@ class AddAiConfig extends AiConfigEvent {
     this.alias,
     this.apiEndpoint,
   });
-    @override
-  List<Object?> get props => [userId, provider, modelName, apiKey, alias, apiEndpoint];
+  final String userId;
+  final String provider;
+  final String modelName;
+  final String apiKey;
+  final String? alias;
+  final String? apiEndpoint;
+  @override
+  List<Object?> get props =>
+      [userId, provider, modelName, apiKey, alias, apiEndpoint];
 }
 
 /// 更新配置
 class UpdateAiConfig extends AiConfigEvent {
-  final String userId;
-  final String configId;
-  final String? alias;
-  final String? apiKey;
-  final String? apiEndpoint;
-
   const UpdateAiConfig({
     required this.userId,
     required this.configId,
@@ -62,36 +57,41 @@ class UpdateAiConfig extends AiConfigEvent {
     this.apiKey,
     this.apiEndpoint,
   });
-    @override
+  final String userId;
+  final String configId;
+  final String? alias;
+  final String? apiKey;
+  final String? apiEndpoint;
+  @override
   List<Object?> get props => [userId, configId, alias, apiKey, apiEndpoint];
 }
 
 /// 删除配置
 class DeleteAiConfig extends AiConfigEvent {
+  const DeleteAiConfig({required this.userId, required this.configId});
   final String userId;
   final String configId;
-  const DeleteAiConfig({required this.userId, required this.configId});
-    @override
+  @override
   List<Object?> get props => [userId, configId];
 }
 
 /// 验证配置
 class ValidateAiConfig extends AiConfigEvent {
+  const ValidateAiConfig({required this.userId, required this.configId});
   final String userId;
   final String configId;
-  const ValidateAiConfig({required this.userId, required this.configId});
-    @override
+  @override
   List<Object?> get props => [userId, configId];
 }
 
 /// 设置默认配置
 class SetDefaultAiConfig extends AiConfigEvent {
+  const SetDefaultAiConfig({required this.userId, required this.configId});
   final String userId;
   final String configId;
-  const SetDefaultAiConfig({required this.userId, required this.configId});
-    @override
+  @override
   List<Object?> get props => [userId, configId];
 }
 
 /// 清除提供商/模型列表(例如，关闭对话框时)
-class ClearProviderModels extends AiConfigEvent{} 
+class ClearProviderModels extends AiConfigEvent {}

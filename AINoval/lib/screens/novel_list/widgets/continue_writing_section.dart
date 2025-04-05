@@ -228,7 +228,7 @@ class SectionHeader extends StatelessWidget {
             style: TextStyle(
               fontSize: isNarrow ? 16 : 18,
               fontWeight: FontWeight.bold,
-              color: theme.colorScheme.onBackground,
+              color: theme.colorScheme.onSurface,
             ),
           ),
         ],
@@ -545,9 +545,10 @@ class RecentNovelInfo extends StatelessWidget {
 
           // 在紧凑模式下，只显示时间或系列（优先显示系列）
           if (isCompact) ...[
-            novel.seriesName.isNotEmpty
-                ? _buildSeriesInfo(theme)
-                : _buildTimeInfo(theme),
+            if (novel.seriesName.isNotEmpty)
+              _buildSeriesInfo(theme)
+            else
+              _buildTimeInfo(theme),
 
             const SizedBox(height: 3),
 
@@ -743,15 +744,14 @@ class _WaveClipper extends CustomClipper<Path> {
 
 // 网格绘制器
 class _GridPainter extends CustomPainter {
-  final Color color;
-  final double lineWidth;
-  final double spacing;
-
   _GridPainter({
     required this.color,
     required this.lineWidth,
     required this.spacing,
   });
+  final Color color;
+  final double lineWidth;
+  final double spacing;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -777,13 +777,12 @@ class _GridPainter extends CustomPainter {
 
 // 圆形绘制器
 class _CirclePainter extends CustomPainter {
-  final Color color;
-  final Color baseColor;
-
   _CirclePainter({
     required this.color,
     required this.baseColor,
   });
+  final Color color;
+  final Color baseColor;
 
   @override
   void paint(Canvas canvas, Size size) {

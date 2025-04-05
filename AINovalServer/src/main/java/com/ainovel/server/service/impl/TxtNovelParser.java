@@ -23,10 +23,16 @@ public class TxtNovelParser implements NovelParser {
 
     /**
      * 章节标题模式 匹配： 1. 第[数字/中文数字][章节部回] 标题 - 中文模式 2. Chapter [数字] 标题 - 英文模式 3.
-     * 罗马数字章节
+     * 罗马数字章节 4. 增加了更多常见的分章格式
      */
     private static final Pattern CHAPTER_TITLE_PATTERN = Pattern.compile(
-            "^\\s*(?:(?:第[一二三四五六七八九十百千万零〇\\d]+[章卷部回])|(?:Chapter\\s+\\d+)|(?:[IVXLCDM]+))[\\s.:：]*(.*?)$",
+            "^\\s*(?:(?:第[一二三四五六七八九十百千万零〇\\d]+[章卷节部回集])|(?:[\\(（【]?\\s*[一二三四五六七八九十百千万零〇\\d]+\\s*[\\)）】]?[\\s.、：:])|(?:Chapter\\s+\\d+)|(?:[IVXLCDM]+))[\\s.、.:：]*(.*)$",
+            Pattern.CASE_INSENSITIVE
+    );
+
+    // 备用章节识别模式，当内容行超过特定长度时判断是否是新章节的开始
+    private static final Pattern BACKUP_CHAPTER_PATTERN = Pattern.compile(
+            "^\\s*(.{1,30})(?:[\\s.、.:：]+|$)",
             Pattern.CASE_INSENSITIVE
     );
 
@@ -38,12 +44,41 @@ public class TxtNovelParser implements NovelParser {
         AtomicReference<String> currentChapterTitle = new AtomicReference<>("");
         StringBuilder currentContent = new StringBuilder();
         AtomicInteger chapterCount = new AtomicInteger(0);
+        AtomicInteger lineCount = new AtomicInteger(0);
+        AtomicInteger emptyLineCount = new AtomicInteger(0);
 
         // 使用reduce操作处理流
         lines.forEach(line -> {
+            lineCount.incrementAndGet();
+            String trimmedLine = line.trim();
+            boolean isEmpty = trimmedLine.isEmpty();
+
+            if (isEmpty) {
+                emptyLineCount.incrementAndGet();
+                // 空行仍需添加到内容中
+                if (currentContent.length() > 0) {
+                    currentContent.append("\n");
+                }
+                return;
+            } else {
+                emptyLineCount.set(0);
+            }
+
             // 检查是否是章节标题
-            Matcher matcher = CHAPTER_TITLE_PATTERN.matcher(line.trim());
-            if (matcher.matches()) {
+            Matcher matcher = CHAPTER_TITLE_PATTERN.matcher(trimmedLine);
+
+            // 备用章节识别逻辑：当前行较短，前面有多个空行，可能是新章节的开始
+            boolean isBackupChapterDetected = false;
+            if (!matcher.matches() && emptyLineCount.get() >= 2 && trimmedLine.length() < 50) {
+                Matcher backupMatcher = BACKUP_CHAPTER_PATTERN.matcher(trimmedLine);
+                if (backupMatcher.matches() && !isContentParagraph(trimmedLine)) {
+                    isBackupChapterDetected = true;
+                    // 在日志中标记使用了备用检测
+                    log.debug("使用备用章节识别: '{}'", trimmedLine);
+                }
+            }
+
+            if (matcher.matches() || isBackupChapterDetected) {
                 // 如果当前有内容，则保存上一章节
                 if (currentContent.length() > 0) {
                     saveCurrentChapter(parsedNovelData, currentChapterTitle.get(),
@@ -52,32 +87,68 @@ public class TxtNovelParser implements NovelParser {
                 }
 
                 // 提取章节标题
-                String titleText = matcher.group(1);
-                if (titleText == null || titleText.trim().isEmpty()) {
-                    titleText = "第" + (chapterCount.incrementAndGet()) + "章";
+                String titleText;
+                if (matcher.matches()) {
+                    titleText = matcher.group(1);
+                    if (titleText == null || titleText.trim().isEmpty()) {
+                        titleText = "第" + (chapterCount.incrementAndGet()) + "章";
+                    } else {
+                        titleText = titleText.trim();
+                    }
+                    currentChapterTitle.set(trimmedLine);
                 } else {
-                    chapterCount.incrementAndGet();
+                    // 使用备用识别的标题
+                    titleText = trimmedLine;
+                    currentChapterTitle.set(trimmedLine);
                 }
 
-                currentChapterTitle.set(line.trim());
-                log.debug("识别到章节标题: {}", currentChapterTitle.get());
+                chapterCount.incrementAndGet();
+                log.debug("识别到章节标题[{}]: {}", chapterCount.get(), currentChapterTitle.get());
             } else {
                 // 内容行，添加到当前内容
                 if (currentContent.length() > 0) {
                     currentContent.append("\n");
                 }
                 currentContent.append(line);
+
+                // 如果是第一行但不是章节标题，可能需要创建默认第一章
+                if (lineCount.get() <= 3 && chapterCount.get() == 0 && currentChapterTitle.get().isEmpty()) {
+                    currentChapterTitle.set("第1章");
+                    chapterCount.incrementAndGet();
+                    log.debug("创建默认第一章");
+                }
             }
         });
 
         // 处理最后一章
         if (currentContent.length() > 0) {
+            // 如果没有识别到任何章节标题，但有内容，创建一个默认的第一章
+            if (chapterCount.get() == 0) {
+                currentChapterTitle.set("第1章");
+                chapterCount.incrementAndGet();
+                log.debug("创建默认唯一章节");
+            }
+
             saveCurrentChapter(parsedNovelData, currentChapterTitle.get(),
-                    currentContent.toString(), chapterCount.get());
+                    currentContent.toString(), chapterCount.get() - 1);
         }
 
         log.info("TXT解析完成，共解析出{}个章节", parsedNovelData.getScenes().size());
         return parsedNovelData;
+    }
+
+    /**
+     * 判断是否是正常内容段落，而不是章节标题 通常段落都比较长，且包含标点符号
+     */
+    private boolean isContentParagraph(String line) {
+        // 如果长度大于50，很可能是内容段落而非标题
+        if (line.length() > 50) {
+            return true;
+        }
+
+        // 检查是否包含常见的段落标点
+        Pattern punctPattern = Pattern.compile("[，。！？；,.!?;]");
+        return punctPattern.matcher(line).find() && line.length() > 20;
     }
 
     private void saveCurrentChapter(ParsedNovelData parsedNovelData, String title, String content, int order) {
@@ -88,7 +159,7 @@ public class TxtNovelParser implements NovelParser {
 
         // 如果仍然没有标题，使用默认章节标题
         if (title == null || title.isEmpty()) {
-            title = "第" + order + "章";
+            title = "第" + (order + 1) + "章";
         }
 
         ParsedSceneData sceneData = ParsedSceneData.builder()
@@ -98,6 +169,7 @@ public class TxtNovelParser implements NovelParser {
                 .build();
 
         parsedNovelData.addScene(sceneData);
+        log.debug("保存章节[{}]: {}, 内容长度: {}", order, title, content.length());
     }
 
     @Override

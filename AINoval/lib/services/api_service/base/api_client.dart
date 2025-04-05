@@ -8,6 +8,7 @@ import 'package:ainoval/models/user_ai_model_config_model.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
 
 /// API客户端基类
 ///
@@ -112,100 +113,134 @@ class ApiClient {
     required String logContext,
   }) {
     final controller = StreamController<T>();
+    int retryCount = 0;
+    const maxRetries = 3;
 
-    byteStreamFuture.then((byteStream) async {
-      final stringStream = utf8.decoder.bind(byteStream);
+    Future<void> processStream() async {
+      try {
+        final byteStream = await byteStreamFuture;
+        final stringStream = utf8.decoder.bind(byteStream);
 
-      await for (final rawLine
-          in stringStream.transform(const LineSplitter())) {
-        try {
-          final line = rawLine.trim();
+        await for (final rawLine in stringStream.transform(const LineSplitter())) {
+          try {
+            final line = rawLine.trim();
 
-          if (line.isEmpty) {
-            continue;
-          }
-
-          if (line.startsWith('data:')) {
-            final eventData = line.substring(5).trim();
-            if (eventData.isNotEmpty && eventData != '[DONE]') {
-              final json = jsonDecode(eventData);
-              if (json is Map<String, dynamic>) {
-                final item = fromJson(json);
-                AppLogger.v('ApiClient',
-                    '[$logContext] 解析 SSE 数据: ${item.runtimeType}');
-                if (!controller.isClosed) {
-                  controller.add(item);
-                }
-              } else {
-                AppLogger.w('ApiClient',
-                    '[$logContext] SSE 数据不是有效的 JSON 对象: $eventData');
-              }
-            } else if (eventData == '[DONE]') {
-              AppLogger.i('ApiClient', '[$logContext] 收到 SSE 流结束标记 [DONE]');
+            if (line.isEmpty) {
+              continue;
             }
-          } else if (line.startsWith('[') && line.endsWith(']')) {
-            AppLogger.v('ApiClient',
-                '[$logContext] 检测到单行 JSON 数组，尝试解析，长度: ${line.length}');
-            final decodedList = jsonDecode(line);
-            if (decodedList is List) {
-              int count = 0;
-              for (final itemJson in decodedList) {
-                await Future.delayed(Duration.zero);
 
-                if (controller.isClosed) break;
-
-                if (itemJson is Map<String, dynamic>) {
-                  try {
-                    final item = fromJson(itemJson);
-                    AppLogger.v('ApiClient',
-                        '[$logContext] 解析 JSON 数组元素 ${++count}: ${item.runtimeType}');
-                    if (!controller.isClosed) {
-                      controller.add(item);
-                    }
-                  } catch (e, stackTrace) {
-                    AppLogger.e(
-                        'ApiClient',
-                        '[$logContext] 从 JSON 数组元素转换失败: $itemJson',
-                        e,
-                        stackTrace);
+            if (line.startsWith('data:')) {
+              final eventData = line.substring(5).trim();
+              if (eventData.isNotEmpty && eventData != '[DONE]') {
+                final json = jsonDecode(eventData);
+                if (json is Map<String, dynamic>) {
+                  final item = fromJson(json);
+                  AppLogger.v('ApiClient',
+                      '[$logContext] 解析 SSE 数据: ${item.runtimeType}');
+                  if (!controller.isClosed) {
+                    controller.add(item);
                   }
                 } else {
                   AppLogger.w('ApiClient',
-                      '[$logContext] JSON 数组中的元素不是 Map: $itemJson');
+                      '[$logContext] SSE 数据不是有效的 JSON 对象: $eventData');
                 }
+              } else if (eventData == '[DONE]') {
+                AppLogger.i('ApiClient', '[$logContext] 收到 SSE 流结束标记 [DONE]');
               }
-              AppLogger.i(
-                  'ApiClient', '[$logContext] 成功处理 ${count} 个 JSON 数组元素');
-            } else {
-              AppLogger.w('ApiClient', '[$logContext] 解析为 JSON 但不是列表: "$line"');
-            }
-          } else {
-            AppLogger.v(
-                'ApiClient', '[$logContext] 忽略非 SSE 且非 JSON 数组的行: "$line"');
-          }
-        } catch (e, stackTrace) {
-          AppLogger.e('ApiClient', '[$logContext] 解析流式响应行失败: "$rawLine"', e,
-              stackTrace);
-        }
-        if (controller.isClosed) break;
-      }
-      AppLogger.i('ApiClient', '[$logContext] 流式字符串处理完成');
-      if (!controller.isClosed) {
-        controller.close();
-      }
-    }).catchError((error, stackTrace) {
-      AppLogger.e('ApiClient', '[$logContext] 获取或解码流式字节流失败', error, stackTrace);
-      if (!controller.isClosed) {
-        final apiError = (error is ApiException)
-            ? error
-            : ApiException(
-                -1, '[$logContext] 启动或解码流式请求失败: ${error.toString()}');
-        controller.addError(apiError, stackTrace);
-        controller.close();
-      }
-    });
+            } else if (line.startsWith('[') && line.endsWith(']')) {
+              AppLogger.v('ApiClient',
+                  '[$logContext] 检测到单行 JSON 数组，尝试解析，长度: ${line.length}');
+              final decodedList = jsonDecode(line);
+              if (decodedList is List) {
+                int count = 0;
+                for (final itemJson in decodedList) {
+                  await Future.delayed(Duration.zero);
 
+                  if (controller.isClosed) break;
+
+                  if (itemJson is Map<String, dynamic>) {
+                    try {
+                      final item = fromJson(itemJson);
+                      AppLogger.v('ApiClient',
+                          '[$logContext] 解析 JSON 数组元素 ${++count}: ${item.runtimeType}');
+                      if (!controller.isClosed) {
+                        controller.add(item);
+                      }
+                    } catch (e, stackTrace) {
+                      AppLogger.e(
+                          'ApiClient',
+                          '[$logContext] 从 JSON 数组元素转换失败: $itemJson',
+                          e,
+                          stackTrace);
+                    }
+                  } else {
+                    AppLogger.w('ApiClient',
+                        '[$logContext] JSON 数组中的元素不是 Map: $itemJson');
+                  }
+                }
+                AppLogger.i('ApiClient', '[$logContext] 成功处理 $count 个 JSON 数组元素');
+              } else {
+                AppLogger.w('ApiClient', '[$logContext] 解析为 JSON 但不是列表: "$line"');
+              }
+            } else {
+              AppLogger.v(
+                  'ApiClient', '[$logContext] 忽略非 SSE 且非 JSON 数组的行: "$line"');
+            }
+          } catch (e, stackTrace) {
+            AppLogger.e('ApiClient', '[$logContext] 解析流式响应行失败: "$rawLine"', e,
+                stackTrace);
+          }
+          if (controller.isClosed) break;
+        }
+        AppLogger.i('ApiClient', '[$logContext] 流式字符串处理完成');
+        if (!controller.isClosed) {
+          controller.close();
+        }
+      } catch (error, stackTrace) {
+        AppLogger.e('ApiClient', '[$logContext] 获取或解码流式字节流失败', error, stackTrace);
+        
+        if (retryCount < maxRetries) {
+          retryCount++;
+          AppLogger.i('ApiClient', '[$logContext] 尝试重试 ($retryCount/$maxRetries)');
+          await Future.delayed(Duration(seconds: retryCount * 2)); // 指数退避
+          return processStream();
+        }
+        
+        if (!controller.isClosed) {
+          final apiError = (error is ApiException)
+              ? error
+              : ApiException(
+                  -1, '[$logContext] 启动或解码流式请求失败: ${error.toString()}');
+          controller.addError(apiError, stackTrace);
+          controller.close();
+        }
+      }
+    }
+
+    processStream();
     return controller.stream;
+  }
+
+  /// 基础GET请求方法，返回流
+  Future<Stream<List<int>>> getStream(String path, {Options? options}) async {
+    try {
+      final response = await _dio.get<ResponseBody>(
+        path,
+        options: (options ?? Options()).copyWith(responseType: ResponseType.stream),
+      );
+      if (response.data != null) {
+        return response.data!.stream;
+      } else {
+        AppLogger.w('ApiClient', 'getStream 收到空的响应数据，路径: $path');
+        return Stream.error(ApiException(-1, '流式请求收到空的响应数据'));
+      }
+    } on DioException catch (e) {
+      AppLogger.e('ApiClient', 'getStream 请求失败，路径: $path', e);
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', 'getStream 执行出错，路径: $path', e);
+      throw ApiException(-1, '执行流式请求时发生意外错误: ${e.toString()}');
+    }
   }
 
   //==== 小说相关接口 ====//
@@ -213,12 +248,17 @@ class ApiClient {
   /// 导入小说文件
   Future<String> importNovel(List<int> fileBytes, String fileName) async {
     try {
+      // 获取当前用户ID
+      final userId = AppConfig.userId;
+      
       // 创建 MultipartFile
       final formData = FormData.fromMap({
         'file': MultipartFile.fromBytes(
           fileBytes,
           filename: fileName,
         ),
+        // 添加用户ID字段，虽然后端应该能从token中获取，这里作为备用
+        if (userId != null) 'userId': userId,
       });
 
       // 设置接收 JobId 的选项
@@ -228,13 +268,14 @@ class ApiClient {
       );
 
       // 发送上传请求
-      final response = await _dio.post('/api/v1/novels/import', 
+      final response = await _dio.post(
+        '/novels/import',
         data: formData,
         options: options,
       );
 
       // 响应应该包含一个 jobId
-      if (response.data is Map<String, dynamic> && 
+      if (response.data is Map<String, dynamic> &&
           response.data.containsKey('jobId')) {
         return response.data['jobId'];
       } else {
@@ -249,106 +290,377 @@ class ApiClient {
       throw ApiException(-1, '导入小说文件失败: ${e.toString()}');
     }
   }
-
-  /// 获取小说导入状态 SSE 流
-  Stream<ImportStatus> getImportStatusStream(String jobId) {
-    final url = '${_dio.options.baseUrl}/api/v1/novels/import/$jobId/status';
-    
-    return _connectToEventSource(url, 'getImportStatusStream');
+  
+  /// 取消导入任务
+  Future<bool> cancelImport(String jobId) async {
+    try {
+      AppLogger.i('ApiClient', '发送取消导入任务请求: jobId=$jobId');
+      
+      // 使用基础POST方法发送取消请求
+      final response = await post('/novels/import/$jobId/cancel');
+      
+      if (response is Map<String, dynamic> && response.containsKey('status')) {
+        final success = response['status'] == 'success';
+        AppLogger.i('ApiClient', '取消导入任务结果: ${success ? '成功' : '失败'}, jobId=$jobId');
+        return success;
+      }
+      
+      AppLogger.w('ApiClient', '取消导入任务响应格式不正确: $response');
+      return false;
+    } catch (e) {
+      AppLogger.e('ApiClient', '取消导入任务失败: jobId=$jobId', e);
+      return false;
+    }
   }
 
-  /// 连接到SSE事件源并解析ImportStatus事件
-  Stream<ImportStatus> _connectToEventSource(String url, String logContext) {
+  /// 长时间运行的 SSE 连接（适用于小说导入等耗时操作）
+  Stream<ImportStatus> connectToLongRunningSSE(String jobId) {
     final controller = StreamController<ImportStatus>();
+    final url = '${_dio.options.baseUrl}/novels/import/$jobId/status';
     
-    // 使用原生HttpClient来处理SSE连接
-    final client = HttpClient();
-    client.autoUncompress = true;
+    AppLogger.i('ApiClient', '[SSE Connect] 准备连接到: $url');
     
-    // 异步连接到事件源
-    client.getUrl(Uri.parse(url)).then((request) {
-      // 设置请求头
-      final token = AppConfig.authToken;
-      if (token != null) {
-        request.headers.add('Authorization', 'Bearer $token');
-      }
-      request.headers.add('Accept', 'text/event-stream');
-      request.headers.add('Cache-Control', 'no-cache');
-      
-      return request.close();
-    }).then((response) {
-      // 处理响应
-      if (response.statusCode != 200) {
-        controller.addError(
-          ApiException(response.statusCode, '连接到导入状态流失败: HTTP ${response.statusCode}')
-        );
-        controller.close();
-        client.close();
-        return;
-      }
-      
-      // 处理SSE事件流
-      response.transform(utf8.decoder).transform(const LineSplitter()).listen(
-        (line) {
-          try {
-            if (line.isEmpty) return;
-            
-            if (line.startsWith('data:')) {
-              final eventData = line.substring(5).trim();
-              if (eventData.isNotEmpty) {
-                final json = jsonDecode(eventData);
-                if (json is Map<String, dynamic>) {
-                  final status = ImportStatus.fromJson(json);
-                  AppLogger.i('ApiClient', '[$logContext] 收到状态更新: ${status.status} - ${status.message}');
-                  controller.add(status);
-                  
-                  // 如果收到完成或失败状态，关闭流
-                  if (status.status == 'COMPLETED' || status.status == 'FAILED') {
-                    AppLogger.i('ApiClient', '[$logContext] 导入任务已${status.status == 'COMPLETED' ? '完成' : '失败'}，关闭SSE连接');
-                    controller.close();
-                    client.close();
-                  }
-                }
+    // 创建一个专用的 Dio 实例
+    final dioForSSE = Dio();
+    dioForSSE.options.baseUrl = _dio.options.baseUrl;
+    
+    // 设置认证令牌
+    final token = AppConfig.authToken;
+    if (token != null) {
+      dioForSSE.options.headers['Authorization'] = 'Bearer $token';
+    }
+    
+    // 设置 SSE 相关的请求头
+    dioForSSE.options.headers['Accept'] = 'text/event-stream';
+    dioForSSE.options.headers['Cache-Control'] = 'no-cache';
+    dioForSSE.options.headers['Connection'] = 'keep-alive';
+    
+    // 设置响应类型为流
+    dioForSSE.options.responseType = ResponseType.stream;
+    
+    // 极大延长超时时间，最多等待3小时
+    dioForSSE.options.receiveTimeout = const Duration(hours: 3);
+    dioForSSE.options.connectTimeout = const Duration(minutes: 2);
+    
+    // 关闭校验，允许所有状态码
+    dioForSSE.options.validateStatus = (_) => true;
+
+    AppLogger.i('ApiClient', '开始连接到长时间运行的 SSE，超时设置为3小时');
+
+    // 定义心跳计时器
+    Timer? heartbeatTimer;
+    DateTime lastEventTime = DateTime.now();
+    int heartbeatCount = 0;
+    
+    Future<void> connect() async {
+       AppLogger.i('ApiClient', '[SSE Connect] 开始执行 dioForSSE.get(url)...');
+       try {
+         final responseFuture = dioForSSE.get<ResponseBody>(url); // Explicitly type ResponseBody
+
+         AppLogger.i('ApiClient', '[SSE Connect] dioForSSE.get(url) Future 创建成功，等待响应...');
+
+         responseFuture.then((response) {
+           AppLogger.i('ApiClient', '[SSE Connect] .then() 回调被执行，状态码: ${response.statusCode}');
+
+           if (response.statusCode != 200) {
+             AppLogger.e('ApiClient', '[SSE Error] 连接失败: HTTP ${response.statusCode}，响应头: ${response.headers}');
+             if (!controller.isClosed) {
+                controller.addError(ApiException(
+                  response.statusCode ?? -1, '[SSE Error] 连接失败: HTTP ${response.statusCode}'));
+                controller.close();
+             }
+             return;
+           }
+
+           AppLogger.i('ApiClient', '[SSE Connect] 连接成功，开始接收事件，响应头: ${response.headers}');
+
+           final responseBody = response.data;
+           if (responseBody == null || responseBody.stream == null) {
+              AppLogger.e('ApiClient', '[SSE Error] 响应体或流为空');
+               if (!controller.isClosed) {
+                 controller.addError(ApiException(-1, '[SSE Error] 响应体或流为空'));
+                 controller.close();
+               }
+               return;
+           }
+
+           final stream = responseBody.stream;
+
+           AppLogger.i('ApiClient', '[SSE Connect] 数据流已获取，设置心跳和监听器...');
+
+           // 心跳检测逻辑 (保持不变)
+           lastEventTime = DateTime.now(); // Reset last event time on successful connect
+           heartbeatTimer?.cancel(); // Cancel previous timer if any
+           heartbeatTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+              // ... (heartbeat logic as before) ...
+              final now = DateTime.now();
+              final difference = now.difference(lastEventTime);
+              heartbeatCount++;
+              AppLogger.i('ApiClient', '[SSE Heartbeat] #$heartbeatCount: 距上次事件 ${difference.inSeconds} 秒');
+              if (difference.inMinutes >= 2 && !controller.isClosed) {
+                 AppLogger.w('ApiClient', '[SSE Heartbeat] 已 ${difference.inMinutes} 分钟未收到事件，发送本地进度更新');
+                 controller.add(ImportStatus(
+                   status: 'PROCESSING',
+                   message: '导入处理中，已等待 ${difference.inMinutes} 分钟...'
+                 ));
+                 if (difference.inMinutes >= 5) {
+                   AppLogger.e('ApiClient', '[SSE Heartbeat] 已 ${difference.inMinutes} 分钟未收到事件，关闭连接');
+                    if (!controller.isClosed) {
+                       controller.addError(ApiException(-1, '[SSE Error] 连接超时'));
+                       controller.close(); // Closing the controller will trigger onDone/onError
+                    }
+                    timer.cancel(); // Stop this timer
+                 }
               }
+           });
+
+
+           // Stream 监听逻辑 (基本保持不变, 增加日志)
+           String buffer = '';
+           stream.listen(
+             (data) {
+               lastEventTime = DateTime.now(); // Update time on receiving data
+               AppLogger.v('ApiClient', '[SSE Data] 收到原始数据块 (长度: ${data.length})');
+               try {
+                  String chunk = utf8.decode(data);
+                  AppLogger.i('ApiClient', '[SSE Data] 解码后数据块: $chunk');
+                  buffer += chunk;
+                  while (buffer.contains('\n\n')) {
+                     int endIndex = buffer.indexOf('\n\n');
+                     String message = buffer.substring(0, endIndex).trim();
+                     buffer = buffer.substring(endIndex + 2);
+                     AppLogger.i('ApiClient', '[SSE Parse] 解析出完整消息: $message');
+                     // ... (message parsing logic as before) ...
+                      List<String> lines = message.split('\n');
+                      Map<String, String> eventData = {};
+                      for (String line in lines) {
+                         if (line.startsWith('id:')) {
+                           eventData['id'] = line.substring(3).trim();
+                         } else if (line.startsWith('event:')) {
+                           eventData['event'] = line.substring(6).trim();
+                         } else if (line.startsWith('data:')) {
+                           eventData['data'] = line.substring(5).trim();
+                         } else if (line.startsWith(':')) {
+                           AppLogger.i('ApiClient', '[SSE Comment] 收到服务器心跳注释: ${line.substring(1).trim()}');
+                         }
+                      }
+                      if (eventData.containsKey('data')) {
+                         try {
+                           final json = jsonDecode(eventData['data']!);
+                           if (json is Map<String, dynamic>) {
+                             final status = ImportStatus.fromJson(json);
+                             AppLogger.i('ApiClient', '[SSE Status] 收到状态: ${status.status} - ${status.message}');
+                             if (!controller.isClosed) controller.add(status);
+                             if (status.status == 'COMPLETED' || status.status == 'FAILED') {
+                               AppLogger.i('ApiClient', '[SSE Status] 收到最终状态，关闭连接');
+                               heartbeatTimer?.cancel();
+                               if (!controller.isClosed) controller.close();
+                             }
+                           }
+                         } catch (e, stack) {
+                           AppLogger.e('ApiClient', '[SSE Parse] 解析 SSE data 失败: ${eventData['data']}', e, stack);
+                         }
+                      } else {
+                          // ... (direct message parsing logic as before) ...
+                          if (message.isNotEmpty && message != '[DONE]') {
+                             try {
+                               Map<String, dynamic>? json;
+                               if (message.startsWith('{') && message.endsWith('}')) {
+                                 json = jsonDecode(message) as Map<String, dynamic>?;
+                               }
+                               if (json != null && json.containsKey('status')) {
+                                  final status = ImportStatus.fromJson(json);
+                                  AppLogger.i('ApiClient', '[SSE Parse] 直接解析消息为状态: ${status.status}');
+                                  if (!controller.isClosed) controller.add(status);
+                                   if (status.status == 'COMPLETED' || status.status == 'FAILED') {
+                                     AppLogger.i('ApiClient', '[SSE Status] 收到最终状态，关闭连接');
+                                     heartbeatTimer?.cancel();
+                                     if (!controller.isClosed) controller.close();
+                                   }
+                               }
+                             } catch (e) {
+                               // Ignore non-JSON messages
+                               AppLogger.v('ApiClient', '[SSE Parse] 消息不是有效JSON，忽略: $message');
+                             }
+                           }
+                      }
+                  }
+               } catch (e, stack) {
+                 AppLogger.e('ApiClient', '[SSE Error] 处理数据块失败', e, stack);
+               }
+             },
+             onError: (e, stack) {
+               AppLogger.e('ApiClient', '[SSE Error] 流错误', e, stack);
+               heartbeatTimer?.cancel();
+               if (!controller.isClosed) {
+                 controller.addError(
+                     e is ApiException ? e : ApiException(-1, '[SSE Error] 读取流错误: $e'), stack);
+                 controller.close();
+               }
+             },
+             onDone: () {
+               AppLogger.i('ApiClient', '[SSE Connect] 流已关闭 (onDone)');
+               heartbeatTimer?.cancel();
+               if (!controller.isClosed) {
+                 controller.close();
+               }
+             },
+           );
+
+         }).catchError((e, stack) {
+           // 这个 catchError 主要捕获 Future 本身的错误，比如 dio().get() 失败
+            AppLogger.e('ApiClient', '[SSE Error] dioForSSE.get(url) Future 失败', e, stack);
+            heartbeatTimer?.cancel();
+             if (!controller.isClosed) {
+               controller.addError(
+                   e is ApiException ? e : ApiException(-1, '[SSE Error] 连接或读取流失败: $e'), stack);
+               controller.close();
+             }
+         });
+
+       } catch (e, stack) {
+         // 这个 catch 主要捕获调用 dioForSSE.get(url) 时的同步错误
+         AppLogger.e('ApiClient', '[SSE Error] 调用 dioForSSE.get(url) 时发生同步错误', e, stack);
+          heartbeatTimer?.cancel(); // Ensure timer is cancelled
+          if (!controller.isClosed) {
+              controller.addError(ApiException(-1, '[SSE Error] 启动连接时出错: $e'), stack);
+              controller.close();
+          }
+       }
+    }
+
+    // Start the connection process
+    connect();
+
+    // 当流被取消时，确保清理资源 (保持不变)
+    controller.onCancel = () {
+      heartbeatTimer?.cancel();
+      AppLogger.i('ApiClient', '[SSE Connect] 流已被外部取消 (onCancel)');
+      // Dio 会自动取消请求，但我们确保计时器停止
+    };
+
+    return controller.stream;
+  }
+
+  /// 获取小说导入状态 SSE 流（长时间运行版本）
+  Stream<ImportStatus> getImportStatusStream(String jobId) {
+    AppLogger.i('ApiClient', '获取导入状态流，使用长时间运行的 SSE 连接');
+    
+    // 创建一个StreamController，用于处理自动重试逻辑
+    final controller = StreamController<ImportStatus>();
+    int retryCount = 0;
+    const maxRetries = 3;
+    StreamSubscription? subscription;
+    
+    // 定义连接函数
+    void connect() {
+      AppLogger.i('ApiClient', '连接到导入状态流，尝试 #${retryCount + 1}');
+      subscription = connectToLongRunningSSE(jobId).listen(
+        (status) {
+          // 正常转发状态更新
+          controller.add(status);
+          
+          // 如果是完成或失败状态，关闭控制器
+          if (status.status == 'COMPLETED' || status.status == 'FAILED') {
+            AppLogger.i('ApiClient', '收到最终状态：${status.status}，关闭状态流');
+            if (!controller.isClosed) {
+              controller.close();
             }
-          } catch (e, stack) {
-            AppLogger.e('ApiClient', '[$logContext] 解析SSE事件失败: $line', e, stack);
           }
         },
-        onError: (e, stack) {
-          AppLogger.e('ApiClient', '[$logContext] SSE流错误', e, stack);
-          controller.addError(e is ApiException ? e : ApiException(-1, '读取SSE流错误: $e'), stack);
-          controller.close();
-          client.close();
+        onError: (error, stack) {
+          AppLogger.e('ApiClient', '导入状态流出错', error, stack);
+          
+          // 如果还可以重试，则重试
+          if (retryCount < maxRetries) {
+            retryCount++;
+            // 指数退避策略
+            final delay = Duration(seconds: retryCount * 3);
+            AppLogger.i('ApiClient', '将在 ${delay.inSeconds} 秒后重试连接 ($retryCount/$maxRetries)');
+            
+            // 延迟后重试
+            Future.delayed(delay, () {
+              if (!controller.isClosed) {
+                connect();
+              }
+            });
+          } else {
+            // 超过重试次数，将错误转发给上层
+            AppLogger.e('ApiClient', '导入状态流重试耗尽，传递错误');
+            if (!controller.isClosed) {
+              controller.addError(error, stack);
+              controller.close();
+            }
+          }
         },
         onDone: () {
-          AppLogger.i('ApiClient', '[$logContext] SSE流已关闭');
+          AppLogger.i('ApiClient', '导入状态流已完成');
           if (!controller.isClosed) {
             controller.close();
           }
-          client.close();
         },
       );
-    }).catchError((e, stack) {
-      AppLogger.e('ApiClient', '[$logContext] 连接到SSE流失败', e, stack);
-      if (!controller.isClosed) {
-        controller.addError(e is ApiException ? e : ApiException(-1, '连接SSE流失败: $e'), stack);
-        controller.close();
-      }
-      client.close();
-    });
+    }
+    
+    // 启动连接
+    connect();
+    
+    // 当流被取消时清理资源
+    controller.onCancel = () {
+      subscription?.cancel();
+      AppLogger.i('ApiClient', '导入状态流已被取消');
+    };
     
     return controller.stream;
   }
 
   /// 根据作者ID获取小说列表
   Future<dynamic> getNovelsByAuthor(String authorId) async {
-    return post('/api/v1/novels/get-by-author', data: {'authorId': authorId});
+    return post('/novels/get-by-author', data: {'authorId': authorId});
   }
 
   /// 根据ID获取小说详情
   Future<dynamic> getNovelDetailById(String id) async {
     return post('/novels/get-with-scenes', data: {'id': id});
+  }
+
+  /// 分页加载小说详情和场景内容
+  /// 基于上次编辑章节为中心，获取前后指定数量的章节及其场景内容
+  Future<dynamic> getNovelWithPaginatedScenes(String novelId, String lastEditedChapterId, {int chaptersLimit = 5}) async {
+    try {
+      AppLogger.i('ApiClient', '分页加载小说详情: $novelId, 中心章节: $lastEditedChapterId, 限制: $chaptersLimit');
+      final response = await post('/novels/get-with-paginated-scenes', data: {
+        'novelId': novelId,
+        'lastEditedChapterId': lastEditedChapterId,
+        'chaptersLimit': chaptersLimit
+      });
+      return response;
+    } catch (e) {
+      AppLogger.e('ApiClient', '分页加载小说详情失败', e);
+      rethrow;
+    }
+  }
+
+  /// 加载更多场景内容
+  /// 根据方向（向上或向下或中心）加载更多章节的场景内容
+  /// direction可以是：up、down或center
+  /// - up: 加载fromChapterId之前的章节
+  /// - down: 加载fromChapterId之后的章节
+  /// - center: 只加载fromChapterId章节或前后各加载几章
+  Future<dynamic> loadMoreScenes(String novelId, String fromChapterId, String direction, {int chaptersLimit = 5}) async {
+    try {
+      AppLogger.i('ApiClient', '加载更多场景: $novelId, 从章节: $fromChapterId, 方向: $direction, 限制: $chaptersLimit');
+      final response = await post('/novels/load-more-scenes', data: {
+        'novelId': novelId,
+        'fromChapterId': fromChapterId,
+        'direction': direction,
+        'chaptersLimit': chaptersLimit
+      });
+      return response;
+    } catch (e) {
+      AppLogger.e('ApiClient', '加载更多场景失败', e);
+      rethrow;
+    }
   }
 
   /// 创建小说
@@ -704,13 +1016,13 @@ class ApiClient {
         return response;
       } else if (response is String) {
         return int.tryParse(response) ??
-            (throw ApiException(-1, "无法解析消息数量响应: $response"));
+            (throw ApiException(-1, '无法解析消息数量响应: $response'));
       } else if (response is Map<String, dynamic> &&
           response.containsKey('count')) {
         final count = response['count'];
         if (count is int) return count;
       }
-      throw ApiException(-1, "无法解析消息数量响应: $response");
+      throw ApiException(-1, '无法解析消息数量响应: $response');
     } catch (e) {
       AppLogger.e('ApiClient', '获取消息数量失败 (SessionID: $sessionId)', e);
       rethrow;
@@ -726,13 +1038,13 @@ class ApiClient {
         return response;
       } else if (response is String) {
         return int.tryParse(response) ??
-            (throw ApiException(-1, "无法解析会话数量响应: $response"));
+            (throw ApiException(-1, '无法解析会话数量响应: $response'));
       } else if (response is Map<String, dynamic> &&
           response.containsKey('count')) {
         final count = response['count'];
         if (count is int) return count;
       }
-      throw ApiException(-1, "无法解析会话数量响应: $response");
+      throw ApiException(-1, '无法解析会话数量响应: $response');
     } catch (e) {
       AppLogger.e('ApiClient', '获取用户会话数量失败 (UserID: $userId)', e);
       rethrow;
@@ -1012,5 +1324,56 @@ class ApiClient {
   /// 关闭客户端
   void dispose() {
     _dio.close();
+  }
+
+  /// 获取小说的场景摘要数据（用于Plan视图）
+  /// 
+  /// 与完整场景数据不同，只包含摘要信息，减少数据传输量
+  Future<Map<String, dynamic>?> getNovelWithSceneSummaries(String novelId) async {
+    try {
+      final response = await _dio.post('/novels//get-with-scene-summaries', 
+          data: {
+            'id': novelId,
+          });
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取小说场景摘要数据失败: $novelId', e);
+      return null;
+    }
+  }
+
+  /// 移动场景（用于Plan视图拖拽功能）
+  Future<Map<String, dynamic>?> moveScene(
+    String novelId,
+    String sourceActId,
+    String sourceChapterId,
+    String sourceSceneId,
+    String targetActId,
+    String targetChapterId,
+    int targetIndex,
+  ) async {
+    try {
+      final data = {
+        'sourceActId': sourceActId,
+        'sourceChapterId': sourceChapterId,
+        'sourceSceneId': sourceSceneId,
+        'targetActId': targetActId,
+        'targetChapterId': targetChapterId,
+        'targetIndex': targetIndex,
+      };
+      
+      final response = await _dio.post(
+        '/novels/$novelId/scenes/move',
+        data: data,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '移动场景失败: $novelId', e);
+      return null;
+    }
   }
 }
