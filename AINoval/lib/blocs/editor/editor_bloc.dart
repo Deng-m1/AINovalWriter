@@ -43,6 +43,10 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   bool _isDirty = false;
   DateTime? _lastSaveTime;
   final EditorSettings _settings = const EditorSettings();
+  
+  // 加载场景节流控制
+  DateTime? _lastLoadRequestTime;
+  static const _loadThrottleInterval = Duration(milliseconds: 500);
 
   Future<void> _onLoadContent(
       LoadEditorContent event, Emitter<EditorState> emit) async {
@@ -171,6 +175,21 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       emit(const EditorError(message: '无法加载更多场景：编辑器尚未加载'));
       return;
     }
+    
+    // 如果已经在加载中，直接返回以防重复加载
+    if (currentState.isLoading) {
+      AppLogger.d('Blocs/editor/editor_bloc', '已有加载任务正在进行，忽略此次加载请求');
+      return;
+    }
+    
+    // 检查是否满足节流间隔
+    final now = DateTime.now();
+    if (_lastLoadRequestTime != null && 
+        now.difference(_lastLoadRequestTime!) < _loadThrottleInterval) {
+      AppLogger.d('Blocs/editor/editor_bloc', '加载请求过于频繁，已被节流');
+      return;
+    }
+    _lastLoadRequestTime = now;
     
     // 标记为正在加载更多
     emit(currentState.copyWith(isLoading: true));

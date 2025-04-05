@@ -65,6 +65,12 @@ class _EditorMainAreaState extends State<EditorMainArea> {
           color: veryLightGrey,
           child: SingleChildScrollView(
             controller: widget.scrollController,
+            // 添加性能优化配置
+            clipBehavior: Clip.hardEdge, // 使用硬边界裁剪提高性能
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(), // 使用弹性滚动物理效果
+            ),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, // 拖动时收起键盘
             child: Center(
               child: ConstrainedBox(
                 // 3. 限制内容最大宽度

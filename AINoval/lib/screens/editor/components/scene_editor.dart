@@ -437,6 +437,10 @@ class _SceneEditorState extends State<SceneEditor> {
           padding:
               const EdgeInsets.symmetric(vertical: 8, horizontal: 4), // 调整内部填充
           enableInteractiveSelection: true, // 确保启用文本选择交互
+          scrollable: true, // 确保可滚动
+          showCursor: true, 
+          autoFocus: false, // 禁用自动聚焦以减少不必要的渲染
+          expands: false, // 不自动扩展，保持控制
           customStyles: DefaultStyles(
             // 确保样式配置正确
             bold: const TextStyle(fontWeight: FontWeight.bold),
@@ -450,11 +454,6 @@ class _SceneEditorState extends State<SceneEditor> {
               decoration: TextDecoration.underline,
             ),
           ),
-          // autoFocus: widget.isActive, // 考虑移除 autofocus，由点击InkWell控制
-          expands: false, // Important: Should not expand within Row
-          scrollable: true, // Keep scrollable
-          showCursor: true,
-          // 移除不支持的onTapDown
         ),
       ),
     );
