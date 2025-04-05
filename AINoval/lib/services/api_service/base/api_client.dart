@@ -642,7 +642,11 @@ class ApiClient {
   }
 
   /// 加载更多场景内容
-  /// 根据方向（向上或向下）加载更多章节的场景内容
+  /// 根据方向（向上或向下或中心）加载更多章节的场景内容
+  /// direction可以是：up、down或center
+  /// - up: 加载fromChapterId之前的章节
+  /// - down: 加载fromChapterId之后的章节
+  /// - center: 只加载fromChapterId章节或前后各加载几章
   Future<dynamic> loadMoreScenes(String novelId, String fromChapterId, String direction, {int chaptersLimit = 5}) async {
     try {
       AppLogger.i('ApiClient', '加载更多场景: $novelId, 从章节: $fromChapterId, 方向: $direction, 限制: $chaptersLimit');

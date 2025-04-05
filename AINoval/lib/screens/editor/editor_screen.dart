@@ -78,10 +78,12 @@ class _EditorScreenState extends State<EditorScreen>
     );
     
     // 使用分页加载，而不是加载所有内容
+    // 从小说列表进入时，使用lastEditedChapterId为null，让后端自动选择最近编辑的章节
     _editorBloc.add(LoadEditorContentPaginated(
       novelId: widget.novel.id,
-      // NovelSummary没有lastEditedChapterId字段，所以不传该参数，让后端自行处理
-      chaptersLimit: 5, // 默认前后各加载5章内容
+      // NovelSummary没有lastEditedChapterId字段，传null让后端自行处理
+      lastEditedChapterId: null,
+      chaptersLimit: 2, // 减少初始加载章节数，只加载最近编辑章节的前后各2章
     ));
 
     // 添加监听器确保数据变化时界面更新
@@ -226,29 +228,45 @@ class _EditorScreenState extends State<EditorScreen>
       return;
     }
 
+    // 记录当前有哪些有效的场景ID，用于清理不再需要的控制器
+    final Set<String> validSceneIds = {};
+    
+    // 记录已加载场景的章节数和场景数，用于日志
+    int loadedChapterCount = 0;
+    int loadedSceneCount = 0;
+    int totalChapterCount = 0;
+
     for (final act in novel.acts) {
       AppLogger.d('Screens/editor/editor_screen',
           '检查 Act: ${act.id} (${act.title}). Chapters: ${act.chapters.length}');
-      if (act.chapters.isEmpty) {
-        AppLogger.w(
-            'Screens/editor/editor_screen', 'Act ${act.id} 没有 Chapters。');
-        continue;
-      }
+      
+      bool actHasLoadedScenes = false;
 
       for (final chapter in act.chapters) {
+        totalChapterCount++;
         AppLogger.d('Screens/editor/editor_screen',
             '检查 Chapter: ${chapter.id} (${chapter.title}). Scenes: ${chapter.scenes.length}');
+        
+        // 跳过没有场景的章节，这些章节的场景可能尚未加载或需要按需加载
         if (chapter.scenes.isEmpty) {
-          AppLogger.w('Screens/editor/editor_screen',
-              'Chapter ${chapter.id} 没有 Scenes。');
+          AppLogger.d('Screens/editor/editor_screen',
+              'Chapter ${chapter.id} 的场景未加载或没有场景，跳过控制器创建。');
           continue;
         }
-
+        
+        // 标记这个章节已加载
+        loadedChapterCount++;
+        actHasLoadedScenes = true;
         controllersChecked = true;
 
         for (int i = 0; i < chapter.scenes.length; i++) {
           final scene = chapter.scenes[i];
           final sceneId = '${act.id}_${chapter.id}_${scene.id}';
+          
+          // 记录有效的场景ID
+          validSceneIds.add(sceneId);
+          loadedSceneCount++;
+          
           AppLogger.v('Screens/editor/editor_screen', '检查 Scene: $sceneId');
 
           if (!_sceneControllers.containsKey(sceneId)) {
@@ -300,10 +318,40 @@ class _EditorScreenState extends State<EditorScreen>
           }
         }
       }
+      
+      // 如果这个Act没有任何已加载的场景，记录日志
+      if (!actHasLoadedScenes) {
+        AppLogger.d('Screens/editor/editor_screen',
+            'Act ${act.id} (${act.title}) 没有任何已加载场景，跳过整个Act。');
+      }
+    }
+    
+    // 清理不再需要的控制器，释放资源
+    final List<String> controllersToRemove = _sceneControllers.keys
+        .where((id) => !validSceneIds.contains(id))
+        .toList();
+        
+    if (controllersToRemove.isNotEmpty) {
+      AppLogger.i('Screens/editor/editor_screen', 
+          '清理 ${controllersToRemove.length} 个不再需要的控制器');
+      
+      for (final id in controllersToRemove) {
+        _sceneControllers[id]?.dispose();
+        _sceneControllers.remove(id);
+        
+        _sceneTitleControllers[id]?.dispose();
+        _sceneTitleControllers.remove(id);
+        
+        _sceneSubtitleControllers[id]?.dispose();
+        _sceneSubtitleControllers.remove(id);
+        
+        _sceneSummaryControllers[id]?.dispose();
+        _sceneSummaryControllers.remove(id);
+      }
     }
 
     AppLogger.i('Screens/editor/editor_screen',
-        '控制器确保完成。控制器总数: ${_sceneControllers.length}. 是否添加新控制器: $controllersAdded. 是否检查过场景: $controllersChecked.');
+        '控制器确保完成。控制器总数: ${_sceneControllers.length}, 总章节数: $totalChapterCount, 已加载章节: $loadedChapterCount (${(loadedChapterCount * 100 / totalChapterCount).toStringAsFixed(1)}%), 已加载场景: $loadedSceneCount. 是否添加新控制器: $controllersAdded, 是否检查过场景: $controllersChecked.');
   }
 
   void _createControllersForNovel(novel_models.Novel novel) {
@@ -380,311 +428,303 @@ class _EditorScreenState extends State<EditorScreen>
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider.value(value: _editorBloc),
-      ],
-      child: BlocConsumer<EditorBloc, EditorState>(
-        listener: (context, state) {
-          if (state is EditorError) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(state.message)),
-            );
-          }
-          if (state is EditorLoaded) {
-            _ensureControllersForNovel(state.novel);
-          }
-        },
-        builder: (context, state) {
-          if (state is EditorLoaded) {
-            _ensureControllersForNovel(state.novel);
-
-            final activeControllerId = state.activeActId != null &&
-                    state.activeChapterId != null &&
-                    state.activeSceneId != null
-                ? '${state.activeActId}_${state.activeChapterId}_${state.activeSceneId}'
-                : null;
-
-            if (activeControllerId != null &&
-                !_sceneControllers.containsKey(activeControllerId)) {
-              AppLogger.w('Screens/editor/editor_screen',
-                  '活动场景 $activeControllerId 的控制器不存在，但仍尝试构建编辑器UI...');
+    // 将BlocProvider移到最外层，包裹整个Scaffold
+    return BlocProvider.value(
+      value: _editorBloc,
+      child: Scaffold(
+        body: Row(
+          children: [
+            // 左侧导航
+            if (_isEditorSidebarVisible) ...[
+              SizedBox(
+                width: _editorSidebarWidth,
+                child: EditorSidebar(
+                  novel: widget.novel,
+                  tabController: _tabController,
+                  onOpenAIChat: () {
+                    setState(() {
+                      _isAIChatSidebarVisible = true;
+                      _isSettingsPanelVisible = false; // 关闭设置面板
+                    });
+                  },
+                  onOpenSettings: () {
+                    setState(() {
+                      _isSettingsPanelVisible = true;
+                      _isAIChatSidebarVisible = false; // 关闭聊天侧边栏
+                    });
+                  },
+                  onToggleSidebar: () {
+                    setState(() {
+                      _isEditorSidebarVisible = false;
+                    });
+                  },
+                  onAdjustWidth: _showEditorSidebarWidthDialog,
+                ),
+              ),
+              _DraggableDivider(
+                onDragUpdate: (delta) {
+                  setState(() {
+                    // 更新侧边栏宽度，同时考虑最小/最大限制
+                    _editorSidebarWidth =
+                        (_editorSidebarWidth + delta.delta.dx).clamp(
+                      _minEditorSidebarWidth,
+                      _maxEditorSidebarWidth,
+                    );
+                  });
+                },
+                onDragEnd: (_) {
+                  // 拖拽结束时保存宽度
+                  _saveEditorSidebarWidth();
+                },
+              ),
+            ],
+            // 主编辑区域
+            Expanded(
+              child: BlocBuilder<EditorBloc, EditorState>(
+                builder: (context, state) {
+                  if (state is EditorLoading) {
+                    return const Center(child: CircularProgressIndicator());
+                  } else if (state is EditorError) {
+                    return Center(child: Text('错误: ${state.message}'));
+                  } else if (state is EditorLoaded) {
+                    _ensureControllersForNovel(state.novel);
+                    return _buildLoadedEditor(context, state);
+                  } else {
+                    return const Center(child: Text('未知状态'));
+                  }
+                },
+              ),
+            ),
+            // 右侧助手面板
+            if (_isAIChatSidebarVisible) ...[
+              _DraggableDivider(
+                onDragUpdate: (delta) {
+                  setState(() {
+                    // 更新侧边栏宽度，同时考虑最小/最大限制
+                    _chatSidebarWidth =
+                        (_chatSidebarWidth - delta.delta.dx).clamp(
+                      _minChatSidebarWidth,
+                      _maxChatSidebarWidth,
+                    );
+                  });
+                },
+                onDragEnd: (_) {
+                  // 拖拽结束时保存宽度
+                  _saveChatSidebarWidth();
+                },
+              ),
+              SizedBox(
+                width: _chatSidebarWidth,
+                child: BlocBuilder<EditorBloc, EditorState>(
+                  builder: (context, state) {
+                    if (state is EditorLoaded) {
+                      return AIChatSidebar(
+                        novelId: widget.novel.id,
+                        chapterId: state.activeChapterId,
+                        onClose: () {
+                          setState(() {
+                            _isAIChatSidebarVisible = false;
+                          });
+                        },
+                      );
+                    }
+                    return const Center(child: CircularProgressIndicator());
+                  },
+                ),
+              )
+            ],
+          ],
+        ),
+        floatingActionButton: BlocBuilder<EditorBloc, EditorState>(
+          builder: (context, state) {
+            if (state is EditorLoaded && state.isSaving) {
+              return FloatingActionButton(
+                heroTag: 'saving',
+                onPressed: null,
+                backgroundColor: Colors.grey.shade400,
+                tooltip: '正在保存...',
+                child: const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+              );
+            } else if (_isAIChatSidebarVisible) {
+              return Container();
+            } else {
+              return FloatingActionButton(
+                heroTag: 'chat',
+                onPressed: () {
+                  setState(() {
+                    _isAIChatSidebarVisible = !_isAIChatSidebarVisible;
+                  });
+                },
+                backgroundColor: Colors.grey.shade700,
+                tooltip: '打开AI聊天',
+                child: const Icon(
+                  Icons.chat,
+                  color: Colors.white,
+                ),
+              );
             }
-            return _buildEditorScreen(context, state, l10n);
-          } else if (state is EditorSettingsOpen) {
-            return _buildSettingsScreen(context, state, l10n);
-          } else {
-            AppLogger.i('Screens/editor/editor_screen',
-                '当前状态: ${state.runtimeType}, 显示加载...');
-            return _buildLoadingScreen(l10n);
-          }
-        },
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildLoadingScreen(AppLocalizations l10n) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.novel.title),
-      ),
-      body: const Center(
-        child: CircularProgressIndicator(),
-      ),
-    );
+  // 为指定章节手动加载场景内容
+  void _loadScenesForChapter(String chapterId) {
+    _editorBloc.add(LoadMoreScenes(
+      fromChapterId: chapterId,
+      direction: 'center',
+      chaptersLimit: 1, // 只加载当前章节
+    ));
+  }
+  
+  // 暴露加载方法，供子组件调用
+  void loadScenesForChapter(String chapterId) {
+    _loadScenesForChapter(chapterId);
   }
 
-  Widget _buildEditorScreen(
-      BuildContext context, EditorLoaded state, AppLocalizations l10n) {
+  Widget _buildLoadedEditor(BuildContext context, EditorLoaded state) {
     final fallbackController = _getFallbackController(state);
 
     // Get userId, provide default or handle error if null
     final userIdForPanel = _currentUserId;
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          Row(
-            children: [
-              if (_isEditorSidebarVisible) ...[
-                SizedBox(
-                  width: _editorSidebarWidth,
-                  child: EditorSidebar(
-                    novel: widget.novel,
-                    tabController: _tabController,
-                    onOpenAIChat: () {
-                      setState(() {
-                        _isAIChatSidebarVisible = true;
-                        _isSettingsPanelVisible = false; // 关闭设置面板
-                      });
-                    },
-                    onOpenSettings: () {
-                      setState(() {
-                        _isSettingsPanelVisible = true;
-                        _isAIChatSidebarVisible = false; // 关闭聊天侧边栏
-                      });
-                    },
-                    onToggleSidebar: () {
-                      setState(() {
-                        _isEditorSidebarVisible = false;
-                      });
-                    },
-                    onAdjustWidth: _showEditorSidebarWidthDialog,
-                  ),
-                ),
-                _DraggableDivider(
-                  onDragUpdate: (delta) {
+    return Stack(
+      children: [
+        Column(
+          children: [
+            // 编辑器顶部工具栏和操作栏
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                EditorAppBar(
+                  novelTitle: widget.novel.title,
+                  wordCount: _calculateTotalWordCount(state.novel),
+                  isSaving: state.isSaving,
+                  lastSaveTime: state.lastSaveTime,
+                  onBackPressed: () => Navigator.pop(context),
+                  onChatPressed: () {
                     setState(() {
-                      // 更新侧边栏宽度，同时考虑最小/最大限制
-                      _editorSidebarWidth =
-                          (_editorSidebarWidth + delta.delta.dx).clamp(
-                        _minEditorSidebarWidth,
-                        _maxEditorSidebarWidth,
-                      );
+                      _isAIChatSidebarVisible =
+                          !_isAIChatSidebarVisible;
+                      if (_isAIChatSidebarVisible) {
+                        _isSettingsPanelVisible = false; // 打开聊天时关闭设置
+                      }
                     });
                   },
-                  onDragEnd: (_) {
-                    // 拖拽结束时保存宽度
-                    _saveEditorSidebarWidth();
+                  isChatActive: _isAIChatSidebarVisible,
+                  onAiConfigPressed: () {
+                    setState(() {
+                      _isSettingsPanelVisible =
+                          !_isSettingsPanelVisible;
+                      if (_isSettingsPanelVisible) {
+                        _isAIChatSidebarVisible = false; // 打开设置时关闭聊天
+                      }
+                    });
                   },
+                  isSettingsActive: _isSettingsPanelVisible,
+                ),
+                EditorToolbar(
+                  controller: fallbackController,
                 ),
               ],
-              Expanded(
-                child: Column(
-                  children: [
-                    // 编辑器顶部工具栏和操作栏
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        EditorAppBar(
-                          novelTitle: widget.novel.title,
-                          wordCount: _calculateTotalWordCount(state.novel),
-                          isSaving: state.isSaving,
-                          lastSaveTime: state.lastSaveTime,
-                          onBackPressed: () => Navigator.pop(context),
-                          onChatPressed: () {
-                            setState(() {
-                              _isAIChatSidebarVisible =
-                                  !_isAIChatSidebarVisible;
-                              if (_isAIChatSidebarVisible) {
-                                _isSettingsPanelVisible = false; // 打开聊天时关闭设置
-                              }
-                            });
-                          },
-                          isChatActive: _isAIChatSidebarVisible,
-                          onAiConfigPressed: () {
-                            setState(() {
-                              _isSettingsPanelVisible =
-                                  !_isSettingsPanelVisible;
-                              if (_isSettingsPanelVisible) {
-                                _isAIChatSidebarVisible = false; // 打开设置时关闭聊天
-                              }
-                            });
-                          },
-                          isSettingsActive: _isSettingsPanelVisible,
-                        ),
-                        EditorToolbar(
-                          controller: fallbackController,
-                        ),
-                      ],
-                    ),
-                    // 主编辑区域与聊天侧边栏
-                    Expanded(
-                      child: Row(
-                        children: [
-                          // 主编辑区域
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(
-                                  left: 16, right: 16, bottom: 16),
-                              child: EditorMainArea(
-                                novel: state.novel,
-                                editorBloc: _editorBloc,
-                                sceneControllers: _sceneControllers,
-                                sceneSummaryControllers:
-                                    _sceneSummaryControllers,
-                                activeActId: state.activeActId,
-                                activeChapterId: state.activeChapterId,
-                                activeSceneId: state.activeSceneId,
-                                scrollController: _scrollController,
-                              ),
-                            ),
-                          ),
-                          // AI聊天侧边栏
-                          if (_isAIChatSidebarVisible) ...[
-                            _DraggableDivider(
-                              onDragUpdate: (delta) {
-                                setState(() {
-                                  // 更新侧边栏宽度，同时考虑最小/最大限制
-                                  _chatSidebarWidth =
-                                      (_chatSidebarWidth - delta.delta.dx).clamp(
-                                    _minChatSidebarWidth,
-                                    _maxChatSidebarWidth,
-                                  );
-                                });
-                              },
-                              onDragEnd: (_) {
-                                // 拖拽结束时保存宽度
-                                _saveChatSidebarWidth();
-                              },
-                            ),
-                            SizedBox(
-                              width: _chatSidebarWidth,
-                              child: AIChatSidebar(
-                                novelId: widget.novel.id,
-                                chapterId: state.activeChapterId,
-                                onClose: () {
-                                  setState(() {
-                                    _isAIChatSidebarVisible = false;
-                                  });
-                                },
-                              ),
-                            )
-                          ],
-                        ],
+            ),
+            // 主编辑区域与聊天侧边栏
+            Expanded(
+              child: Row(
+                children: [
+                  // 主编辑区域
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                          left: 16, right: 16, bottom: 16),
+                      child: EditorMainArea(
+                        novel: state.novel,
+                        editorBloc: _editorBloc,
+                        sceneControllers: _sceneControllers,
+                        sceneSummaryControllers:
+                            _sceneSummaryControllers,
+                        activeActId: state.activeActId,
+                        activeChapterId: state.activeChapterId,
+                        activeSceneId: state.activeSceneId,
+                        scrollController: _scrollController,
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (!_isEditorSidebarVisible)
-            Positioned(
-              left: 0,
-              top: 16,
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    setState(() {
-                      _isEditorSidebarVisible = true;
-                    });
-                  },
-                  borderRadius: const BorderRadius.only(
-                    topRight: Radius.circular(8),
-                    bottomRight: Radius.circular(8),
                   ),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .primary
-                          .withOpacity(0.1),
-                      borderRadius: const BorderRadius.only(
-                        topRight: Radius.circular(8),
-                        bottomRight: Radius.circular(8),
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.arrow_forward_ios,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
+                ],
               ),
             ),
-          if (_isSettingsPanelVisible)
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: () => setState(() => _isSettingsPanelVisible = false),
+          ],
+        ),
+        if (!_isEditorSidebarVisible)
+          Positioned(
+            left: 0,
+            top: 16,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  setState(() {
+                    _isEditorSidebarVisible = true;
+                  });
+                },
+                borderRadius: const BorderRadius.only(
+                  topRight: Radius.circular(8),
+                  bottomRight: Radius.circular(8),
+                ),
                 child: Container(
-                  color: Colors.black.withOpacity(0.5),
-                  child: Center(
-                    child: GestureDetector(
-                      onTap: () {},
-                      child: userIdForPanel == null
-                          ? _buildLoginRequiredPanel(context)
-                          : SettingsPanel(
-                              userId: userIdForPanel,
-                              onClose: () {
-                                setState(() {
-                                  _isSettingsPanelVisible = false;
-                                });
-                              },
-                            ),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withOpacity(0.1),
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(8),
+                      bottomRight: Radius.circular(8),
                     ),
+                  ),
+                  child: Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
               ),
             ),
-        ],
-      ),
-      floatingActionButton: state.isSaving
-          ? FloatingActionButton(
-              heroTag: 'saving',
-              onPressed: null,
-              backgroundColor: Colors.grey.shade400,
-              tooltip: '正在保存...',
-              child: const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-            )
-          : _isAIChatSidebarVisible
-              ? null
-              : FloatingActionButton(
-                  heroTag: 'chat',
-                  onPressed: () {
-                    setState(() {
-                      _isAIChatSidebarVisible = !_isAIChatSidebarVisible;
-                    });
-                  },
-                  backgroundColor: Colors.grey.shade700,
-                  tooltip: '打开AI聊天',
-                  child: const Icon(
-                    Icons.chat,
-                    color: Colors.white,
+          ),
+        if (_isSettingsPanelVisible)
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => setState(() => _isSettingsPanelVisible = false),
+              child: Container(
+                color: Colors.black.withOpacity(0.5),
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {},
+                    child: userIdForPanel == null
+                        ? _buildLoginRequiredPanel(context)
+                        : SettingsPanel(
+                            userId: userIdForPanel,
+                            onClose: () {
+                              setState(() {
+                                _isSettingsPanelVisible = false;
+                              });
+                            },
+                          ),
                   ),
                 ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -891,6 +931,7 @@ class _EditorScreenState extends State<EditorScreen>
   DateTime? _lastLoadTime;
   String? _lastDirection;
   String? _lastFromChapterId;
+  bool _isLoadingMore = false;
 
   // 加载更多场景函数
   void _loadMoreScenes(String direction) {
@@ -898,20 +939,34 @@ class _EditorScreenState extends State<EditorScreen>
     if (state is! EditorLoaded) return;
     
     // 如果正在加载中，不重复触发
-    if (state.isLoading) return;
+    if (state.isLoading || _isLoadingMore) return;
     
-    // 如果当前没有活动章节，无法加载更多
-    if (state.activeChapterId == null) return;
+    // 设置临时标志，避免重复加载
+    _isLoadingMore = true;
     
     // 从哪个章节开始加载（向上或向下）
-    String fromChapterId;
+    String? fromChapterId;
     if (direction == 'up') {
       // 找到当前加载的第一个章节ID
-      fromChapterId = _findFirstChapterId(state.novel) ?? state.activeChapterId!;
+      fromChapterId = _findFirstLoadedChapterId(state.novel);
     } else {
       // 找到当前加载的最后一个章节ID
-      fromChapterId = _findLastChapterId(state.novel) ?? state.activeChapterId!;
+      fromChapterId = _findLastLoadedChapterId(state.novel);
     }
+    
+    // 如果没有找到章节ID，则使用活动章节（如果有）
+    if (fromChapterId == null) {
+      if (state.activeChapterId != null) {
+        fromChapterId = state.activeChapterId;
+      } else {
+        // 没有章节可加载，重置标志
+        _isLoadingMore = false;
+        return;
+      }
+    }
+    
+    // 安全断言 - 此时我们已经确保fromChapterId不为null
+    assert(fromChapterId != null, "fromChapterId不应该为null");
     
     // 防抖：避免短时间内多次触发相同的加载请求
     final now = DateTime.now();
@@ -919,6 +974,7 @@ class _EditorScreenState extends State<EditorScreen>
         now.difference(_lastLoadTime!).inSeconds < 2 &&
         _lastDirection == direction &&
         _lastFromChapterId == fromChapterId) {
+      _isLoadingMore = false;
       return;
     }
     
@@ -926,35 +982,77 @@ class _EditorScreenState extends State<EditorScreen>
     _lastDirection = direction;
     _lastFromChapterId = fromChapterId;
     
-    // 触发加载更多事件
+    AppLogger.i('EditorScreen', '加载更多场景: 方向=$direction, 起始章节=$fromChapterId');
+    
+    // 触发加载更多事件 - 使用非空断言操作符，因为我们已经确保fromChapterId不为null
     _editorBloc.add(LoadMoreScenes(
-      fromChapterId: fromChapterId,
+      fromChapterId: fromChapterId!, // 使用!操作符确保非空
       direction: direction,
       chaptersLimit: 3, // 每次加载3章内容
     ));
+    
+    // 延迟重置标志，给API调用一些时间
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _isLoadingMore = false;
+    });
   }
   
-  // 辅助函数：找到当前加载的第一个章节ID
-  String? _findFirstChapterId(novel_models.Novel novel) {
+  // 辅助函数：找到当前加载的第一个有场景的章节ID
+  String? _findFirstLoadedChapterId(novel_models.Novel novel) {
     if (novel.acts.isEmpty) return null;
+    
+    // 记录空章节信息，帮助调试
+    _logEmptyChaptersInfo(novel);
+    
     for (final act in novel.acts) {
-      if (act.chapters.isNotEmpty) {
-        return act.chapters.first.id;
+      for (final chapter in act.chapters) {
+        // 只有章节包含场景时才考虑它
+        if (chapter.scenes.isNotEmpty) {
+          return chapter.id;
+        }
       }
     }
     return null;
   }
   
-  // 辅助函数：找到当前加载的最后一个章节ID
-  String? _findLastChapterId(novel_models.Novel novel) {
+  // 辅助函数：找到当前加载的最后一个有场景的章节ID
+  String? _findLastLoadedChapterId(novel_models.Novel novel) {
     if (novel.acts.isEmpty) return null;
+    
+    // 从最后一个Act开始反向遍历
     for (int i = novel.acts.length - 1; i >= 0; i--) {
       final act = novel.acts[i];
-      if (act.chapters.isNotEmpty) {
-        return act.chapters.last.id;
+      // 从最后一个Chapter开始反向遍历
+      for (int j = act.chapters.length - 1; j >= 0; j--) {
+        final chapter = act.chapters[j];
+        // 只有章节包含场景时才考虑它
+        if (chapter.scenes.isNotEmpty) {
+          return chapter.id;
+        }
       }
     }
     return null;
+  }
+  
+  // 辅助函数：记录空章节信息
+  void _logEmptyChaptersInfo(novel_models.Novel novel) {
+    int totalChapters = 0;
+    int emptyChapters = 0;
+    
+    for (final act in novel.acts) {
+      for (final chapter in act.chapters) {
+        totalChapters++;
+        if (chapter.scenes.isEmpty) {
+          emptyChapters++;
+        }
+      }
+    }
+    
+    // 只在有空章节时记录日志
+    if (emptyChapters > 0) {
+      AppLogger.i('EditorScreen', 
+          '当前共有 $totalChapters 个章节，其中 $emptyChapters 个章节没有场景（未加载或空章节）');
+    }
   }
 }
 

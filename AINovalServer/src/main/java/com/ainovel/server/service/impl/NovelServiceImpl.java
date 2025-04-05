@@ -334,7 +334,7 @@ public class NovelServiceImpl implements NovelService {
                         centerChapterId = novel.getLastEditedChapterId();
                         // 如果lastEditedChapterId也无效，使用第一个章节
                         if (centerChapterId == null || centerChapterId.isEmpty() || !allChapterIds.contains(centerChapterId)) {
-                            centerChapterId = allChapterIds.get(0);
+                            centerChapterId = allChapterIds.getFirst();
                         }
                     }
 

@@ -30,7 +30,7 @@ class LoadEditorContentPaginated extends EditorEvent {
 /// 加载更多场景事件
 class LoadMoreScenes extends EditorEvent {
   final String fromChapterId;
-  final String direction; // "up" 或 "down"
+  final String direction; // "up" 或 "down" 或 "center"
   final int chaptersLimit;
 
   const LoadMoreScenes({

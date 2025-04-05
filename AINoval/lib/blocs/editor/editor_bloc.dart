@@ -176,6 +176,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     emit(currentState.copyWith(isLoading: true));
     
     try {
+      AppLogger.i('Blocs/editor/editor_bloc', 
+          '开始加载更多场景: 章节=${event.fromChapterId}, 方向=${event.direction}, 限制=${event.chaptersLimit}');
+      
       // 调用加载更多场景的API
       final newScenes = await repository.loadMoreScenes(
         novelId,
@@ -185,7 +188,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       );
       
       if (newScenes.isEmpty) {
-        // 没有更多场景可加载，恢复原状态
+        // 没有更多场景可加载，恢复原状态，但标记加载已结束
+        AppLogger.i('Blocs/editor/editor_bloc', '没有更多场景可加载');
         emit(currentState.copyWith(isLoading: false));
         return;
       }
@@ -193,9 +197,36 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       // 将新加载的场景合并到当前小说结构中
       final updatedNovel = _mergeNewScenes(currentState.novel, newScenes);
       
+      AppLogger.i('Blocs/editor/editor_bloc', 
+          '成功加载更多场景: ${newScenes.keys.length}个章节, ${newScenes.values.fold(0, (sum, scenes) => sum + scenes.length)}个场景');
+      
+      // 如果是中心加载并且指定了章节，将活动章节设置为该章节
+      String? newActiveChapterId = currentState.activeChapterId;
+      String? newActiveActId = currentState.activeActId;
+      String? newActiveSceneId = currentState.activeSceneId;
+      
+      if (event.direction == 'center') {
+        // 查找包含该章节的Act
+        for (final act in updatedNovel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == event.fromChapterId && chapter.scenes.isNotEmpty) {
+              newActiveChapterId = chapter.id;
+              newActiveActId = act.id;
+              newActiveSceneId = chapter.scenes.first.id;
+              break;
+            }
+          }
+          if (newActiveChapterId == event.fromChapterId) break;
+        }
+      }
+      
       emit(currentState.copyWith(
         novel: updatedNovel,
         isLoading: false,
+        // 如果center模式找到对应章节，更新活动状态
+        activeChapterId: newActiveChapterId,
+        activeActId: newActiveActId,
+        activeSceneId: newActiveSceneId,
       ));
     } catch (e) {
       AppLogger.e('Blocs/editor/editor_bloc', '加载更多场景失败', e);
@@ -1353,11 +1384,18 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   novel_models.Novel _mergeNewScenes(
       novel_models.Novel currentNovel, 
       Map<String, List<novel_models.Scene>> newScenes) {
+    
+    AppLogger.i('Blocs/editor/editor_bloc', 
+        '开始合并新场景: ${newScenes.keys.length}个章节, ${newScenes.values.fold(0, (sum, scenes) => sum + scenes.length)}个场景');
+    
     // 深拷贝当前小说以避免直接修改状态
     final List<novel_models.Act> updatedActs = List.from(currentNovel.acts);
     
     // 遍历新加载的场景，按章节ID归类
     newScenes.forEach((chapterId, scenes) {
+      AppLogger.d('Blocs/editor/editor_bloc', 
+          '处理章节 $chapterId 的 ${scenes.length} 个场景');
+      
       // 在现有结构中查找对应的章节
       bool chapterFound = false;
       
@@ -1392,6 +1430,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
               ...newUniqueScenesForChapter
             ];
             
+            // 按场景ID排序，确保顺序一致
+            mergedScenes.sort((a, b) => a.id.compareTo(b.id));
+            
             // 创建更新后的章节
             final updatedChapter = chapter.copyWith(scenes: mergedScenes);
             updatedChapters[chapterIndex] = updatedChapter;
@@ -1400,7 +1441,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
             updatedActs[actIndex] = act.copyWith(chapters: updatedChapters);
             
             AppLogger.i('Blocs/editor/editor_bloc', 
-                '已将 ${newUniqueScenesForChapter.length} 个新场景合并到章节 $chapterId');
+                '已将 ${newUniqueScenesForChapter.length} 个新场景合并到章节 $chapterId，现在总共有 ${mergedScenes.length} 个场景');
             break;
           }
         }
@@ -1408,7 +1449,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         if (chapterFound) break;
       }
       
-      // 如果没有找到对应章节，记录日志
+      // 如果没有找到对应章节，记录警告
       if (!chapterFound) {
         AppLogger.w('Blocs/editor/editor_bloc', 
             '未找到对应章节 $chapterId，无法合并 ${scenes.length} 个场景');
@@ -1416,9 +1457,22 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     });
     
     // 创建更新后的Novel对象
-    return currentNovel.copyWith(
+    final updatedNovel = currentNovel.copyWith(
       acts: updatedActs,
     );
+    
+    // 记录日志
+    int totalScenes = 0;
+    for (final act in updatedNovel.acts) {
+      for (final chapter in act.chapters) {
+        totalScenes += chapter.scenes.length;
+      }
+    }
+    
+    AppLogger.i('Blocs/editor/editor_bloc', 
+        '场景合并完成，小说现在总共有 ${updatedNovel.acts.length} 个act, ${updatedNovel.acts.fold(0, (sum, act) => sum + act.chapters.length)} 个章节, $totalScenes 个场景');
+    
+    return updatedNovel;
   }
 
   @override
