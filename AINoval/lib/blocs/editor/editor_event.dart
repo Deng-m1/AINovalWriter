@@ -32,15 +32,28 @@ class LoadMoreScenes extends EditorEvent {
   final String fromChapterId;
   final String direction; // "up" 或 "down" 或 "center"
   final int chaptersLimit;
+  final String? targetActId;
+  final String? targetChapterId;
+  final String? targetSceneId;
 
   const LoadMoreScenes({
     required this.fromChapterId,
     required this.direction,
     this.chaptersLimit = 5,
+    this.targetActId,
+    this.targetChapterId,
+    this.targetSceneId,
   });
   
   @override
-  List<Object?> get props => [fromChapterId, direction, chaptersLimit];
+  List<Object?> get props => [
+    fromChapterId, 
+    direction, 
+    chaptersLimit, 
+    targetActId, 
+    targetChapterId, 
+    targetSceneId
+  ];
 }
 
 class UpdateContent extends EditorEvent {

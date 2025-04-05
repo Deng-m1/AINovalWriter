@@ -2,16 +2,20 @@ import 'package:ainoval/blocs/plan/plan_bloc.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:ainoval/blocs/editor/editor_bloc.dart' as editor;
+import 'package:ainoval/utils/logger.dart';
 
 class PlanView extends StatefulWidget {
   const PlanView({
     super.key,
     required this.novelId,
     required this.planBloc,
+    this.onSwitchToWrite,
   });
 
   final String novelId;
   final PlanBloc planBloc;
+  final VoidCallback? onSwitchToWrite;
 
   @override
   State<PlanView> createState() => _PlanViewState();
@@ -343,8 +347,41 @@ class _PlanViewState extends State<PlanView> {
             color: Colors.transparent,
             child: InkWell(
               onTap: () {
-                // 显示场景摘要编辑对话框
-                _showSceneSummaryDialog(actId, chapterId, scene);
+                // 导航到编辑视图并设置活动场景，而不是显示场景摘要对话框
+                final editorBloc = BlocProvider.of<editor.EditorBloc>(context);
+                
+                // --- 添加日志 ---
+                AppLogger.i('PlanView -> onTap', '准备跳转到场景: ActID=$actId, ChapterID=$chapterId, SceneID=${scene.id}');
+                
+                // 先加载当前章节的场景（确保内容已加载）
+                // --- 添加日志 ---
+                AppLogger.i('PlanView -> onTap', '分发 LoadMoreScenes 事件: fromChapterId=$chapterId, targetActId=$actId, targetChapterId=$chapterId, targetSceneId=${scene.id}');
+                editorBloc.add(editor.LoadMoreScenes(
+                  fromChapterId: chapterId,
+                  direction: 'center', // 保持 'center'，目标是加载并聚焦
+                  chaptersLimit: 2, // 加载目标章节及其前后少量章节以提供上下文
+                  targetActId: actId,
+                  targetChapterId: chapterId,
+                  targetSceneId: scene.id
+                ));
+                
+                // --- 原有日志保持 ---
+                AppLogger.i('PlanView', '点击场景准备跳转: $actId - $chapterId - ${scene.id}');
+
+                // 等待场景加载完成后切换视图
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  // 切换到编辑视图
+                  if (widget.onSwitchToWrite != null) {
+                    // --- 添加日志 ---
+                    AppLogger.i('PlanView -> onTap', '延迟后执行 onSwitchToWrite 回调');
+                    widget.onSwitchToWrite!();
+                    // --- 原有日志保持 ---
+                    AppLogger.i('PlanView', '已切换到写作视图: $actId - $chapterId - ${scene.id}');
+                  } else {
+                    // --- 添加日志 ---
+                    AppLogger.w('PlanView -> onTap', '延迟后发现 onSwitchToWrite 为 null');
+                  }
+                });
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 10.0),

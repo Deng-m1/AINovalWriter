@@ -22,6 +22,7 @@ class EditorMainArea extends StatefulWidget {
     this.activeChapterId,
     this.activeSceneId,
     required this.scrollController,
+    required this.sceneKeys,
   });
   final novel_models.Novel novel;
   final EditorBloc editorBloc;
@@ -31,6 +32,7 @@ class EditorMainArea extends StatefulWidget {
   final String? activeChapterId;
   final String? activeSceneId;
   final ScrollController scrollController;
+  final Map<String, GlobalKey> sceneKeys;
 
   @override
   State<EditorMainArea> createState() => _EditorMainAreaState();
@@ -175,8 +177,11 @@ class _EditorMainAreaState extends State<EditorMainArea> {
         }
       }
 
+      // Retrieve the GlobalKey for this scene
+      final sceneGlobalKey = widget.sceneKeys[sceneId];
+
       return SceneEditor(
-        key: ValueKey('scene_${actId}_${chapter.id}_${scene.id}'), // 使用唯一的 key
+        key: sceneGlobalKey ?? ValueKey('scene_$sceneId'), // Use GlobalKey if available, else fallback
         title: 'Scene ${index + 1}', // 简化标题，章节标题在 ChapterSection 显示
         wordCount: '${scene.wordCount} 字', // 本地化或调整显示
         isActive: widget.activeActId == actId &&
