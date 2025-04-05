@@ -119,11 +119,61 @@ class _PlanViewState extends State<PlanView> {
                   ));
                 },
               ),
-              IconButton(
+              PopupMenuButton<String>(
                 icon: const Icon(Icons.more_horiz),
                 tooltip: '更多操作',
-                onPressed: () {
-                  // 显示更多操作菜单
+                offset: const Offset(0, 30),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 3,
+                itemBuilder: (context) => [
+                  PopupMenuItem<String>(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit, color: theme.primaryColor, size: 18),
+                        const SizedBox(width: 8),
+                        const Text('编辑标题'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete, color: Colors.red, size: 18),
+                        SizedBox(width: 8),
+                        Text('删除', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ],
+                onSelected: (value) {
+                  if (value == 'edit') {
+                    _showEditTitleDialog(
+                      title: 'Act标题',
+                      initialValue: act.title,
+                      onSave: (newTitle) {
+                        widget.planBloc.add(UpdateActTitle(
+                          actId: act.id,
+                          title: newTitle,
+                        ));
+                      },
+                    );
+                  } else if (value == 'delete') {
+                    _showDeleteConfirmDialog(
+                      title: '删除Act',
+                      content: '确定要删除"${act.title}"吗？这将删除其中所有章节和场景。',
+                      onConfirm: () {
+                        // TODO: 添加删除Act的功能
+                        // widget.planBloc.add(DeleteAct(
+                        //   novelId: widget.novelId,
+                        //   actId: act.id,
+                        // ));
+                      },
+                    );
+                  }
                 },
               ),
             ],
@@ -173,12 +223,66 @@ class _PlanViewState extends State<PlanView> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                IconButton(
+                PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert, size: 18),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
-                  onPressed: () {
-                    // 显示章节操作菜单
+                  offset: const Offset(0, 24),
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  itemBuilder: (context) => [
+                    PopupMenuItem<String>(
+                      value: 'edit',
+                      height: 36,
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit, color: theme.primaryColor, size: 16),
+                          const SizedBox(width: 8),
+                          const Text('编辑标题', style: TextStyle(fontSize: 14)),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'delete',
+                      height: 36,
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, color: Colors.red, size: 16),
+                          SizedBox(width: 8),
+                          Text('删除', style: TextStyle(color: Colors.red, fontSize: 14)),
+                        ],
+                      ),
+                    ),
+                  ],
+                  onSelected: (value) {
+                    if (value == 'edit') {
+                      _showEditTitleDialog(
+                        title: '章节标题',
+                        initialValue: chapter.title,
+                        onSave: (newTitle) {
+                          widget.planBloc.add(UpdateChapterTitle(
+                            actId: actId,
+                            chapterId: chapter.id,
+                            title: newTitle,
+                          ));
+                        },
+                      );
+                    } else if (value == 'delete') {
+                      _showDeleteConfirmDialog(
+                        title: '删除章节',
+                        content: '确定要删除"${chapter.title}"吗？这将删除其中所有场景。',
+                        onConfirm: () {
+                          // TODO: 添加删除Chapter的功能
+                          // widget.planBloc.add(DeleteChapter(
+                          //   novelId: widget.novelId,
+                          //   actId: actId,
+                          //   chapterId: chapter.id,
+                          // ));
+                        },
+                      );
+                    }
                   },
                 ),
               ],
@@ -218,131 +322,159 @@ class _PlanViewState extends State<PlanView> {
     ThemeData theme
   ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      padding: const EdgeInsets.symmetric(vertical: 3.0),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.grey.shade50,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(4.0),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.08),
+              spreadRadius: 0,
+              blurRadius: 1,
+              offset: const Offset(0, 1),
+            ),
+          ],
           border: Border.all(color: Colors.grey.shade200),
         ),
-        child: ListTile(
-          dense: true,
-          title: Row(
-            children: [
-              Text(
-                'Scene $sceneNumber',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4.0),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                // 显示场景摘要编辑对话框
+                _showSceneSummaryDialog(actId, chapterId, scene);
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 10.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // 左侧场景标签
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      margin: const EdgeInsets.only(right: 8.0),
+                      decoration: BoxDecoration(
+                        color: theme.primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        'S$sceneNumber',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: theme.primaryColor,
+                        ),
+                      ),
+                    ),
+                    // 中间场景描述
+                    Expanded(
+                      child: Text(
+                        scene.summary.content.isNotEmpty
+                            ? scene.summary.content
+                            : '点击添加场景描述...',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scene.summary.content.isNotEmpty
+                              ? Colors.black87
+                              : Colors.grey,
+                          fontStyle: scene.summary.content.isNotEmpty
+                              ? FontStyle.normal
+                              : FontStyle.italic,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // 右侧菜单按钮
+                    PopupMenuButton<String>(
+                      icon: Icon(
+                        Icons.more_horiz, 
+                        size: 16,
+                        color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      offset: const Offset(0, 20),
+                      elevation: 3,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      itemBuilder: (context) => [
+                        PopupMenuItem<String>(
+                          value: 'edit',
+                          height: 36,
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit, color: theme.primaryColor, size: 16),
+                              const SizedBox(width: 8),
+                              const Text('编辑摘要', style: TextStyle(fontSize: 14)),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'delete',
+                          height: 36,
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete, color: Colors.red, size: 16),
+                              SizedBox(width: 8),
+                              Text('删除', style: TextStyle(color: Colors.red, fontSize: 14)),
+                            ],
+                          ),
+                        ),
+                      ],
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          _showSceneSummaryDialog(actId, chapterId, scene);
+                        } else if (value == 'delete') {
+                          _showDeleteConfirmDialog(
+                            title: '删除场景',
+                            content: '确定要删除此场景吗？',
+                            onConfirm: () {
+                              widget.planBloc.add(DeleteScene(
+                                novelId: widget.novelId,
+                                actId: actId,
+                                chapterId: chapterId,
+                                sceneId: scene.id,
+                              ));
+                            },
+                          );
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ),
-              const Spacer(),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  InkWell(
-                    child: const Icon(Icons.edit, size: 16),
-                    onTap: () {
-                      // 编辑场景
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  InkWell(
-                    child: const Icon(Icons.more_horiz, size: 16),
-                    onTap: () {
-                      // 更多操作
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-          subtitle: Text(
-            scene.summary.content.isNotEmpty
-                ? scene.summary.content
-                : '点击添加场景描述...',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scene.summary.content.isNotEmpty
-                  ? Colors.black87
-                  : Colors.grey,
-              fontStyle: scene.summary.content.isNotEmpty
-                  ? FontStyle.normal
-                  : FontStyle.italic,
             ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
           ),
-          onTap: () {
-            // 显示场景摘要编辑对话框
-            _showSceneSummaryDialog(actId, chapterId, scene);
-          },
         ),
-      ),
-    );
-  }
-
-  // 显示场景摘要编辑对话框
-  void _showSceneSummaryDialog(
-    String actId,
-    String chapterId,
-    novel_models.Scene scene,
-  ) {
-    final TextEditingController controller = 
-        TextEditingController(text: scene.summary.content);
-        
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('编辑场景摘要'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: '输入场景摘要...',
-            border: OutlineInputBorder(),
-          ),
-          maxLines: 5,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              // 保存场景摘要
-              widget.planBloc.add(UpdateSceneSummary(
-                novelId: widget.novelId,
-                actId: actId,
-                chapterId: chapterId,
-                sceneId: scene.id,
-                summary: controller.text,
-              ));
-              Navigator.pop(context);
-            },
-            child: const Text('保存'),
-          ),
-        ],
       ),
     );
   }
 
   // 构建添加场景按钮
   Widget _buildAddSceneButton(String actId, String chapterId, ThemeData theme) {
-    return TextButton.icon(
-      icon: const Icon(Icons.add, size: 16),
-      label: const Text('新场景'),
-      style: TextButton.styleFrom(
-        foregroundColor: theme.primaryColor,
-        padding: const EdgeInsets.symmetric(vertical: 4.0),
-        textStyle: theme.textTheme.labelMedium,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 0),
+      child: TextButton.icon(
+        icon: const Icon(Icons.add, size: 14),
+        label: const Text('新场景', style: TextStyle(fontSize: 13)),
+        style: TextButton.styleFrom(
+          foregroundColor: theme.primaryColor,
+          backgroundColor: Colors.transparent,
+          padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 8.0),
+          minimumSize: const Size(0, 32),
+          textStyle: theme.textTheme.labelSmall,
+        ),
+        onPressed: () {
+          // 添加新场景
+          widget.planBloc.add(AddNewScene(
+            novelId: widget.novelId,
+            actId: actId,
+            chapterId: chapterId,
+          ));
+        },
       ),
-      onPressed: () {
-        // 添加新场景
-        widget.planBloc.add(AddNewScene(
-          novelId: widget.novelId,
-          actId: actId,
-          chapterId: chapterId,
-        ));
-      },
     );
   }
 
@@ -446,6 +578,137 @@ class _PlanViewState extends State<PlanView> {
             onPressed: () {
               // 实现选项功能
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 显示删除确认对话框
+  void _showDeleteConfirmDialog({
+    required String title,
+    required String content,
+    required VoidCallback onConfirm,
+  }) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              onConfirm();
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 显示编辑标题对话框
+  void _showEditTitleDialog({
+    required String title,
+    required String initialValue,
+    required Function(String) onSave,
+  }) {
+    final TextEditingController controller = TextEditingController(text: initialValue);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('编辑$title'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                onSave(controller.text.trim());
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 显示场景摘要编辑对话框
+  void _showSceneSummaryDialog(
+    String actId,
+    String chapterId,
+    novel_models.Scene scene,
+  ) {
+    final TextEditingController controller = 
+        TextEditingController(text: scene.summary.content);
+        
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('编辑场景摘要', style: Theme.of(context).textTheme.titleLarge),
+        content: SizedBox(
+          width: 500,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '写下这个场景的简要描述',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  hintText: '输入场景摘要...',
+                  border: const OutlineInputBorder(),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                ),
+                style: Theme.of(context).textTheme.bodyMedium,
+                maxLines: 5,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              // 保存场景摘要
+              widget.planBloc.add(UpdateSceneSummary(
+                novelId: widget.novelId,
+                actId: actId,
+                chapterId: chapterId,
+                sceneId: scene.id,
+                summary: controller.text,
+              ));
+              Navigator.pop(context);
+            },
+            child: const Text('保存'),
           ),
         ],
       ),
