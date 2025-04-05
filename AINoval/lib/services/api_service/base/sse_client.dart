@@ -12,23 +12,23 @@ import 'package:flutter_client_sse/flutter_client_sse.dart';
 /// Encapsulates connection details, authentication, and event parsing logic,
 /// using the 'flutter_client_sse' package.
 class SseClient {
+
+  // --------------- Singleton Pattern (Optional but common) ---------------
+  // Private constructor
+  SseClient._internal() : _baseUrl = AppConfig.apiBaseUrl;
+
+  // Factory constructor to return the instance
+  factory SseClient() {
+    return _instance;
+  }
   final String _tag = 'SseClient';
   final String _baseUrl;
   
   // 存储活跃连接，以便于管理
   final Map<String, StreamSubscription> _activeConnections = {};
 
-  // --------------- Singleton Pattern (Optional but common) ---------------
-  // Private constructor
-  SseClient._internal() : _baseUrl = AppConfig.apiBaseUrl;
-
   // Static instance
   static final SseClient _instance = SseClient._internal();
-
-  // Factory constructor to return the instance
-  factory SseClient() {
-    return _instance;
-  }
   // --------------- End Singleton Pattern ---------------
 
   // Or a simple public constructor if singleton is not desired:
@@ -111,7 +111,7 @@ class SseClient {
 
           // Filter by expected event name
           if (eventName != null && currentEventName != eventName) {
-            AppLogger.v(_tag, '[SSE] Skipping event name: ${currentEventName} (Expected: $eventName)');
+            AppLogger.v(_tag, '[SSE] Skipping event name: $currentEventName (Expected: $eventName)');
             return; // Skip this event
           }
 

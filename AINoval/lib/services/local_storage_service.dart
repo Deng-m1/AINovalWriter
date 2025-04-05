@@ -69,7 +69,7 @@ class LocalStorageService {
         final jsonMap = novel.toJson();
         final jsonString = jsonEncode(jsonMap);
         AppLogger.v('LocalStorageService',
-            'saveNovels: Serializing Novel ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}. JSON: $jsonString');
+            'saveNovels: Serializing Novel ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}');
         return jsonString;
       }).toList();
 
@@ -652,7 +652,7 @@ class LocalStorageService {
     final prefs = await _ensureInitialized();
     
     // 清理小说本身的同步标记
-    final novelSyncKey = 'syncList_novel';
+    const novelSyncKey = 'syncList_novel';
     final novelSyncList = prefs.getStringList(novelSyncKey) ?? [];
     if (novelSyncList.contains(novelId)) {
       novelSyncList.remove(novelId);
@@ -661,7 +661,7 @@ class LocalStorageService {
     }
     
     // 清理场景同步标记
-    final sceneSyncKey = 'syncList_scene';
+    const sceneSyncKey = 'syncList_scene';
     final sceneSyncList = prefs.getStringList(sceneSyncKey) ?? [];
     final updatedSceneSyncList = sceneSyncList.where((sceneKey) {
       final parts = sceneKey.split('_');
@@ -675,7 +675,7 @@ class LocalStorageService {
     }
     
     // 清理编辑器内容同步标记
-    final editorSyncKey = 'syncList_editor';
+    const editorSyncKey = 'syncList_editor';
     final editorSyncList = prefs.getStringList(editorSyncKey) ?? [];
     final updatedEditorSyncList = editorSyncList.where((contentKey) {
       final parts = contentKey.split('_');

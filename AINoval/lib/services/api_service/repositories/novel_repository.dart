@@ -22,9 +22,6 @@ abstract class NovelRepository {
   /// 搜索小说
   Future<List<Novel>> searchNovelsByTitle(String title);
 
-  /// 更新小说
-  Future<Novel> updateNovel(Novel novel);
-
   /// 删除小说
   Future<void> deleteNovel(String id);
 

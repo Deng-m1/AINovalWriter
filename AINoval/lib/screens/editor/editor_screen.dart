@@ -69,6 +69,8 @@ class _EditorScreenState extends State<EditorScreen>
   final Map<String, TextEditingController> _sceneTitleControllers = {};
   final Map<String, TextEditingController> _sceneSubtitleControllers = {};
   final Map<String, TextEditingController> _sceneSummaryControllers = {};
+  // Add map for GlobalKeys
+  final Map<String, GlobalKey> _sceneKeys = {};
 
   bool _isAIChatSidebarVisible = false; // 控制聊天侧边栏是否可见
   bool _isSettingsPanelVisible = false; // 控制设置面板是否可见
@@ -100,7 +102,7 @@ class _EditorScreenState extends State<EditorScreen>
   int _cachedWordCount = 0;
   String? _wordCountCacheKey;
   // 字数统计内存缓存，用于同一次渲染周期内避免重复计算
-  Map<String, int> _memoryWordCountCache = {};
+  final Map<String, int> _memoryWordCountCache = {};
   
   // 滚动处理节流
   DateTime? _lastScrollHandleTime;
@@ -154,8 +156,7 @@ class _EditorScreenState extends State<EditorScreen>
     // 从小说列表进入时，使用lastEditedChapterId为null，让后端自动选择最近编辑的章节
     _editorBloc.add(LoadEditorContentPaginated(
       novelId: widget.novel.id,
-      // NovelSummary没有lastEditedChapterId字段，传null让后端自行处理
-      lastEditedChapterId: null,
+      lastEditedChapterId: widget.novel.lastEditedChapterId,
       chaptersLimit: 2, // 减少初始加载章节数，只加载最近编辑章节的前后各2章
     ));
 
@@ -408,6 +409,8 @@ class _EditorScreenState extends State<EditorScreen>
                   TextEditingController(text: '');
               _sceneSummaryControllers[sceneId] =
                   TextEditingController(text: scene.summary.content);
+              // Create and store GlobalKey
+              _sceneKeys[sceneId] = GlobalKey();
               controllersAdded = true;
               
               if (needsDetailedLog) {
@@ -470,6 +473,8 @@ class _EditorScreenState extends State<EditorScreen>
         
         _sceneSummaryControllers[id]?.dispose();
         _sceneSummaryControllers.remove(id);
+        // Remove GlobalKey
+        _sceneKeys.remove(id);
       }
     }
 
@@ -536,6 +541,8 @@ class _EditorScreenState extends State<EditorScreen>
       controller.dispose();
     }
     _sceneSummaryControllers.clear();
+    // Clear GlobalKeys map
+    _sceneKeys.clear();
   }
 
   @override
@@ -626,56 +633,104 @@ class _EditorScreenState extends State<EditorScreen>
             ],
             // 主编辑区域
             Expanded(
-              child: BlocBuilder<EditorBloc, EditorState>(
-                buildWhen: (previous, current) {
-                  // 只在状态类型变化或数据结构真正变化时重建UI
-                  if (previous.runtimeType != current.runtimeType) {
-                    return true; // 状态类型变化时重建
+              child: BlocListener<EditorBloc, EditorState>(
+                listener: (context, state) {
+                  if (state is EditorLoaded && state.activeSceneId != null) {
+                    final targetKeyId = '${state.activeActId}_${state.activeChapterId}_${state.activeSceneId}';
+                    var key = _sceneKeys[targetKeyId]; // Try initial lookup
+
+                    // Use post-frame callback regardless, to ensure layout is complete
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      // --- Re-check key inside post-frame callback ---
+                      key ??= _sceneKeys[targetKeyId]; // If key was null, try looking up again
+
+                      if (key != null) {
+                        // Check context again inside the callback, as it might become null
+                        if (key!.currentContext != null) { // Use null assertion after check
+                          AppLogger.i('EditorScreen/BlocListener/PostFrame',
+                              'Scrolling to scene: ${state.activeSceneId}');
+                          Scrollable.ensureVisible(
+                            key!.currentContext!, // Use null assertion
+                            duration: const Duration(milliseconds: 400),
+                            curve: Curves.easeInOut,
+                            alignment: 0.1,
+                          );
+                        } else {
+                          AppLogger.w('EditorScreen/BlocListener/PostFrame',
+                              'Key context became null before scrolling for scene: ${state.activeSceneId}');
+                        }
+                      } else {
+                        // If key is still null even after post-frame, log the final failure
+                        AppLogger.e('EditorScreen/BlocListener/PostFrame',
+                            '[ চূড়ান্ত כישלון ] לא ניתן למצוא מפתח עבור סצנה גם לאחר ה-post-frame: ${state.activeSceneId}');
+                      }
+                    });
                   }
-                  
-                  // 如果都是EditorLoaded状态，做深度比较
+                },
+                // Listen only when activeSceneId might have changed meaningfully
+                listenWhen: (previous, current) {
                   if (previous is EditorLoaded && current is EditorLoaded) {
-                    final EditorLoaded prevLoaded = previous;
-                    final EditorLoaded currLoaded = current;
-                    
-                    // 先检查时间戳，如果相同且非零，大概率内容相同
-                    final prevTimestamp = prevLoaded.novel.updatedAt?.millisecondsSinceEpoch ?? 0;
-                    final currTimestamp = currLoaded.novel.updatedAt?.millisecondsSinceEpoch ?? 0;
-                    
-                    // 如果时间戳都不为0但不同，内容肯定变化了
-                    if (prevTimestamp != currTimestamp && 
-                        prevTimestamp > 0 && currTimestamp > 0) {
-                      return true;
+                    // Only trigger if activeSceneId actually changes *and* is not null
+                    return previous.activeSceneId != current.activeSceneId &&
+                           current.activeSceneId != null;
+                  }
+                  // Trigger if transitioning into EditorLoaded with an activeSceneId
+                  if (current is EditorLoaded && current.activeSceneId != null) {
+                     return true;
+                  }
+                  return false;
+                },
+                child: BlocBuilder<EditorBloc, EditorState>(
+                  buildWhen: (previous, current) {
+                    // 只在状态类型变化或数据结构真正变化时重建UI
+                    if (previous.runtimeType != current.runtimeType) {
+                      return true; // 状态类型变化时重建
                     }
                     
-                    // 严格限制重建条件，只有这些关键状态变化时才重建
-                    return prevLoaded.isSaving != currLoaded.isSaving ||
-                        prevLoaded.isLoading != currLoaded.isLoading ||
-                        prevLoaded.errorMessage != currLoaded.errorMessage ||
-                        prevLoaded.activeActId != currLoaded.activeActId ||
-                        prevLoaded.activeChapterId != currLoaded.activeChapterId ||
-                        prevLoaded.activeSceneId != currLoaded.activeSceneId ||
-                        // 小说基本结构变化检查
-                        prevLoaded.novel.acts.length != currLoaded.novel.acts.length;
-                  }
-                  
-                  return true; // 其他情况保守处理，进行重建
-                },
-                builder: (context, state) {
-                  if (state is EditorLoading) {
-                    return const Center(child: CircularProgressIndicator());
-                  } else if (state is EditorError) {
-                    return Center(child: Text('错误: ${state.message}'));
-                  } else if (state is EditorLoaded) {
-                    // 使用节流函数决定是否需要检查控制器
-                    if (_shouldCheckControllers(state)) {
-                      _ensureControllersForNovel(state.novel);
+                    // 如果都是EditorLoaded状态，做深度比较
+                    if (previous is EditorLoaded && current is EditorLoaded) {
+                      final EditorLoaded prevLoaded = previous;
+                      final EditorLoaded currLoaded = current;
+                      
+                      // 先检查时间戳，如果相同且非零，大概率内容相同
+                      final prevTimestamp = prevLoaded.novel.updatedAt.millisecondsSinceEpoch ?? 0;
+                      final currTimestamp = currLoaded.novel.updatedAt.millisecondsSinceEpoch ?? 0;
+                      
+                      // 如果时间戳都不为0但不同，内容肯定变化了
+                      if (prevTimestamp != currTimestamp && 
+                          prevTimestamp > 0 && currTimestamp > 0) {
+                        return true;
+                      }
+                      
+                      // 严格限制重建条件，只有这些关键状态变化时才重建
+                      return prevLoaded.isSaving != currLoaded.isSaving ||
+                          prevLoaded.isLoading != currLoaded.isLoading ||
+                          prevLoaded.errorMessage != currLoaded.errorMessage ||
+                          prevLoaded.activeActId != currLoaded.activeActId ||
+                          prevLoaded.activeChapterId != currLoaded.activeChapterId ||
+                          prevLoaded.activeSceneId != currLoaded.activeSceneId ||
+                          // 小说基本结构变化检查
+                          prevLoaded.novel.acts.length != currLoaded.novel.acts.length;
                     }
-                    return _buildLoadedEditor(context, state);
-                  } else {
-                    return const Center(child: Text('未知状态'));
-                  }
-                },
+                    
+                    return true; // 其他情况保守处理，进行重建
+                  },
+                  builder: (context, state) {
+                    if (state is EditorLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    } else if (state is EditorError) {
+                      return Center(child: Text('错误: ${state.message}'));
+                    } else if (state is EditorLoaded) {
+                      // 使用节流函数决定是否需要检查控制器
+                      if (_shouldCheckControllers(state)) {
+                        _ensureControllersForNovel(state.novel);
+                      }
+                      return _buildLoadedEditor(context, state);
+                    } else {
+                      return const Center(child: Text('未知状态'));
+                    }
+                  },
+                ),
               ),
             ),
             // 右侧助手面板
@@ -851,6 +906,7 @@ class _EditorScreenState extends State<EditorScreen>
                         ? PlanView(
                             novelId: widget.novel.id,
                             planBloc: _planBloc,
+                            onSwitchToWrite: _togglePlanView,
                           )
                         : Padding(
                             padding: const EdgeInsets.only(
@@ -865,6 +921,8 @@ class _EditorScreenState extends State<EditorScreen>
                               activeChapterId: state.activeChapterId,
                               activeSceneId: state.activeSceneId,
                               scrollController: _scrollController,
+                              // Pass the keys down
+                              sceneKeys: _sceneKeys,
                             ),
                           ),
                   ),
@@ -1073,7 +1131,7 @@ class _EditorScreenState extends State<EditorScreen>
         sum + act.chapters.fold(0, (sum, chapter) => 
             sum + chapter.scenes.length));
     
-    final updatedAtMs = novel.updatedAt?.millisecondsSinceEpoch ?? 0;
+    final updatedAtMs = novel.updatedAt.millisecondsSinceEpoch ?? 0;
     final cacheKey = '${novel.id}_${updatedAtMs}_$totalSceneCount';
     
     // 首先检查内存缓存，这是最快的检查方式
@@ -1233,7 +1291,7 @@ class _EditorScreenState extends State<EditorScreen>
     }
     
     // 安全断言 - 此时我们已经确保fromChapterId不为null
-    assert(fromChapterId != null, "fromChapterId不应该为null");
+    assert(fromChapterId != null, 'fromChapterId不应该为null');
     
     // 防抖：避免短时间内多次触发相同的加载请求
     if (_lastLoadTime != null && 
@@ -1325,28 +1383,20 @@ class _EditorScreenState extends State<EditorScreen>
   bool _shouldCheckControllers(EditorLoaded state) {
     // 如果状态对象引用变化，表示小说数据结构可能发生变化，需要检查
     final bool stateChanged = _lastEditorState != state;
-    
-    // 极端节流：如果距离上次检查时间不足5秒，绝对不检查
     final now = DateTime.now();
-    if (_lastControllerCheckTime != null && 
-        now.difference(_lastControllerCheckTime!) < const Duration(seconds: 5)) {
-      // 记录日志：禁止频繁检查
-      if (stateChanged) {
-        AppLogger.d('Screens/editor/editor_screen', '节流: 禁止5秒内重复检查控制器');
-      }
-      return false;
-    }
 
-    // 如果状态变了，深入比较关键属性是否真的变化
-    bool contentChanged = false;
+    // 检查是否刚完成加载且内容有变化 (最重要的条件)
+    bool justFinishedLoadingWithChanges = false;
+    bool contentChanged = false; // Calculate contentChanged regardless of other checks
+
     if (stateChanged && _lastEditorState != null) {
       // 检查小说结构是否有实质变化，主要比较acts和scenes的数量
       final oldNovel = _lastEditorState!.novel;
       final newNovel = state.novel;
-      
+
       // 检查更新时间戳是否变化 - 表示内容实际被修改
-      final oldTimestamp = oldNovel.updatedAt?.millisecondsSinceEpoch ?? 0;
-      final newTimestamp = newNovel.updatedAt?.millisecondsSinceEpoch ?? 0;
+      final oldTimestamp = oldNovel.updatedAt.millisecondsSinceEpoch ?? 0;
+      final newTimestamp = newNovel.updatedAt.millisecondsSinceEpoch ?? 0;
       if (oldTimestamp != newTimestamp && newTimestamp > 0) {
         contentChanged = true;
       } else {
@@ -1359,32 +1409,82 @@ class _EditorScreenState extends State<EditorScreen>
           int newSceneCount = 0;
           
           for (int i = 0; i < oldNovel.acts.length; i++) {
-            final oldAct = oldNovel.acts[i];
-            final newAct = newNovel.acts[i];
-            
-            // 检查章节数量
-            if (oldAct.chapters.length != newAct.chapters.length) {
-              contentChanged = true;
-              break;
-            }
-            
-            // 检查场景数量
-            for (int j = 0; j < oldAct.chapters.length; j++) {
-              if (j < newAct.chapters.length) {
-                oldSceneCount += oldAct.chapters[j].scenes.length;
-                newSceneCount += newAct.chapters[j].scenes.length;
+            // Check if the corresponding newAct exists before accessing it
+            if (i < newNovel.acts.length) {
+              final oldAct = oldNovel.acts[i];
+              final newAct = newNovel.acts[i];
+              
+              // 检查章节数量
+              if (oldAct.chapters.length != newAct.chapters.length) {
+                contentChanged = true;
+                break;
               }
+              
+              // 检查场景数量
+              for (int j = 0; j < oldAct.chapters.length; j++) {
+                 // Check if the corresponding newChapter exists
+                if (j < newAct.chapters.length) {
+                  oldSceneCount += oldAct.chapters[j].scenes.length;
+                  newSceneCount += newAct.chapters[j].scenes.length;
+                } else {
+                  // Chapter exists in old but not new, content changed
+                  contentChanged = true;
+                  break; // Exit inner loop
+                }
+              }
+              if (contentChanged) break; // Exit outer loop if changed
+              
+              // Check if new has more chapters than old
+              if (newAct.chapters.length > oldAct.chapters.length) {
+                 contentChanged = true;
+                 break;
+              }
+              
+            } else {
+              // Act exists in old but not new, content changed
+              contentChanged = true;
+              break; // Exit outer loop
             }
+          }
+           // Check if new has more acts than old
+          if (!contentChanged && newNovel.acts.length > oldNovel.acts.length) {
+             contentChanged = true;
           }
           
           // 如果场景总数变化，内容变化
-          if (oldSceneCount != newSceneCount) {
+          if (!contentChanged && oldSceneCount != newSceneCount) {
             contentChanged = true;
           }
         }
       }
+      
+      // *** Check if loading just finished and content actually changed ***
+      if (_lastEditorState!.isLoading && !state.isLoading && contentChanged) {
+        justFinishedLoadingWithChanges = true;
+        AppLogger.i('Screens/editor/editor_screen', '检测到加载完成且内容有变化，强制检查控制器。');
+      }
     }
 
+    // *** Bypass throttle if loading just finished with changes ***
+    if (justFinishedLoadingWithChanges) {
+       _lastControllerCheckTime = now;
+       _lastEditorState = state; // Update state reference
+       AppLogger.i('Screens/editor/editor_screen', '触发控制器检查 - 原因: 加载完成');
+       return true;
+    }
+
+    // 极端节流：如果距离上次检查时间不足5秒，且不是刚加载完成，绝对不检查
+    if (_lastControllerCheckTime != null && 
+        now.difference(_lastControllerCheckTime!) < _controllerLongCheckInterval) {
+      // 记录日志：禁止频繁检查 (仅在状态变化时记录，避免日志刷屏)
+      if (stateChanged) {
+        AppLogger.d('Screens/editor/editor_screen', '节流: 禁止${_controllerLongCheckInterval.inSeconds}秒内重复检查控制器');
+      }
+      // 更新状态引用，即使被节流也要更新，以便下次比较
+      _lastEditorState = state;
+      return false;
+    }
+    
     // 检查活动元素是否变化
     bool activeElementsChanged = false;
     if (stateChanged && _lastEditorState != null) {
@@ -1400,33 +1500,30 @@ class _EditorScreenState extends State<EditorScreen>
     
     // 定义仅在必要时重构的条件:
     // 1. 首次加载（_lastControllerCheckTime为null）
-    // 2. 内容结构变化（添加/删除场景或章节）
-    // 3. 当前正在加载状态（但不是刚从加载完成回到非加载状态，因为这通常是滚动引起的）
-    final bool needsRebuild = _lastControllerCheckTime == null || 
+    // 2. 内容结构变化（添加/删除场景或章节）- 现在由 contentChanged 处理
+    // 3. 活动元素变化
+    // 4. 时间间隔超时
+    final bool needsCheck = _lastControllerCheckTime == null || 
                            contentChanged || 
                            activeElementsChanged ||
-                           (state.isLoading && (_lastEditorState == null || !_lastEditorState!.isLoading));
-    
+                           timeIntervalExceeded; // Replace isLoading check with timeIntervalExceeded
+
     // 更新状态引用，用于下次比较
     _lastEditorState = state;
     
     // 如果需要检查，更新最后检查时间
-    if (needsRebuild || timeIntervalExceeded) {
+    if (needsCheck) {
       _lastControllerCheckTime = now;
       
       String reason;
-      if (needsRebuild) {
-        if (contentChanged) {
-          reason = "内容结构变化";
-        } else if (activeElementsChanged) {
-          reason = "活动元素变化";
-        } else if (state.isLoading) {
-          reason = "加载状态变化";
-        } else {
-          reason = "首次加载";
-        }
+      if (contentChanged) {
+        reason = '内容结构变化';
+      } else if (activeElementsChanged) {
+        reason = '活动元素变化';
+      } else if (timeIntervalExceeded) {
+         reason = '时间间隔超过(${_controllerLongCheckInterval.inSeconds}秒)';
       } else {
-        reason = "时间间隔超过(${_controllerLongCheckInterval.inSeconds}秒)";
+        reason = '首次加载';
       }
       
       AppLogger.i('Screens/editor/editor_screen', '触发控制器检查 - 原因: $reason');
@@ -1449,8 +1546,8 @@ class _EditorScreenState extends State<EditorScreen>
       final editorSyncList = await localStorageService.getSyncList('editor');
       
       final hasNovelToSync = novelSyncList.contains(novelId);
-      final hasScenesToSync = sceneSyncList.any((sceneKey) => sceneKey.startsWith('$novelId'));
-      final hasEditorToSync = editorSyncList.any((editorKey) => editorKey.startsWith('$novelId'));
+      final hasScenesToSync = sceneSyncList.any((sceneKey) => sceneKey.startsWith(novelId));
+      final hasEditorToSync = editorSyncList.any((editorKey) => editorKey.startsWith(novelId));
       
       if (hasNovelToSync || hasScenesToSync || hasEditorToSync) {
         AppLogger.i('EditorScreen', '检测到待同步内容，执行退出前同步: ${widget.novel.id}');
@@ -1469,12 +1566,23 @@ class _EditorScreenState extends State<EditorScreen>
 
   // 切换Plan视图
   void _togglePlanView() {
+    final currentState = _editorBloc.state;
+    final isPlanToWrite = _isPlanViewActive; // 如果当前是Plan视图，则将切换到Write视图
+    
     setState(() {
       _isPlanViewActive = !_isPlanViewActive;
       
       // 如果激活Plan视图，加载Plan数据
       if (_isPlanViewActive) {
         _planBloc.add(const LoadPlanContent());
+      }
+      // 如果从Plan视图切换到Write视图，确保编辑器内容正常显示
+      else if (isPlanToWrite && currentState is EditorLoaded) {
+        // --- Removed Redundant LoadMoreScenes Dispatch ---
+        // The LoadMoreScenes event dispatched from PlanView's onTap
+        // is now responsible for setting the correct target active scene.
+        // No need to reload the previous active chapter here.
+        AppLogger.i('EditorScreen', 'Switched from Plan to Write view. Scroll handled by BlocListener.');
       }
     });
   }

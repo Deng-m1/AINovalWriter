@@ -5,19 +5,7 @@ import 'package:ainoval/screens/ai_config/ai_config_management_screen.dart';
 import 'package:ainoval/screens/ai_config/widgets/ai_model_selector.dart';
 import 'package:intl/intl.dart'; // For date formatting
 
-class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final String novelTitle;
-  final int wordCount;
-  final bool isSaving;
-  final DateTime? lastSaveTime;
-  final VoidCallback onBackPressed;
-  final VoidCallback onChatPressed;
-  final bool isChatActive;
-  final VoidCallback onAiConfigPressed;
-  final bool isSettingsActive;
-  final VoidCallback onPlanPressed;
-  final bool isPlanActive;
-  final VoidCallback? onWritePressed; // 新增写作按钮回调
+class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // 新增写作按钮回调
 
   const EditorAppBar({
     super.key,
@@ -34,6 +22,18 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.isPlanActive,
     this.onWritePressed, // 新增可选参数
   });
+  final String novelTitle;
+  final int wordCount;
+  final bool isSaving;
+  final DateTime? lastSaveTime;
+  final VoidCallback onBackPressed;
+  final VoidCallback onChatPressed;
+  final bool isChatActive;
+  final VoidCallback onAiConfigPressed;
+  final bool isSettingsActive;
+  final VoidCallback onPlanPressed;
+  final bool isPlanActive;
+  final VoidCallback? onWritePressed;
 
   @override
   Widget build(BuildContext context) {

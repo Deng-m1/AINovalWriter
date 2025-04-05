@@ -375,7 +375,7 @@ class ApiClient {
            AppLogger.i('ApiClient', '[SSE Connect] 连接成功，开始接收事件，响应头: ${response.headers}');
 
            final responseBody = response.data;
-           if (responseBody == null || responseBody.stream == null) {
+           if (responseBody == null) {
               AppLogger.e('ApiClient', '[SSE Error] 响应体或流为空');
                if (!controller.isClosed) {
                  controller.addError(ApiException(-1, '[SSE Error] 响应体或流为空'));

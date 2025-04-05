@@ -13,15 +13,15 @@ class LoadEditorContent extends EditorEvent {
 
 /// 使用分页加载编辑器内容事件
 class LoadEditorContentPaginated extends EditorEvent {
-  final String novelId;
-  final String? lastEditedChapterId;
-  final int chaptersLimit;
 
   const LoadEditorContentPaginated({
     required this.novelId,
     this.lastEditedChapterId,
     this.chaptersLimit = 5,
   });
+  final String novelId;
+  final String? lastEditedChapterId;
+  final int chaptersLimit;
   
   @override
   List<Object?> get props => [novelId, lastEditedChapterId, chaptersLimit];
@@ -29,18 +29,31 @@ class LoadEditorContentPaginated extends EditorEvent {
 
 /// 加载更多场景事件
 class LoadMoreScenes extends EditorEvent {
-  final String fromChapterId;
-  final String direction; // "up" 或 "down" 或 "center"
-  final int chaptersLimit;
 
   const LoadMoreScenes({
     required this.fromChapterId,
     required this.direction,
     this.chaptersLimit = 5,
+    this.targetActId,
+    this.targetChapterId,
+    this.targetSceneId,
   });
+  final String fromChapterId;
+  final String direction; // "up" 或 "down" 或 "center"
+  final int chaptersLimit;
+  final String? targetActId;
+  final String? targetChapterId;
+  final String? targetSceneId;
   
   @override
-  List<Object?> get props => [fromChapterId, direction, chaptersLimit];
+  List<Object?> get props => [
+    fromChapterId, 
+    direction, 
+    chaptersLimit, 
+    targetActId, 
+    targetChapterId, 
+    targetSceneId
+  ];
 }
 
 class UpdateContent extends EditorEvent {

@@ -125,8 +125,8 @@ class NovelImportBloc extends Bloc<NovelImportEvent, NovelImportState> {
       
       // 立即切换到取消中状态，防止重复操作
       emit(NovelImportInProgress(
-        status: "CANCELLING", 
-        message: "正在取消导入...",
+        status: 'CANCELLING', 
+        message: '正在取消导入...',
         jobId: jobId
       ));
       

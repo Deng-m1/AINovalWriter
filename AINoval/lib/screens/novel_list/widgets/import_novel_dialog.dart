@@ -37,7 +37,7 @@ class _ImportNovelDialogState extends State<ImportNovelDialog> {
    void dispose() {
      // 确保在对话框关闭时只触发一次重置
      final state = _importBloc.state;
-     if (state is NovelImportInProgress && state.status != "CANCELLING") {
+     if (state is NovelImportInProgress && state.status != 'CANCELLING') {
        _importBloc.add(ResetImportState());
      }
      super.dispose();

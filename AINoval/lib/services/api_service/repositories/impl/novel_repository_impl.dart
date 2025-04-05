@@ -149,59 +149,6 @@ class NovelRepositoryImpl implements NovelRepository {
     }
   }
 
-  /// 更新小说
-  @override
-  Future<Novel> updateNovel(Novel novel) async {
-    try {
-      // 将前端模型转换为后端模型
-      final novelJson = {
-        'id': novel.id,
-        'title': novel.title,
-        'coverImage': novel.coverImagePath,
-        // 确保包含作者信息
-        'author': novel.author?.toJson() ??
-            {
-              'id': AppConfig.userId ?? '',
-              'username': AppConfig.username ?? 'user'
-            },
-        'structure': {
-          'acts': novel.acts
-              .map((act) => {
-                    'id': act.id,
-                    'title': act.title,
-                    'order': act.order,
-                    'chapters': act.chapters
-                        .map((chapter) => {
-                              'id': chapter.id,
-                              'title': chapter.title,
-                              'order': chapter.order,
-                              // 确保发送 scenes 以便后端处理
-                              'scenes': chapter.scenes
-                                  .map((scene) => scene.toJson())
-                                  .toList(),
-                            })
-                        .toList(),
-                  })
-              .toList(),
-        },
-      };
-
-      final data = await _apiClient.updateNovel(novelJson);
-      final updatedNovel = _convertToSingleNovel(data);
-
-      if (updatedNovel == null) {
-        throw ApiException(-1, '更新小说失败：服务器返回数据格式不正确');
-      }
-
-      return updatedNovel;
-    } catch (e) {
-      AppLogger.e(
-          'Services/api_service/repositories/impl/novel_repository_impl',
-          '更新小说失败',
-          e);
-      rethrow;
-    }
-  }
 
   /// 删除小说
   @override

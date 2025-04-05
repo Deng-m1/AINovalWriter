@@ -355,7 +355,7 @@ class _SceneEditorState extends State<SceneEditor> {
                                   ? (_editorContentKey.currentContext!
                                           .findRenderObject() as RenderBox)
                                       .size
-                                  : Size(300, 150),
+                                  : const Size(300, 150),
                               selectionRect: _selectionRect,
                               showAbove: _showToolbarAbove,
                               onClosed: () {
@@ -429,13 +429,13 @@ class _SceneEditorState extends State<SceneEditor> {
         controller: widget.controller,
         focusNode: _focusNode, // 使用编辑器的 FocusNode
         scrollController: ScrollController(), // 每个编辑器独立的滚动控制器
-        config: QuillEditorConfig(
+        config: const QuillEditorConfig(
           // 移除背景色和边框，让 Card 控制
           // decoration: BoxDecoration(...)
           minHeight: 150, // 增加最小高度
           placeholder: '开始写作...',
           padding:
-              const EdgeInsets.symmetric(vertical: 8, horizontal: 4), // 调整内部填充
+              EdgeInsets.symmetric(vertical: 8, horizontal: 4), // 调整内部填充
           enableInteractiveSelection: true, // 确保启用文本选择交互
           scrollable: true, // 确保可滚动
           showCursor: true, 
@@ -443,13 +443,13 @@ class _SceneEditorState extends State<SceneEditor> {
           expands: false, // 不自动扩展，保持控制
           customStyles: DefaultStyles(
             // 确保样式配置正确
-            bold: const TextStyle(fontWeight: FontWeight.bold),
-            italic: const TextStyle(fontStyle: FontStyle.italic),
-            underline: const TextStyle(decoration: TextDecoration.underline),
+            bold: TextStyle(fontWeight: FontWeight.bold),
+            italic: TextStyle(fontStyle: FontStyle.italic),
+            underline: TextStyle(decoration: TextDecoration.underline),
             strikeThrough:
-                const TextStyle(decoration: TextDecoration.lineThrough),
+                TextStyle(decoration: TextDecoration.lineThrough),
             // 移除不支持的自定义样式
-            link: const TextStyle(
+            link: TextStyle(
               color: Colors.blue,
               decoration: TextDecoration.underline,
             ),
@@ -728,9 +728,9 @@ class _ActionButton extends StatelessWidget {
           foregroundColor: Colors.grey.shade700,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        ).copyWith(overlayColor: MaterialStateProperty.resolveWith<Color?>(
-          (Set<MaterialState> states) {
-            if (states.contains(MaterialState.hovered)) {
+        ).copyWith(overlayColor: WidgetStateProperty.resolveWith<Color?>(
+          (Set<WidgetState> states) {
+            if (states.contains(WidgetState.hovered)) {
               return Colors.grey.shade200;
             }
             return null;

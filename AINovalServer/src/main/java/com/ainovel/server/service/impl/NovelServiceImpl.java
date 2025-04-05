@@ -404,32 +404,34 @@ public class NovelServiceImpl implements NovelService {
                         return Mono.just(emptyResult);
                     }
 
-                    // 确定要加载的章节范围
                     int fromIndex = allChapterIds.indexOf(fromChapterId);
                     List<String> chapterIdsToLoad;
 
                     if ("up".equalsIgnoreCase(direction)) {
                         // 向上加载（加载fromChapterId之前的章节）
                         int startIndex = Math.max(0, fromIndex - chaptersLimit);
-                        // 不包括fromChapterId本身，除非它是第一个
-                        chapterIdsToLoad = allChapterIds.subList(startIndex, fromIndex);
+                        chapterIdsToLoad = allChapterIds.subList(startIndex, fromIndex); // Exclude fromIndex itself
                         log.info("向上加载章节，从索引{}到{}，共{}个章节", startIndex, fromIndex, chapterIdsToLoad.size());
+                    } else if ("center".equalsIgnoreCase(direction)) {
+                        // 中心加载 (加载 fromChapterId 及其前后)
+                        int startIndex = Math.max(0, fromIndex - chaptersLimit);
+                        int endIndex = Math.min(allChapterIds.size(), fromIndex + chaptersLimit + 1); // +1 because subList end index is exclusive
+                        chapterIdsToLoad = allChapterIds.subList(startIndex, endIndex); // Include fromIndex itself
+                        log.info("中心加载章节，从索引{}到{}，共{}个章节", startIndex, endIndex, chapterIdsToLoad.size());
                     } else {
                         // 向下加载（加载fromChapterId之后的章节）
-                        int endIndex = Math.min(allChapterIds.size(), fromIndex + chaptersLimit + 1);
-                        // 不包括fromChapterId本身，除非它是最后一个
-                        if (fromIndex + 1 < endIndex) {
-                            chapterIdsToLoad = allChapterIds.subList(fromIndex + 1, endIndex);
+                        int endIndex = Math.min(allChapterIds.size(), fromIndex + chaptersLimit + 1); // +1 because subList end index is exclusive
+                        if (fromIndex + 1 < endIndex) { // Only load if there are chapters *after* fromIndex
+                            chapterIdsToLoad = allChapterIds.subList(fromIndex + 1, endIndex); // Exclude fromIndex itself
                         } else {
-                            // 已经是最后一章，没有更多内容可加载
                             chapterIdsToLoad = new ArrayList<>();
                         }
                         log.info("向下加载章节，从索引{}到{}，共{}个章节", fromIndex + 1, endIndex, chapterIdsToLoad.size());
                     }
 
-                    // 如果没有更多章节可加载，返回空结果
+                    // 如果没有章节可加载，返回空结果
                     if (chapterIdsToLoad.isEmpty()) {
-                        log.info("没有更多章节可加载，方向: {}", direction);
+                        log.info("根据方向 '{}' 计算后，没有更多章节可加载", direction);
                         Map<String, List<Scene>> emptyResult = new HashMap<>();
                         return Mono.just(emptyResult);
                     }
