@@ -8,6 +8,7 @@ import com.ainovel.server.domain.model.Novel;
 import com.ainovel.server.domain.model.Scene;
 import com.ainovel.server.domain.model.Setting;
 import com.ainovel.server.web.dto.NovelWithScenesDto;
+import com.ainovel.server.web.dto.NovelWithSummariesDto;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -146,4 +147,65 @@ public interface NovelService {
      * @return 加载的更多场景数据，按章节组织
      */
     Mono<Map<String, List<Scene>>> loadMoreScenes(String novelId, String fromChapterId, String direction, int chaptersLimit);
+
+    /**
+     * 更新卷标题
+     *
+     * @param novelId 小说ID
+     * @param actId 卷ID
+     * @param title 新标题
+     * @return 更新后的小说
+     */
+    Mono<Novel> updateActTitle(String novelId, String actId, String title);
+
+    /**
+     * 更新章节标题
+     *
+     * @param novelId 小说ID
+     * @param chapterId 章节ID
+     * @param title 新标题
+     * @return 更新后的小说
+     */
+    Mono<Novel> updateChapterTitle(String novelId, String chapterId, String title);
+
+    /**
+     * 添加新卷
+     *
+     * @param novelId 小说ID
+     * @param title 卷标题
+     * @param position 插入位置（如果为null则添加到末尾）
+     * @return 更新后的小说
+     */
+    Mono<Novel> addAct(String novelId, String title, Integer position);
+
+    /**
+     * 添加新章节
+     *
+     * @param novelId 小说ID
+     * @param actId 卷ID
+     * @param title 章节标题
+     * @param position 插入位置（如果为null则添加到末尾）
+     * @return 更新后的小说
+     */
+    Mono<Novel> addChapter(String novelId, String actId, String title, Integer position);
+
+    /**
+     * 移动场景位置
+     *
+     * @param novelId 小说ID
+     * @param sceneId 场景ID
+     * @param targetChapterId 目标章节ID
+     * @param targetPosition 目标位置
+     * @return 更新后的小说
+     */
+    Mono<Novel> moveScene(String novelId, String sceneId, String targetChapterId, int targetPosition);
+
+    /**
+     * 获取小说详情及其场景摘要（不包含场景完整内容）
+     * 适用于大纲视图，减少数据传输量
+     *
+     * @param novelId 小说ID
+     * @return 小说及其场景摘要
+     */
+    Mono<NovelWithSummariesDto> getNovelWithSceneSummaries(String novelId);
 }

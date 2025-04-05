@@ -7,6 +7,7 @@ import 'package:ainoval/services/api_service/repositories/editor_repository.dart
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/utils/date_time_parser.dart';
 import 'package:ainoval/utils/logger.dart';
+import 'dart:convert';
 
 /// 编辑器仓库实现
 class EditorRepositoryImpl implements EditorRepository {
@@ -22,6 +23,11 @@ class EditorRepositoryImpl implements EditorRepository {
   /// 获取本地存储服务
   LocalStorageService getLocalStorageService() {
     return _localStorageService;
+  }
+
+  /// 获取API客户端
+  ApiClient getApiClient() {
+    return _apiClient;
   }
 
   /// 获取编辑器内容
@@ -57,7 +63,42 @@ class EditorRepositoryImpl implements EditorRepository {
 
       final novelId = parts[0];
       final chapterId = parts[1];
-      await _apiClient.saveEditorContent(novelId, chapterId, content.toJson());
+
+      // 先保存到本地
+      await _localStorageService.saveEditorContent(content);
+      AppLogger.i('EditorRepositoryImpl/saveEditorContent',
+          '编辑器内容已保存到本地: ${content.id}');
+      
+      // 检查是否为当前小说
+      final currentNovelId = await _localStorageService.getCurrentNovelId();
+      if (currentNovelId == novelId) {
+        // 标记为需要同步
+        final syncKey = '${novelId}_$chapterId';
+        await _localStorageService.markForSyncByType(syncKey, 'editor');
+        AppLogger.i('EditorRepositoryImpl/saveEditorContent',
+            '编辑器内容标记为待同步: $syncKey');
+
+        try {
+          // 上传到服务器
+          await _apiClient.saveEditorContent(novelId, chapterId, content.toJson());
+          AppLogger.i('EditorRepositoryImpl/saveEditorContent',
+              '编辑器内容已同步到服务器: ${content.id}');
+
+          // 清除同步标记
+          await _localStorageService.clearSyncFlagByType('editor', syncKey);
+          AppLogger.i('EditorRepositoryImpl/saveEditorContent',
+              '编辑器内容同步标记已清除: $syncKey');
+        } catch (e) {
+          AppLogger.e(
+              'Services/api_service/repositories/impl/editor_repository_impl',
+              '保存编辑器内容到服务器失败，但已保存到本地',
+              e);
+        }
+      } else {
+        AppLogger.i(
+            'EditorRepositoryImpl/saveEditorContent', 
+            '编辑器内容不属于当前编辑的小说，跳过同步: ${content.id}, 当前小说ID: $currentNovelId');
+      }
     } catch (e) {
       AppLogger.e(
           'Services/api_service/repositories/impl/editor_repository_impl',
@@ -481,30 +522,39 @@ class EditorRepositoryImpl implements EditorRepository {
       localSaveSuccess = true;
       AppLogger.i('EditorRepositoryImpl/saveNovel', '小说已保存到本地: ${novel.id}');
 
-      await _localStorageService.markForSyncByType(novel.id, 'novel');
-      AppLogger.i('EditorRepositoryImpl/saveNovel', '小说标记为待同步: ${novel.id}');
+      // 检查是否为当前小说，只同步当前小说
+      final currentNovelId = await _localStorageService.getCurrentNovelId();
+      if (currentNovelId == novel.id) {
+        await _localStorageService.markForSyncByType(novel.id, 'novel');
+        AppLogger.i('EditorRepositoryImpl/saveNovel', '小说标记为待同步: ${novel.id}');
+      } else {
+        AppLogger.i('EditorRepositoryImpl/saveNovel', '小说不是当前编辑的小说，跳过同步标记: ${novel.id}, 当前小说ID: $currentNovelId');
+      }
 
       try {
-        final Map<String, dynamic> backendNovelJson =
-            _convertFrontendNovelToBackendJson(novel);
-        Map<String, List<Map<String, dynamic>>> scenesByChapter = {};
-        for (final act in novel.acts) {
-          for (final chapter in act.chapters) {
-            if (chapter.scenes.isNotEmpty) {
-              scenesByChapter[chapter.id] = chapter.scenes
-                  .map((scene) => _convertFrontendSceneToBackendJson(
-                      scene, novel.id, chapter.id))
-                  .toList();
+        // 只有当前小说才实时同步到服务器
+        if (currentNovelId == novel.id) {
+          final Map<String, dynamic> backendNovelJson =
+              _convertFrontendNovelToBackendJson(novel);
+          Map<String, List<Map<String, dynamic>>> scenesByChapter = {};
+          for (final act in novel.acts) {
+            for (final chapter in act.chapters) {
+              if (chapter.scenes.isNotEmpty) {
+                scenesByChapter[chapter.id] = chapter.scenes
+                    .map((scene) => _convertFrontendSceneToBackendJson(
+                        scene, novel.id, chapter.id))
+                    .toList();
+              }
             }
           }
-        }
-        final novelWithScenesJson = {
-          'novel': backendNovelJson,
-          'scenesByChapter': scenesByChapter,
-        };
+          final novelWithScenesJson = {
+            'novel': backendNovelJson,
+            'scenesByChapter': scenesByChapter,
+          };
 
-        await _apiClient.updateNovelWithScenes(novelWithScenesJson);
-        AppLogger.i('EditorRepositoryImpl/saveNovel', '小说已同步到服务器: ${novel.id}');
+          await _apiClient.updateNovelWithScenes(novelWithScenesJson);
+          AppLogger.i('EditorRepositoryImpl/saveNovel', '小说已同步到服务器: ${novel.id}');
+        }
 
         return true;
       } catch (e) {
@@ -672,43 +722,50 @@ class EditorRepositoryImpl implements EditorRepository {
       AppLogger.i(
           'EditorRepositoryImpl/saveSceneContent', '场景内容已保存到本地: $sceneKey');
 
-      // 标记为需要同步
-      await _localStorageService.markForSyncByType(sceneKey, 'scene');
-      AppLogger.i(
-          'EditorRepositoryImpl/saveSceneContent', '场景标记为待同步: $sceneKey');
-
-      try {
-        final Map<String, dynamic> backendSceneJson =
-            _convertFrontendSceneToBackendJson(
-                updatedScene, novelId, chapterId);
-
-        // 同步到服务器
-        await _apiClient.updateScene(backendSceneJson);
+      // 检查是否为当前小说，只同步当前小说
+      final currentNovelId = await _localStorageService.getCurrentNovelId();
+      if (currentNovelId == novelId) {
+        // 标记为需要同步
+        await _localStorageService.markForSyncByType(sceneKey, 'scene');
         AppLogger.i(
-            'EditorRepositoryImpl/saveSceneContent', '场景已同步到服务器: $sceneKey');
+            'EditorRepositoryImpl/saveSceneContent', '场景标记为待同步: $sceneKey');
 
-        // 清除该场景的同步标记，表示已完成同步
-        await _localStorageService.clearSyncFlagByType('scene', sceneKey);
-        AppLogger.i(
-            'EditorRepositoryImpl/saveSceneContent', '场景同步标记已清除: $sceneKey');
+        try {
+          final Map<String, dynamic> backendSceneJson =
+              _convertFrontendSceneToBackendJson(
+                  updatedScene, novelId, chapterId);
 
+          // 同步到服务器
+          await _apiClient.updateScene(backendSceneJson);
+          AppLogger.i(
+              'EditorRepositoryImpl/saveSceneContent', '场景已同步到服务器: $sceneKey');
+
+          // 清除该场景的同步标记，表示已完成同步
+          await _localStorageService.clearSyncFlagByType('scene', sceneKey);
+          AppLogger.i(
+              'EditorRepositoryImpl/saveSceneContent', '场景同步标记已清除: $sceneKey');
+        } catch (e) {
+          AppLogger.e(
+              'Services/api_service/repositories/impl/editor_repository_impl/saveSceneContent',
+              '保存场景内容到服务器失败，但已保存到本地',
+              e);
+        }
+        
+        // 仅当场景属于当前小说时才更新小说字数统计
         // 更新小说缓存中的字数统计
         await _updateNovelWordCount(
             novelId, actId, chapterId, sceneId, currentWordCount);
-
+        
         // 添加额外的日志记录，帮助调试字数更新
         AppLogger.i('EditorRepositoryImpl/saveSceneContent',
             '保存完成 - 当前场景字数为: $currentWordCount, 场景ID: $sceneId');
-
-        // 确保已更新的Scene被返回
-        return updatedScene;
-      } catch (e) {
-        AppLogger.e(
-            'Services/api_service/repositories/impl/editor_repository_impl/saveSceneContent',
-            '保存场景内容到服务器失败，但已保存到本地',
-            e);
+      } else {
+        AppLogger.i(
+            'EditorRepositoryImpl/saveSceneContent', 
+            '场景不属于当前编辑的小说，跳过同步和字数统计更新: $sceneKey, 当前小说ID: $currentNovelId');
       }
 
+      // 确保已更新的Scene被返回
       return updatedScene;
     } catch (e) {
       AppLogger.e(
@@ -757,10 +814,19 @@ class EditorRepositoryImpl implements EditorRepository {
         updatedAt: DateTime.now(),
       );
 
-      // 保存更新后的小说
+      // 直接保存到本地，不触发同步标记
+      // 这是因为场景已经单独被标记为同步，不需要重复标记整本小说
       await _localStorageService.saveNovel(updatedNovel);
-      AppLogger.i('EditorRepositoryImpl/_updateNovelWordCount',
-          '已更新小说 $novelId 中场景 $sceneId 的字数统计为 $wordCount');
+      
+      // 检查当前小说ID，只记录日志，不触发同步
+      final currentNovelId = await _localStorageService.getCurrentNovelId();
+      if (currentNovelId == novelId) {
+        AppLogger.i('EditorRepositoryImpl/_updateNovelWordCount',
+            '已更新当前小说 $novelId 中场景 $sceneId 的字数统计为 $wordCount');
+      } else {
+        AppLogger.i('EditorRepositoryImpl/_updateNovelWordCount',
+            '已更新非当前小说 $novelId 中场景 $sceneId 的字数统计为 $wordCount (当前小说: $currentNovelId)，不触发同步');
+      }
     } catch (e, stackTrace) {
       AppLogger.e('EditorRepositoryImpl/_updateNovelWordCount', '更新小说字数统计失败', e,
           stackTrace);
@@ -795,47 +861,55 @@ class EditorRepositoryImpl implements EditorRepository {
         lastEdited: DateTime.now(),
       );
 
+      // 直接保存到本地，不触发同步
       await _localStorageService.saveSceneContent(
           novelId, actId, chapterId, sceneId, updatedScene);
       AppLogger.i(
           'EditorRepositoryImpl/saveSummary', '场景摘要已更新并保存到本地: $sceneKey');
 
-      await _localStorageService.markForSyncByType(sceneKey, 'scene');
-      AppLogger.i(
-          'EditorRepositoryImpl/saveSummary', '场景标记为待同步 (摘要更新): $sceneKey');
-
-      try {
-        final Map<String, dynamic> backendSceneJson =
-            _convertFrontendSceneToBackendJson(
-                updatedScene, novelId, chapterId);
-
-        await _apiClient.updateScene(backendSceneJson);
+      // 检查是否为当前小说，只同步当前小说
+      final currentNovelId = await _localStorageService.getCurrentNovelId();
+      if (currentNovelId == novelId) {
+        await _localStorageService.markForSyncByType(sceneKey, 'scene');
         AppLogger.i(
-            'EditorRepositoryImpl/saveSummary', '场景摘要更新已同步到服务器: $sceneKey');
-      } catch (e) {
-        AppLogger.e(
-            'Services/api_service/repositories/impl/editor_repository_impl/saveSummary',
-            '保存摘要到服务器失败(通过更新场景)，但已保存到本地',
-            e);
+            'EditorRepositoryImpl/saveSummary', '场景标记为待同步 (摘要更新): $sceneKey');
+
+        try {
+          final Map<String, dynamic> backendSceneJson =
+              _convertFrontendSceneToBackendJson(
+                  updatedScene, novelId, chapterId);
+
+          await _apiClient.updateScene(backendSceneJson);
+          AppLogger.i(
+              'EditorRepositoryImpl/saveSummary', '场景摘要更新已同步到服务器: $sceneKey');
+          
+          // 清除该场景的同步标记，表示已完成同步
+          await _localStorageService.clearSyncFlagByType('scene', sceneKey);
+          AppLogger.i(
+              'EditorRepositoryImpl/saveSummary', '场景同步标记已清除: $sceneKey');
+        } catch (e) {
+          AppLogger.e(
+              'Services/api_service/repositories/impl/editor_repository_impl/saveSummary',
+              '保存摘要到服务器失败(通过更新场景)，但已保存到本地',
+              e);
+        }
+        
+        // 如果未来需要更新字数统计，应该放在这里
+        
+      } else {
+        AppLogger.i(
+            'EditorRepositoryImpl/saveSummary', 
+            '场景不属于当前编辑的小说，跳过同步: $sceneKey, 当前小说ID: $currentNovelId');
       }
 
       return updatedSummary;
-    } catch (e) {
-      if (scene == null && !(e is ApiException && e.statusCode == 404)) {
-        AppLogger.e(
-            'Services/api_service/repositories/impl/editor_repository_impl/saveSummary',
-            '获取场景失败，无法保存摘要',
-            e);
-        throw ApiException(-1, '获取场景失败，无法保存摘要: $e');
-      } else if (scene != null) {
-        AppLogger.e(
-            'Services/api_service/repositories/impl/editor_repository_impl/saveSummary',
-            '保存摘要到本地存储失败',
-            e);
-        throw ApiException(-1, '保存摘要失败 (本地): $e');
-      } else {
-        rethrow;
+    } catch (e, stackTrace) {
+      AppLogger.e('EditorRepositoryImpl/saveSummary',
+          '保存场景摘要失败: $sceneKey', e, stackTrace);
+      if (scene != null) {
+        return scene.summary;
       }
+      throw ApiException(-1, '保存场景摘要失败: $e');
     }
   }
 
@@ -915,6 +989,358 @@ class EditorRepositoryImpl implements EditorRepository {
           '保存编辑器设置到本地失败',
           e);
       throw ApiException(-1, '保存编辑器设置失败: $e');
+    }
+  }
+
+  /// 获取小说数据（包含场景摘要，适用于Plan视图）
+  @override
+  Future<Novel?> getNovelWithSceneSummaries(String novelId) async {
+    try {
+      // 使用专门的API端点获取场景摘要
+      final data = await _apiClient.getNovelWithSceneSummaries(novelId);
+      
+      if (data == null) {
+        AppLogger.e(
+            'Services/api_service/repositories/impl/editor_repository_impl',
+            '获取小说(带场景摘要)失败: 返回null');
+        return null;
+      }
+      
+      // 转换后端数据为前端模型
+      return _convertBackendNovelWithSummariesToFrontend(data);
+    } catch (e) {
+      AppLogger.e(
+          'Services/api_service/repositories/impl/editor_repository_impl',
+          '获取小说(带场景摘要)失败',
+          e);
+      return null;
+    }
+  }
+  
+  /// 移动场景（用于Plan视图的拖拽功能）
+  Future<Novel?> moveScene(
+    String novelId,
+    String sourceActId,
+    String sourceChapterId,
+    String sourceSceneId,
+    String targetActId,
+    String targetChapterId,
+    int targetIndex,
+  ) async {
+    try {
+      // 调用API移动场景
+      final data = await _apiClient.moveScene(
+        novelId,
+        sourceActId,
+        sourceChapterId,
+        sourceSceneId,
+        targetActId,
+        targetChapterId,
+        targetIndex,
+      );
+      
+      if (data == null) {
+        AppLogger.e(
+            'Services/api_service/repositories/impl/editor_repository_impl',
+            '移动场景失败: 返回null');
+        return null;
+      }
+      
+      // 转换后端数据为前端模型
+      return _convertBackendNovelWithScenesToFrontend(data);
+    } catch (e) {
+      AppLogger.e(
+          'Services/api_service/repositories/impl/editor_repository_impl',
+          '移动场景失败',
+          e);
+      return null;
+    }
+  }
+
+  /// 更新Act标题
+  Future<void> updateActTitle(
+    String novelId,
+    String actId,
+    String title,
+  ) async {
+    try {
+      final data = {
+        'novelId': novelId,
+        'actId': actId,
+        'title': title,
+      };
+      
+      await _apiClient.post('/novels/update-act-title', data: data);
+    } catch (e) {
+      AppLogger.e('EditorRepositoryImpl', '更新Act标题失败', e);
+      throw ApiException(-1, '更新Act标题失败: $e');
+    }
+  }
+
+  /// 更新Chapter标题
+  Future<void> updateChapterTitle(
+    String novelId,
+    String actId,
+    String chapterId,
+    String title,
+  ) async {
+    try {
+      final data = {
+        'novelId': novelId,
+        'actId': actId,
+        'chapterId': chapterId,
+        'title': title,
+      };
+      
+      await _apiClient.post('/novels/update-chapter-title', data: data);
+    } catch (e) {
+      AppLogger.e('EditorRepositoryImpl', '更新Chapter标题失败', e);
+      throw ApiException(-1, '更新Chapter标题失败: $e');
+    }
+  }
+
+  /// 更新场景摘要
+  Future<void> updateSummary(
+    String novelId,
+    String actId,
+    String chapterId,
+    String sceneId,
+    String summary,
+  ) async {
+    try {
+      final data = {
+        'novelId': novelId,
+        'actId': actId,
+        'chapterId': chapterId,
+        'sceneId': sceneId,
+        'summary': summary,
+      };
+      
+      await _apiClient.post('/novels/update-scene-summary', data: data);
+    } catch (e) {
+      AppLogger.e('EditorRepositoryImpl', '更新场景摘要失败', e);
+      throw ApiException(-1, '更新场景摘要失败: $e');
+    }
+  }
+
+  /// 添加新Act
+  Future<Novel?> addNewAct(String novelId, String title) async {
+    try {
+      final data = {
+        'novelId': novelId,
+        'title': title,
+      };
+      
+      final response = await _apiClient.post('/novels/add-act', data: data);
+      if (response != null) {
+        return _convertBackendNovelWithScenesToFrontend(response);
+      }
+      return null;
+    } catch (e) {
+      AppLogger.e('EditorRepositoryImpl', '添加新Act失败', e);
+      throw ApiException(-1, '添加新Act失败: $e');
+    }
+  }
+
+  /// 添加新Chapter
+  Future<Novel?> addNewChapter(
+    String novelId,
+    String actId,
+    String title,
+  ) async {
+    try {
+      final data = {
+        'novelId': novelId,
+        'actId': actId,
+        'title': title,
+      };
+      
+      final response = await _apiClient.post('/novels/add-chapter', data: data);
+      if (response != null) {
+        return _convertBackendNovelWithScenesToFrontend(response);
+      }
+      return null;
+    } catch (e) {
+      AppLogger.e('EditorRepositoryImpl', '添加新Chapter失败', e);
+      throw ApiException(-1, '添加新Chapter失败: $e');
+    }
+  }
+
+  /// 添加新Scene
+  Future<Novel?> addNewScene(
+    String novelId,
+    String actId,
+    String chapterId,
+  ) async {
+    try {
+      final data = {
+        'novelId': novelId,
+        'actId': actId,
+        'chapterId': chapterId,
+      };
+      
+      final response = await _apiClient.post('/novels/add-scene', data: data);
+      if (response != null) {
+        return _convertBackendNovelWithScenesToFrontend(response);
+      }
+      return null;
+    } catch (e) {
+      AppLogger.e('EditorRepositoryImpl', '添加新Scene失败', e);
+      throw ApiException(-1, '添加新Scene失败: $e');
+    }
+  }
+
+  /// 删除场景
+  Future<Novel?> deleteScene(
+    String novelId,
+    String actId,
+    String chapterId,
+    String sceneId,
+  ) async {
+    try {
+      final data = {
+        'novelId': novelId,
+        'actId': actId,
+        'chapterId': chapterId,
+        'sceneId': sceneId,
+      };
+      
+      final response = await _apiClient.post('/novels/delete-scene', data: data);
+      if (response != null) {
+        return _convertBackendNovelWithScenesToFrontend(response);
+      }
+      return null;
+    } catch (e) {
+      AppLogger.e('EditorRepositoryImpl', '删除场景失败', e);
+      throw ApiException(-1, '删除场景失败: $e');
+    }
+  }
+
+  /// 将后端返回的带场景摘要的小说数据转换为前端模型
+  Novel _convertBackendNovelWithSummariesToFrontend(
+      Map<String, dynamic> backendData) {
+    try {
+      // 提取小说基本信息
+      final backendNovel = backendData['novel'];
+
+      // 提取所有场景摘要数据，按章节ID分组
+      final Map<String, List<dynamic>> summariesByChapter =
+          backendData['sceneSummariesByChapter'] != null
+              ? Map<String, List<dynamic>>.from(backendData['sceneSummariesByChapter'])
+              : {};
+
+      // 提取作者信息
+      Author? author;
+      if (backendNovel.containsKey('author') &&
+          backendNovel['author'] != null) {
+        final authorData = backendNovel['author'];
+        if (!authorData.containsKey('username') || authorData['username'] == null){
+           authorData['username']='unknown';
+        }
+        if (authorData.containsKey('id') && authorData['id'] != null) {
+          author = Author(
+            id: authorData['id'],
+            username: authorData['username'] ?? 'unknown',
+          );
+        }
+      }
+
+      // 提取Acts和Chapters
+      List<Act> acts = [];
+      if (backendNovel.containsKey('structure') &&
+          backendNovel['structure'] is Map &&
+          (backendNovel['structure'] as Map).containsKey('acts')) {
+        acts =
+            ((backendNovel['structure'] as Map)['acts'] as List).map((actData) {
+          // 转换章节
+          List<Chapter> chapters = [];
+          if (actData.containsKey('chapters') && actData['chapters'] is List) {
+            chapters = (actData['chapters'] as List).map((chapterData) {
+              final chapterId = chapterData['id'];
+              // 从summariesByChapter获取该章节的所有场景摘要
+              List<Scene> scenes = [];
+
+              // 检查是否有该章节的场景摘要数据
+              if (summariesByChapter.containsKey(chapterId) &&
+                  summariesByChapter[chapterId] is List) {
+                scenes = (summariesByChapter[chapterId] as List).map((summaryData) {
+                  // 将摘要数据转换为Scene对象，但不包含完整内容
+                  return Scene(
+                    id: summaryData['id'],
+                    content: '', // 不包含完整内容
+                    wordCount: summaryData['wordCount'] ?? 0,
+                    summary: Summary(
+                      id: '${summaryData['id']}_summary',
+                      content: summaryData['summary'] ?? '',
+                    ),
+                    lastEdited: parseBackendDateTime(summaryData['updatedAt']),
+                    version: 1,
+                    history: [],
+                  );
+                }).toList();
+                
+                // 按序列号排序
+                scenes.sort((a, b) {
+                  final seqA = (summariesByChapter[chapterId] as List)
+                      .firstWhere((s) => s['id'] == a.id)['sequence'] ?? 0;
+                  final seqB = (summariesByChapter[chapterId] as List)
+                      .firstWhere((s) => s['id'] == b.id)['sequence'] ?? 0;
+                  return seqA.compareTo(seqB);
+                });
+              }
+              
+              return Chapter(
+                id: chapterId,
+                title: chapterData['title'],
+                order: chapterData['order'],
+                scenes: scenes,
+              );
+            }).toList();
+          }
+          return Act(
+            id: actData['id'],
+            title: actData['title'],
+            order: actData['order'],
+            chapters: chapters,
+          );
+        }).toList();
+      }
+
+      // 解析时间
+      DateTime createdAt;
+      DateTime updatedAt;
+
+      try {
+        createdAt = backendNovel.containsKey('createdAt')
+            ? DateTime.parse(backendNovel['createdAt'])
+            : DateTime.now();
+      } catch (e) {
+        createdAt = DateTime.now();
+      }
+
+      try {
+        updatedAt = backendNovel.containsKey('updatedAt')
+            ? DateTime.parse(backendNovel['updatedAt'])
+            : DateTime.now();
+      } catch (e) {
+        updatedAt = DateTime.now();
+      }
+
+      // 创建Novel对象
+      return Novel(
+        id: backendNovel['id'],
+        title: backendNovel['title'] ?? '无标题',
+        coverImagePath: backendNovel['coverImage'] ?? '',
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        acts: acts,
+        lastEditedChapterId: backendNovel['lastEditedChapterId'],
+        author: author,
+      );
+    } catch (e) {
+      AppLogger.e('_convertBackendNovelWithSummariesToFrontend',
+          '转换后端NovelWithSummariesDto模型为前端Novel模型失败', e);
+      rethrow;
     }
   }
 }

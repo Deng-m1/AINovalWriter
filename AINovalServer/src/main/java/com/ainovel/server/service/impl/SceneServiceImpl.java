@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -256,27 +257,27 @@ public class SceneServiceImpl implements SceneService {
                     if (scene.getContent() != null && scene.getContent().equals(content)) {
                         return Mono.just(scene);
                     }
-                    
+
                     // 保存当前内容到历史
                     HistoryEntry entry = new HistoryEntry();
                     entry.setUpdatedAt(LocalDateTime.now());
                     entry.setContent(scene.getContent());
                     entry.setUpdatedBy(userId);
                     entry.setReason(reason != null ? reason : "修改内容");
-                    
+
                     // 确保历史记录存在
                     if (scene.getHistory() == null) {
                         scene.setHistory(new ArrayList<>());
                     }
-                    
+
                     // 添加历史记录
                     scene.getHistory().add(entry);
-                    
+
                     // 更新内容和版本
                     scene.setContent(content);
                     scene.setVersion(scene.getVersion() + 1);
                     scene.setUpdatedAt(LocalDateTime.now());
-                    
+
                     // 保存到数据库
                     return sceneRepository.save(scene)
                             .flatMap(savedScene -> {
@@ -384,5 +385,72 @@ public class SceneServiceImpl implements SceneService {
 
                     return diff;
                 });
+    }
+
+    @Override
+    public Mono<Boolean> deleteSceneById(String id) {
+        return sceneRepository.findById(id)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景不存在: " + id)))
+                .flatMap(scene -> sceneRepository.delete(scene)
+                .then(Mono.just(true)))
+                .onErrorResume(e -> {
+                    if (e instanceof ResourceNotFoundException) {
+                        // 如果场景不存在，返回false
+                        return Mono.just(false);
+                    }
+                    // 其他错误继续传播
+                    return Mono.error(e);
+                });
+    }
+
+    @Override
+    public Mono<Scene> updateSummary(String id, String summaryText) {
+        return sceneRepository.findById(id)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景不存在: " + id)))
+                .flatMap(scene -> {
+                    // 如果场景没有摘要，创建一个新的
+
+                    if (summaryText != null) {
+                        scene.setSummary(summaryText);
+                    }
+                    // 更新场景
+                    scene.setUpdatedAt(LocalDateTime.now());
+                    return sceneRepository.save(scene);
+                });
+    }
+
+    @Override
+    public Mono<Scene> addScene(String novelId, String chapterId, String title, String summaryText, Integer position) {
+        // 创建新场景
+        Scene newScene = new Scene();
+        newScene.setId(UUID.randomUUID().toString());
+        newScene.setNovelId(novelId);
+        newScene.setChapterId(chapterId);
+        newScene.setTitle(title);
+        newScene.setContent(""); // 初始内容为空
+        newScene.setCreatedAt(LocalDateTime.now());
+        newScene.setUpdatedAt(LocalDateTime.now());
+        newScene.setVersion(1);
+        newScene.setSummary(summaryText);
+
+        if (position != null) {
+            newScene.setSequence(position);
+            return createScene(newScene);
+        } else {
+            // 查找当前章节中最大的场景序号
+            return sceneRepository.findByChapterIdOrderBySequenceAsc(chapterId)
+                    .collectList()
+                    .flatMap(scenes -> {
+                        int sequence = 0;
+                        if (!scenes.isEmpty()) {
+                            sequence = scenes.stream()
+                                    .mapToInt(Scene::getSequence)
+                                    .max()
+                                    .orElse(-1) + 1;
+                        }
+                        newScene.setSequence(sequence);
+                        return createScene(newScene);
+                    });
+        }
     }
 }

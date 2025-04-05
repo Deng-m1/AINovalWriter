@@ -15,6 +15,9 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool isChatActive;
   final VoidCallback onAiConfigPressed;
   final bool isSettingsActive;
+  final VoidCallback onPlanPressed;
+  final bool isPlanActive;
+  final VoidCallback? onWritePressed; // 新增写作按钮回调
 
   const EditorAppBar({
     super.key,
@@ -27,6 +30,9 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.isChatActive,
     required this.onAiConfigPressed,
     required this.isSettingsActive,
+    required this.onPlanPressed,
+    required this.isPlanActive,
+    this.onWritePressed, // 新增可选参数
   });
 
   @override
@@ -47,23 +53,63 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
     final String wordCountText = '${wordCount.toString()} 字';
 
     return AppBar(
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back),
-        tooltip: materialL10n.backButtonTooltip,
-        onPressed: onBackPressed,
-        splashRadius: 22, // 统一点击反馈范围
+      titleSpacing: 0, 
+      automaticallyImplyLeading: false, // 禁用自动leading按钮
+      title: Row(
+        children: [
+          // 返回按钮
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            splashRadius: 22,
+            onPressed: onBackPressed,
+          ),
+          
+          // 左对齐的功能图标区域
+          Row(
+            children: [
+              // 大纲按钮
+              _buildNavButton(
+                context: context,
+                icon: Icons.view_kanban_outlined,
+                label: '大纲',
+                isActive: isPlanActive,
+                onPressed: onPlanPressed,
+              ),
+              
+              // 写作按钮
+              _buildNavButton(
+                context: context,
+                icon: Icons.edit_outlined,
+                label: '写作',
+                isActive: !isPlanActive, // 写作状态与Plan状态相反
+                onPressed: onWritePressed ?? () {},
+              ),
+              
+              // 设置按钮
+              _buildNavButton(
+                context: context,
+                icon: Icons.settings_outlined,
+                label: '设置',
+                isActive: isSettingsActive,
+                onPressed: onAiConfigPressed,
+              ),
+              
+              // 聊天按钮
+              _buildNavButton(
+                context: context,
+                icon: Icons.chat_bubble_outline,
+                label: '聊天',
+                isActive: isChatActive,
+                onPressed: onChatPressed,
+              ),
+            ],
+          ),
+        ],
       ),
-      title: Text(
-        novelTitle,
-        style: theme.textTheme.titleMedium
-            ?.copyWith(fontWeight: FontWeight.w500), // 调整标题样式
-        overflow: TextOverflow.ellipsis, // 防止标题过长
-      ),
-      titleSpacing: 0, // 调整标题和 leading 之间的间距
       actions: [
         // Word Count and Save Status
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12.0), // 调整内边距
+          padding: const EdgeInsets.only(right: 16.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -77,13 +123,13 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    wordCountText, // 使用计算好的字数文本
+                    wordCountText,
                     style: theme.textTheme.bodyMedium
                         ?.copyWith(fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
-              const SizedBox(height: 2), // 微调间距
+              const SizedBox(height: 2),
               Row(
                 children: [
                   Icon(
@@ -107,41 +153,8 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
             ],
           ),
         ),
-
-        // AI Config/Settings Button
-        IconButton(
-          icon: const Icon(Icons.settings_outlined, size: 22), // 统一图标大小
-          tooltip: '设置',
-          splashRadius: 22, // 统一点击反馈范围
-          style: IconButton.styleFrom(
-            foregroundColor: isSettingsActive
-                ? theme.colorScheme.primary
-                : theme.colorScheme.onSurfaceVariant,
-            backgroundColor: isSettingsActive
-                ? theme.colorScheme.primaryContainer.withOpacity(0.3)
-                : Colors.transparent,
-          ),
-          onPressed: onAiConfigPressed,
-        ),
-
-        // Chat Button
-        IconButton(
-          icon: const Icon(Icons.chat_bubble_outline, size: 22),
-          tooltip: '打开/关闭 AI 聊天',
-          splashRadius: 22,
-          style: IconButton.styleFrom(
-            foregroundColor: isChatActive
-                ? theme.colorScheme.primary
-                : theme.colorScheme.onSurfaceVariant,
-            backgroundColor: isChatActive
-                ? theme.colorScheme.primaryContainer.withOpacity(0.3)
-                : Colors.transparent,
-          ),
-          onPressed: onChatPressed,
-        ),
-        const SizedBox(width: 12), // 调整末尾间距
       ],
-      elevation: 0, // 4. 去除阴影
+      elevation: 0,
       shape: Border(
         bottom: BorderSide(
           color: theme.dividerColor,
@@ -150,6 +163,49 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget {
       ),
       backgroundColor: theme.colorScheme.surface,
       foregroundColor: theme.colorScheme.onSurface,
+    );
+  }
+  
+  // 构建导航按钮的辅助方法
+  Widget _buildNavButton({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required VoidCallback onPressed,
+  }) {
+    final theme = Theme.of(context);
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+      child: TextButton.icon(
+        icon: Icon(
+          icon,
+          size: 20,
+          color: isActive
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+        label: Text(
+          label,
+          style: TextStyle(
+            color: isActive
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurfaceVariant,
+            fontSize: 14,
+          ),
+        ),
+        style: TextButton.styleFrom(
+          backgroundColor: isActive
+              ? theme.colorScheme.primaryContainer.withOpacity(0.3)
+              : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(6),
+          ),
+        ),
+        onPressed: onPressed,
+      ),
     );
   }
 

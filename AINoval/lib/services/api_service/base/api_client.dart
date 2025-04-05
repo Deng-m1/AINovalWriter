@@ -1325,4 +1325,55 @@ class ApiClient {
   void dispose() {
     _dio.close();
   }
+
+  /// 获取小说的场景摘要数据（用于Plan视图）
+  /// 
+  /// 与完整场景数据不同，只包含摘要信息，减少数据传输量
+  Future<Map<String, dynamic>?> getNovelWithSceneSummaries(String novelId) async {
+    try {
+      final response = await _dio.post('/novels//get-with-scene-summaries', 
+          data: {
+            'id': novelId,
+          });
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取小说场景摘要数据失败: $novelId', e);
+      return null;
+    }
+  }
+
+  /// 移动场景（用于Plan视图拖拽功能）
+  Future<Map<String, dynamic>?> moveScene(
+    String novelId,
+    String sourceActId,
+    String sourceChapterId,
+    String sourceSceneId,
+    String targetActId,
+    String targetChapterId,
+    int targetIndex,
+  ) async {
+    try {
+      final data = {
+        'sourceActId': sourceActId,
+        'sourceChapterId': sourceChapterId,
+        'sourceSceneId': sourceSceneId,
+        'targetActId': targetActId,
+        'targetChapterId': targetChapterId,
+        'targetIndex': targetIndex,
+      };
+      
+      final response = await _dio.post(
+        '/novels/$novelId/scenes/move',
+        data: data,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '移动场景失败: $novelId', e);
+      return null;
+    }
+  }
 }

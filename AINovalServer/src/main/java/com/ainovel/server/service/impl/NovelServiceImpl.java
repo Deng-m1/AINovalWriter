@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -12,12 +13,17 @@ import org.springframework.stereotype.Service;
 import com.ainovel.server.common.exception.ResourceNotFoundException;
 import com.ainovel.server.domain.model.Character;
 import com.ainovel.server.domain.model.Novel;
+import com.ainovel.server.domain.model.Novel.Act;
+import com.ainovel.server.domain.model.Novel.Chapter;
+import com.ainovel.server.domain.model.Novel.Structure;
 import com.ainovel.server.domain.model.Scene;
 import com.ainovel.server.domain.model.Setting;
 import com.ainovel.server.repository.NovelRepository;
 import com.ainovel.server.repository.SceneRepository;
 import com.ainovel.server.service.NovelService;
 import com.ainovel.server.web.dto.NovelWithScenesDto;
+import com.ainovel.server.web.dto.NovelWithSummariesDto;
+import com.ainovel.server.web.dto.SceneSummaryDto;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -448,5 +454,326 @@ public class NovelServiceImpl implements NovelService {
                 })
                 .doOnSuccess(result -> log.info("加载更多场景成功，加载章节数: {}", result.size()))
                 .doOnError(e -> log.error("加载更多场景失败", e));
+    }
+
+    @Override
+    public Mono<Novel> updateActTitle(String novelId, String actId, String title) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取小说结构
+                    Structure structure = novel.getStructure();
+                    if (structure == null || structure.getActs() == null) {
+                        return Mono.error(new ResourceNotFoundException("小说结构不存在", novelId));
+                    }
+
+                    // 查找指定的卷
+                    boolean actFound = false;
+                    for (Act act : structure.getActs()) {
+                        if (act.getId().equals(actId)) {
+                            act.setTitle(title);
+                            actFound = true;
+                            break;
+                        }
+                    }
+
+                    if (!actFound) {
+                        return Mono.error(new ResourceNotFoundException("卷", actId));
+                    }
+
+                    // 更新小说
+                    novel.setUpdatedAt(LocalDateTime.now());
+                    return novelRepository.save(novel);
+                })
+                .doOnSuccess(updated -> log.info("更新卷标题成功: 小说 {}, 卷 {}, 新标题: {}", novelId, actId, title));
+    }
+
+    @Override
+    public Mono<Novel> updateChapterTitle(String novelId, String chapterId, String title) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取小说结构
+                    Structure structure = novel.getStructure();
+                    if (structure == null || structure.getActs() == null) {
+                        return Mono.error(new ResourceNotFoundException("小说结构不存在", novelId));
+                    }
+
+                    // 查找指定的章节
+                    boolean chapterFound = false;
+                    outerLoop:
+                    for (Act act : structure.getActs()) {
+                        if (act.getChapters() == null) {
+                            continue;
+                        }
+
+                        for (Chapter chapter : act.getChapters()) {
+                            if (chapter.getId().equals(chapterId)) {
+                                chapter.setTitle(title);
+                                chapterFound = true;
+                                break outerLoop;
+                            }
+                        }
+                    }
+
+                    if (!chapterFound) {
+                        return Mono.error(new ResourceNotFoundException("章节", chapterId));
+                    }
+
+                    // 更新小说
+                    novel.setUpdatedAt(LocalDateTime.now());
+                    return novelRepository.save(novel);
+                })
+                .doOnSuccess(updated -> log.info("更新章节标题成功: 小说 {}, 章节 {}, 新标题: {}", novelId, chapterId, title));
+    }
+
+    @Override
+    public Mono<Novel> addAct(String novelId, String title, Integer position) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取小说结构，如果不存在则创建
+                    Structure structure = novel.getStructure();
+                    if (structure == null) {
+                        structure = new Structure();
+                        novel.setStructure(structure);
+                    }
+
+                    if (structure.getActs() == null) {
+                        structure.setActs(new ArrayList<>());
+                    }
+
+                    // 创建新卷
+                    Act newAct = new Act();
+                    newAct.setId(UUID.randomUUID().toString());
+                    newAct.setTitle(title);
+                    newAct.setChapters(new ArrayList<>());
+
+                    // 插入到指定位置或末尾
+                    List<Act> acts = structure.getActs();
+                    if (position != null && position >= 0 && position <= acts.size()) {
+                        acts.add(position, newAct);
+                    } else {
+                        acts.add(newAct);
+                    }
+
+                    // 更新小说
+                    novel.setUpdatedAt(LocalDateTime.now());
+                    return novelRepository.save(novel);
+                })
+                .doOnSuccess(updated -> log.info("添加新卷成功: 小说 {}, 卷标题: {}", novelId, title));
+    }
+
+    @Override
+    public Mono<Novel> addChapter(String novelId, String actId, String title, Integer position) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取小说结构
+                    Structure structure = novel.getStructure();
+                    if (structure == null || structure.getActs() == null) {
+                        return Mono.error(new ResourceNotFoundException("小说结构不存在", novelId));
+                    }
+
+                    // 查找指定的卷
+                    Act targetAct = null;
+                    for (Act act : structure.getActs()) {
+                        if (act.getId().equals(actId)) {
+                            targetAct = act;
+                            break;
+                        }
+                    }
+
+                    if (targetAct == null) {
+                        return Mono.error(new ResourceNotFoundException("卷", actId));
+                    }
+
+                    // 确保章节列表已初始化
+                    if (targetAct.getChapters() == null) {
+                        targetAct.setChapters(new ArrayList<>());
+                    }
+
+                    // 创建新章节
+                    Chapter newChapter = new Chapter();
+                    newChapter.setId(UUID.randomUUID().toString());
+                    newChapter.setTitle(title);
+
+                    // 插入到指定位置或末尾
+                    List<Chapter> chapters = targetAct.getChapters();
+                    if (position != null && position >= 0 && position <= chapters.size()) {
+                        chapters.add(position, newChapter);
+                    } else {
+                        chapters.add(newChapter);
+                    }
+
+                    // 更新小说
+                    novel.setUpdatedAt(LocalDateTime.now());
+                    return novelRepository.save(novel);
+                })
+                .doOnSuccess(updated -> log.info("添加新章节成功: 小说 {}, 卷 {}, 章节标题: {}", novelId, actId, title));
+    }
+
+    @Override
+    public Mono<Novel> moveScene(String novelId, String sceneId, String targetChapterId, int targetPosition) {
+        return sceneRepository.findById(sceneId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景", sceneId)))
+                .flatMap(scene -> {
+                    // 检查场景是否属于这本小说
+                    if (!scene.getNovelId().equals(novelId)) {
+                        return Mono.error(new IllegalArgumentException("场景不属于指定的小说"));
+                    }
+
+                    String sourceChapterId = scene.getChapterId();
+
+                    // 更新场景的章节ID和序列号
+                    scene.setChapterId(targetChapterId);
+
+                    // 获取目标章节的所有场景
+                    return sceneRepository.findByChapterIdOrderBySequenceAsc(targetChapterId)
+                            .collectList()
+                            .flatMap(targetScenes -> {
+                                // 如果是同一个章节内移动
+                                if (sourceChapterId.equals(targetChapterId)) {
+                                    // 删除当前场景
+                                    targetScenes.removeIf(s -> s.getId().equals(sceneId));
+                                }
+
+                                // 检查目标位置是否有效
+                                int insertPosition = Math.min(targetPosition, targetScenes.size());
+
+                                // 插入场景到目标位置
+                                targetScenes.add(insertPosition, scene);
+
+                                // 更新所有场景的序列号
+                                for (int i = 0; i < targetScenes.size(); i++) {
+                                    targetScenes.get(i).setSequence(i);
+                                }
+
+                                // 保存所有更新的场景
+                                return sceneRepository.saveAll(targetScenes).collectList()
+                                        .flatMap(savedScenes -> {
+                                            // 如果是不同章节间移动，需要更新源章节的场景序列号
+                                            if (!sourceChapterId.equals(targetChapterId)) {
+                                                return sceneRepository.findByChapterIdOrderBySequenceAsc(sourceChapterId)
+                                                        .collectList()
+                                                        .flatMap(sourceScenes -> {
+                                                            // 删除当前场景（虽然已经移走，但可能仍在列表中）
+                                                            sourceScenes.removeIf(s -> s.getId().equals(sceneId));
+
+                                                            // 更新所有源章节场景的序列号
+                                                            for (int i = 0; i < sourceScenes.size(); i++) {
+                                                                sourceScenes.get(i).setSequence(i);
+                                                            }
+
+                                                            // 保存所有更新的源章节场景
+                                                            return sceneRepository.saveAll(sourceScenes)
+                                                                    .collectList()
+                                                                    .then(novelRepository.findById(novelId));
+                                                        });
+                                            } else {
+                                                return novelRepository.findById(novelId);
+                                            }
+                                        });
+                            });
+                })
+                .doOnSuccess(novel -> log.info("移动场景成功: 场景 {}, 目标章节 {}, 目标位置 {}", sceneId, targetChapterId, targetPosition));
+    }
+
+    @Override
+    public Mono<NovelWithSummariesDto> getNovelWithSceneSummaries(String novelId) {
+        log.info("获取小说及其场景摘要，novelId={}", novelId);
+
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取所有章节ID
+                    List<String> allChapterIds = new ArrayList<>();
+                    for (Novel.Act act : novel.getStructure().getActs()) {
+                        for (Novel.Chapter chapter : act.getChapters()) {
+                            allChapterIds.add(chapter.getId());
+                        }
+                    }
+
+                    // 如果没有章节，直接返回只有小说信息的DTO
+                    if (allChapterIds.isEmpty()) {
+                        return Mono.just(NovelWithSummariesDto.builder()
+                                .novel(novel)
+                                .sceneSummariesByChapter(new HashMap<>())
+                                .build());
+                    }
+
+                    // 查询所有场景并按章节分组，但只保留摘要相关信息
+                    return sceneRepository.findByNovelId(novelId)
+                            .collectList()
+                            .map(scenes -> {
+                                // 将场景转换为摘要DTO
+                                List<SceneSummaryDto> summaries = scenes.stream()
+                                        .map(scene -> SceneSummaryDto.builder()
+                                        .id(scene.getId())
+                                        .novelId(scene.getNovelId())
+                                        .chapterId(scene.getChapterId())
+                                        .title(scene.getTitle())
+                                        .summary(scene.getSummary())
+                                        .sequence(scene.getSequence())
+                                        .wordCount(calculateWordCount(scene.getContent()))
+                                        .updatedAt(scene.getUpdatedAt())
+                                        .build())
+                                        .collect(Collectors.toList());
+
+                                // 按章节ID分组
+                                Map<String, List<SceneSummaryDto>> summariesByChapter = summaries.stream()
+                                        .collect(Collectors.groupingBy(SceneSummaryDto::getChapterId));
+
+                                // 构建并返回DTO
+                                return NovelWithSummariesDto.builder()
+                                        .novel(novel)
+                                        .sceneSummariesByChapter(summariesByChapter)
+                                        .build();
+                            });
+                })
+                .doOnSuccess(dto -> log.info("获取小说及其场景摘要成功，小说ID: {}, 章节数: {}",
+                novelId, dto.getSceneSummariesByChapter().size()))
+                .doOnError(e -> log.error("获取小说及其场景摘要失败", e));
+    }
+
+    /**
+     * 计算文本内容的字数
+     *
+     * @param content 文本内容
+     * @return 字数
+     */
+    private Integer calculateWordCount(String content) {
+        if (content == null || content.isEmpty()) {
+            return 0;
+        }
+
+        // 简单实现，去除HTML标记和特殊字符后统计
+        String plainText = content.replaceAll("<[^>]*>", "") // 移除HTML标签
+                .replaceAll("\\s+", " ") // 将多个空白字符合并为一个
+                .trim();
+
+        // 统计中文字符数量（使用正则表达式匹配中文字符）
+        int chineseCount = 0;
+        for (char c : plainText.toCharArray()) {
+            if (isChinese(c)) {
+                chineseCount++;
+            }
+        }
+
+        // 英文部分按空格分词
+        String englishOnly = plainText.replaceAll("[^\\x00-\\x7F]+", " ").trim();
+        int englishWordCount = englishOnly.isEmpty() ? 0 : englishOnly.split("\\s+").length;
+
+        return chineseCount + englishWordCount;
+    }
+
+    /**
+     * 判断字符是否是中文
+     *
+     * @param c 字符
+     * @return 是否是中文
+     */
+    private boolean isChinese(char c) {
+        return c >= 0x4E00 && c <= 0x9FA5; // Unicode CJK统一汉字范围
     }
 }

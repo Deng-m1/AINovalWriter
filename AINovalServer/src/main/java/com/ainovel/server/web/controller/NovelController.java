@@ -36,6 +36,7 @@ import com.ainovel.server.web.dto.LoadMoreScenesRequestDto;
 import com.ainovel.server.web.dto.NovelChapterDto;
 import com.ainovel.server.web.dto.NovelChapterSceneDto;
 import com.ainovel.server.web.dto.NovelWithScenesDto;
+import com.ainovel.server.web.dto.NovelWithSummariesDto;
 import com.ainovel.server.web.dto.PaginatedScenesRequestDto;
 import com.ainovel.server.web.dto.SceneContentUpdateDto;
 import com.ainovel.server.web.dto.SceneRestoreDto;
@@ -521,5 +522,172 @@ public class NovelController extends ReactiveBaseController {
                         );
                     }
                 });
+    }
+
+    /**
+     * 更新Act标题
+     *
+     * @param requestData 包含小说ID、Act ID和新标题的请求数据
+     * @return 更新后的小说数据
+     */
+    @PostMapping("/update-act-title")
+    public Mono<NovelWithScenesDto> updateActTitle(@RequestBody Map<String, String> requestData) {
+        String novelId = requestData.get("novelId");
+        String actId = requestData.get("actId");
+        String title = requestData.get("title");
+
+        log.info("更新Act标题: novelId={}, actId={}, title={}", novelId, actId, title);
+
+        return novelService.updateActTitle(novelId, actId, title)
+                .flatMap(novel -> novelService.getNovelWithAllScenes(novelId));
+    }
+
+    /**
+     * 更新Chapter标题
+     *
+     * @param requestData 包含小说ID、Act ID、Chapter ID和新标题的请求数据
+     * @return 更新后的小说数据
+     */
+    @PostMapping("/update-chapter-title")
+    public Mono<NovelWithScenesDto> updateChapterTitle(@RequestBody Map<String, String> requestData) {
+        String novelId = requestData.get("novelId");
+        String actId = requestData.get("actId");
+        String chapterId = requestData.get("chapterId");
+        String title = requestData.get("title");
+
+        log.info("更新Chapter标题: novelId={}, actId={}, chapterId={}, title={}",
+                novelId, actId, chapterId, title);
+
+        return novelService.updateChapterTitle(novelId, chapterId, title)
+                .flatMap(novel -> novelService.getNovelWithAllScenes(novelId));
+    }
+
+    /**
+     * 更新Scene摘要
+     *
+     * @param requestData 包含小说ID、Act ID、Chapter ID、Scene ID和新摘要的请求数据
+     * @return 操作结果
+     */
+    @PostMapping("/update-scene-summary")
+    public Mono<Scene> updateSceneSummary(@RequestBody Map<String, String> requestData) {
+        String novelId = requestData.get("novelId");
+        String actId = requestData.get("actId");
+        String chapterId = requestData.get("chapterId");
+        String sceneId = requestData.get("sceneId");
+        String summary = requestData.get("summary");
+
+        log.info("更新Scene摘要: novelId={}, actId={}, chapterId={}, sceneId={}",
+                novelId, actId, chapterId, sceneId);
+
+        return sceneService.updateSummary(sceneId, summary);
+    }
+
+    /**
+     * 添加新Act
+     *
+     * @param requestData 包含小说ID和标题的请求数据
+     * @return 更新后的小说数据
+     */
+    @PostMapping("/add-act")
+    public Mono<NovelWithScenesDto> addAct(@RequestBody Map<String, String> requestData) {
+        String novelId = requestData.get("novelId");
+        String title = requestData.get("title");
+
+        log.info("添加新Act: novelId={}, title={}", novelId, title);
+
+        return novelService.addAct(novelId, title, null)
+                .flatMap(novel -> novelService.getNovelWithAllScenes(novelId));
+    }
+
+    /**
+     * 添加新Chapter
+     *
+     * @param requestData 包含小说ID、Act ID和标题的请求数据
+     * @return 更新后的小说数据
+     */
+    @PostMapping("/add-chapter")
+    public Mono<NovelWithScenesDto> addChapter(@RequestBody Map<String, String> requestData) {
+        String novelId = requestData.get("novelId");
+        String actId = requestData.get("actId");
+        String title = requestData.get("title");
+
+        log.info("添加新Chapter: novelId={}, actId={}, title={}", novelId, actId, title);
+
+        return novelService.addChapter(novelId, actId, title, null)
+                .flatMap(novel -> novelService.getNovelWithAllScenes(novelId));
+    }
+
+    /**
+     * 添加新Scene
+     *
+     * @param requestData 包含小说ID、Act ID和Chapter ID的请求数据
+     * @return 更新后的小说数据
+     */
+    @PostMapping("/add-scene")
+    public Mono<NovelWithScenesDto> addScene(@RequestBody Map<String, String> requestData) {
+        String novelId = requestData.get("novelId");
+        String actId = requestData.get("actId");
+        String chapterId = requestData.get("chapterId");
+        String title = requestData.getOrDefault("title", "新场景");
+        String summary = requestData.getOrDefault("summary", "");
+
+        log.info("添加新Scene: novelId={}, actId={}, chapterId={}", novelId, actId, chapterId);
+
+        return sceneService.addScene(novelId, chapterId, title, summary, null)
+                .flatMap(scene -> novelService.getNovelWithAllScenes(novelId));
+    }
+
+    /**
+     * 删除Scene
+     *
+     * @param requestData 包含小说ID、Act ID、Chapter ID和Scene ID的请求数据
+     * @return 更新后的小说数据
+     */
+    @PostMapping("/delete-scene")
+    public Mono<NovelWithScenesDto> deleteScene(@RequestBody Map<String, String> requestData) {
+        String novelId = requestData.get("novelId");
+        String actId = requestData.get("actId");
+        String chapterId = requestData.get("chapterId");
+        String sceneId = requestData.get("sceneId");
+
+        log.info("删除Scene: novelId={}, actId={}, chapterId={}, sceneId={}",
+                novelId, actId, chapterId, sceneId);
+
+        return sceneService.deleteSceneById(sceneId)
+                .then(novelService.getNovelWithAllScenes(novelId));
+    }
+
+    /**
+     * 移动Scene
+     *
+     * @param requestData 包含移动Scene所需信息的请求数据
+     * @return 更新后的小说数据
+     */
+    @PostMapping("/scenes/move")
+    public Mono<NovelWithScenesDto> moveScene(@RequestBody Map<String, Object> requestData) {
+        String novelId = (String) requestData.get("novelId");
+        String sourceSceneId = (String) requestData.get("sourceSceneId");
+        String targetChapterId = (String) requestData.get("targetChapterId");
+        Integer targetIndex = (Integer) requestData.get("targetIndex");
+
+        log.info("移动Scene: novelId={}, sourceSceneId={}, targetChapterId={}, targetIndex={}",
+                novelId, sourceSceneId, targetChapterId, targetIndex);
+
+        return novelService.moveScene(novelId, sourceSceneId, targetChapterId, targetIndex)
+                .flatMap(novel -> novelService.getNovelWithAllScenes(novelId));
+    }
+
+    /**
+     * 获取小说详情及其场景摘要（适用于大纲视图） 与getNovelWithScenes不同，此接口只返回场景摘要，不返回完整内容，减少数据传输量
+     *
+     * @param idDto 包含小说ID的DTO
+     * @return 小说及其场景摘要数据
+     */
+    @PostMapping("/get-with-scene-summaries")
+    public Mono<NovelWithSummariesDto> getNovelWithSceneSummaries(@RequestBody IdDto idDto) {
+        String novelId = idDto.getId();
+        log.info("获取小说及其场景摘要: novelId={}", novelId);
+
+        return novelService.getNovelWithSceneSummaries(novelId);
     }
 }

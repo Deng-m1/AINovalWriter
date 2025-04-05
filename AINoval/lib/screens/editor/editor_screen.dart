@@ -33,6 +33,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart' hide EditorState;
 import 'package:shared_preferences/shared_preferences.dart'; // 导入持久化功能
+import 'package:ainoval/services/sync_service.dart';
+// 导入Plan相关组件
+import 'package:ainoval/blocs/plan/plan_bloc.dart';
+import 'package:ainoval/screens/editor/components/plan_view.dart';
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({
@@ -52,6 +56,13 @@ class _EditorScreenState extends State<EditorScreen>
   Timer? _debounceTimer;
   late final EditorBloc _editorBloc;
   late TabController _tabController;
+  
+  // 同步服务实例
+  late final SyncService _syncService;
+  
+  // Plan相关状态
+  late final PlanBloc _planBloc;
+  bool _isPlanViewActive = false;
 
   final Map<String, QuillController> _sceneControllers = {};
 
@@ -115,6 +126,29 @@ class _EditorScreenState extends State<EditorScreen>
       repository: EditorRepositoryImpl(),
       novelId: widget.novel.id,
     );
+    
+    // 初始化Plan模块
+    _planBloc = PlanBloc(
+      repository: EditorRepositoryImpl(),
+      novelId: widget.novel.id,
+    );
+    
+    // 初始化同步服务
+    final editorRepository = EditorRepositoryImpl();
+    final apiClient = editorRepository.getApiClient();
+    final localStorageService = editorRepository.getLocalStorageService();
+    
+    _syncService = SyncService(
+      apiService: apiClient,
+      localStorageService: localStorageService,
+    );
+    
+    // 初始化同步服务并设置当前小说
+    _syncService.init().then((_) {
+      _syncService.setCurrentNovelId(widget.novel.id).then((_) {
+        AppLogger.i('EditorScreen', '已设置当前小说ID: ${widget.novel.id}');
+      });
+    });
     
     // 使用分页加载，而不是加载所有内容
     // 从小说列表进入时，使用lastEditedChapterId为null，让后端自动选择最近编辑的章节
@@ -506,12 +540,31 @@ class _EditorScreenState extends State<EditorScreen>
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _debounceTimer?.cancel();
-    _clearAllControllers();
+    // 取消滚动监听器
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    
+    // 释放焦点节点
     _focusNode.dispose();
+    
+    // 尝试同步当前小说数据
+    _syncCurrentNovel();
+
+    // 清理控制器资源
+    _clearAllControllers();
+    
+    // 取消定时器
+    _debounceTimer?.cancel();
+    
+    // 关闭同步服务
+    _syncService.dispose();
+    
+    // 清理BLoC
     _editorBloc.close();
+    
+    // 清理TabController
+    _tabController.dispose();
+    
     super.dispose();
   }
 
@@ -782,9 +835,9 @@ class _EditorScreenState extends State<EditorScreen>
                     });
                   },
                   isSettingsActive: _isSettingsPanelVisible,
-                ),
-                EditorToolbar(
-                  controller: fallbackController,
+                  onPlanPressed: _togglePlanView, // 添加Plan按钮点击处理
+                  isPlanActive: _isPlanViewActive, // 添加Plan激活状态
+                  onWritePressed: _isPlanViewActive ? _togglePlanView : null, // 添加写作按钮回调，仅在Plan视图激活时有效
                 ),
               ],
             ),
@@ -792,23 +845,28 @@ class _EditorScreenState extends State<EditorScreen>
             Expanded(
               child: Row(
                 children: [
-                  // 主编辑区域
+                  // 根据当前视图模式选择显示内容
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(
-                          left: 16, right: 16, bottom: 16),
-                      child: EditorMainArea(
-                        novel: state.novel,
-                        editorBloc: _editorBloc,
-                        sceneControllers: _sceneControllers,
-                        sceneSummaryControllers:
-                            _sceneSummaryControllers,
-                        activeActId: state.activeActId,
-                        activeChapterId: state.activeChapterId,
-                        activeSceneId: state.activeSceneId,
-                        scrollController: _scrollController,
-                      ),
-                    ),
+                    child: _isPlanViewActive
+                        ? PlanView(
+                            novelId: widget.novel.id,
+                            planBloc: _planBloc,
+                          )
+                        : Padding(
+                            padding: const EdgeInsets.only(
+                                left: 16, right: 16, bottom: 16),
+                            child: EditorMainArea(
+                              novel: state.novel,
+                              editorBloc: _editorBloc,
+                              sceneControllers: _sceneControllers,
+                              sceneSummaryControllers:
+                                  _sceneSummaryControllers,
+                              activeActId: state.activeActId,
+                              activeChapterId: state.activeChapterId,
+                              activeSceneId: state.activeSceneId,
+                              scrollController: _scrollController,
+                            ),
+                          ),
                   ),
                 ],
               ),
@@ -1376,6 +1434,49 @@ class _EditorScreenState extends State<EditorScreen>
     }
     
     return false;
+  }
+
+  // 获取同步服务并同步当前小说
+  Future<void> _syncCurrentNovel() async {
+    try {
+      final editorRepository = EditorRepositoryImpl();
+      final localStorageService = editorRepository.getLocalStorageService();
+      
+      // 检查是否有要同步的内容
+      final novelId = widget.novel.id;
+      final novelSyncList = await localStorageService.getSyncList('novel');
+      final sceneSyncList = await localStorageService.getSyncList('scene');
+      final editorSyncList = await localStorageService.getSyncList('editor');
+      
+      final hasNovelToSync = novelSyncList.contains(novelId);
+      final hasScenesToSync = sceneSyncList.any((sceneKey) => sceneKey.startsWith('$novelId'));
+      final hasEditorToSync = editorSyncList.any((editorKey) => editorKey.startsWith('$novelId'));
+      
+      if (hasNovelToSync || hasScenesToSync || hasEditorToSync) {
+        AppLogger.i('EditorScreen', '检测到待同步内容，执行退出前同步: ${widget.novel.id}');
+        
+        // 使用已初始化的同步服务执行同步
+        await _syncService.syncAll();
+        
+        AppLogger.i('EditorScreen', '退出前同步完成: ${widget.novel.id}');
+      } else {
+        AppLogger.i('EditorScreen', '没有待同步内容，跳过退出前同步: ${widget.novel.id}');
+      }
+    } catch (e) {
+      AppLogger.e('EditorScreen', '退出前同步失败', e);
+    }
+  }
+
+  // 切换Plan视图
+  void _togglePlanView() {
+    setState(() {
+      _isPlanViewActive = !_isPlanViewActive;
+      
+      // 如果激活Plan视图，加载Plan数据
+      if (_isPlanViewActive) {
+        _planBloc.add(const LoadPlanContent());
+      }
+    });
   }
 }
 
