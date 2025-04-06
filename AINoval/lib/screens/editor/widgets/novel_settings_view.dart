@@ -1,10 +1,14 @@
+import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:io';
 import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
+import 'package:ainoval/services/api_service/repositories/storage_repository.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:image/image.dart' as img;
 
 class NovelSettingsView extends StatefulWidget {
   const NovelSettingsView({
@@ -31,11 +35,11 @@ class _NovelSettingsViewState extends State<NovelSettingsView> {
   double _uploadProgress = 0.0;
   String? _uploadError;
   
-  Uint8List? _selectedImageBytes;
   String? _coverUrl;
   bool _isSaving = false;
   String? _saveError;
   bool _hasChanges = false;
+  String? _selectedFileName;
 
   @override
   void initState() {
@@ -241,7 +245,7 @@ class _NovelSettingsViewState extends State<NovelSettingsView> {
                 
                 // 封面预览/上传区域
                 InkWell(
-                  onTap: _isUploading ? null : _pickCoverImage,
+                  onTap: _isUploading ? null : _selectCoverImage,
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
                     height: 320,
@@ -259,7 +263,7 @@ class _NovelSettingsViewState extends State<NovelSettingsView> {
                 Padding(
                   padding: const EdgeInsets.only(top: 16),
                   child: ElevatedButton.icon(
-                    onPressed: _isUploading ? null : _pickCoverImage,
+                    onPressed: _isUploading ? null : _selectCoverImage,
                     icon: _isUploading
                         ? const SizedBox(
                             width: 16,
@@ -326,17 +330,6 @@ class _NovelSettingsViewState extends State<NovelSettingsView> {
   }
   
   Widget _buildCoverPreview() {
-    // 如果有新选择的图片，显示新图片
-    if (_selectedImageBytes != null) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.memory(
-          _selectedImageBytes!,
-          fit: BoxFit.cover,
-        ),
-      );
-    }
-    
     // 如果有现有的封面URL，显示现有封面
     if (_coverUrl != null && _coverUrl!.isNotEmpty) {
       return Stack(
@@ -442,39 +435,64 @@ class _NovelSettingsViewState extends State<NovelSettingsView> {
     );
   }
   
-  Future<void> _pickCoverImage() async {
+  Future<void> _selectCoverImage() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         allowMultiple: false,
       );
       
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
+        setState(() {
+          _selectedFileName = file.name;
+        });
         
-        if (file.size > 5 * 1024 * 1024) { // 5MB
-          setState(() {
-            _uploadError = '图片大小不能超过5MB';
-          });
-          return;
-        }
-        
+        Uint8List fileBytes;
         if (file.bytes != null) {
-          setState(() {
-            _selectedImageBytes = file.bytes;
-            _uploadError = null;
-            _hasChanges = true;
-          });
-          
-          // 执行上传逻辑
-          await _uploadCoverImage(file.bytes!, file.name);
+          // Web平台直接获取字节
+          fileBytes = file.bytes!;
+        } else if (file.path != null) {
+          // 移动/桌面平台从文件路径读取字节
+          final File imageFile = File(file.path!);
+          fileBytes = await imageFile.readAsBytes();
+        } else {
+          throw Exception('无法读取所选图片');
         }
+        
+        // 压缩图片以减小尺寸
+        final img.Image? image = img.decodeImage(fileBytes);
+        if (image == null) {
+          throw Exception('无法解码所选图片');
+        }
+        
+        // 如果图片过大，进行缩放
+        img.Image resizedImage = image;
+        if (image.width > 1200 || image.height > 1200) {
+          resizedImage = img.copyResize(
+            image,
+            width: image.width > image.height ? 1200 : null,
+            height: image.height >= image.width ? 1200 : null,
+          );
+        }
+        
+        // 重新编码为JPEG格式
+        final compressedBytes = img.encodeJpg(resizedImage, quality: 85);
+        
+        // 上传图片
+        await _uploadCoverImage(Uint8List.fromList(compressedBytes), '${widget.novel.id}_cover.jpg');
       }
     } catch (e, stackTrace) {
       AppLogger.e('NovelSettingsView', '选择封面图片失败', e, stackTrace);
-      setState(() {
-        _uploadError = '选择图片失败: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _uploadError = '选择图片失败: $e';
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('选择图片失败: $e')),
+        );
+      }
     }
   }
   
@@ -486,38 +504,36 @@ class _NovelSettingsViewState extends State<NovelSettingsView> {
     });
     
     try {
-      final repository = context.read<EditorRepository>();
+      final editorRepository = context.read<EditorRepository>();
+      final storageRepository = context.read<StorageRepository>();
       
-      // 获取上传凭证
-      final uploadCredential = await repository.getCoverUploadCredential(
+      setState(() {
+        _uploadProgress = 0.1; // 开始上传
+      });
+      
+      // 实际上传封面图片
+      final coverUrl = await storageRepository.uploadCoverImage(
         novelId: widget.novel.id,
+        fileBytes: bytes,
         fileName: fileName,
       );
       
-      // 模拟上传进度
-      for (var i = 1; i <= 10; i++) {
-        if (!mounted) return;
-        await Future.delayed(const Duration(milliseconds: 300));
-        setState(() {
-          _uploadProgress = i / 10;
-        });
-      }
+      // 上传进度更新
+      setState(() {
+        _uploadProgress = 0.9; // 上传完成，即将更新元数据
+      });
       
-      // 此处应调用实际的OSS上传API
-      // 示例代码仅模拟结果
-      await Future.delayed(const Duration(seconds: 1));
-      final mockUploadedUrl = 'https://example.com/covers/${widget.novel.id}/$fileName';
-      
-      // 通知后端上传完成
-      await repository.updateNovelCover(
+      // 通知后端更新封面URL
+      await editorRepository.updateNovelCover(
         novelId: widget.novel.id,
-        coverUrl: mockUploadedUrl,
+        coverUrl: coverUrl,
       );
       
       if (mounted) {
         setState(() {
           _isUploading = false;
-          _coverUrl = mockUploadedUrl;
+          _coverUrl = coverUrl;
+          _uploadProgress = 1.0;
         });
         
         ScaffoldMessenger.of(context).showSnackBar(

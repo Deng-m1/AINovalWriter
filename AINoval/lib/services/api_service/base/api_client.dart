@@ -1407,8 +1407,12 @@ class ApiClient {
   /// 获取封面图片上传凭证
   Future<Map<String, dynamic>> getCoverUploadCredential(String novelId) async {
     try {
-      final response = await _dio.get(
-        '/novels/$novelId/cover/upload-credential',
+      final response = await _dio.post(
+        '/novels/$novelId/cover-upload-credential',
+        data: {
+          'fileName': 'cover.jpg',
+          'contentType': 'image/jpeg'
+        },
       );
       return response.data;
     } on DioException catch (e) {
