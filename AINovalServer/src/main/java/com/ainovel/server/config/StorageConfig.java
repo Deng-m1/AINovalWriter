@@ -35,6 +35,11 @@ public class StorageConfig {
         private String coversPath = "covers";
 
         /**
+         * 启动时是否测试存储连接
+         */
+        private boolean testOnStartup = false;
+
+        /**
          * 阿里云OSS配置
          */
         private AliOssProperties aliyun = new AliOssProperties();
@@ -74,5 +79,10 @@ public class StorageConfig {
          * 自定义基础URL（可选）
          */
         private String baseUrl;
+
+        /**
+         * 地域信息，如cn-hangzhou（可选，如果不提供将从endpoint中提取）
+         */
+        private String region;
     }
 }

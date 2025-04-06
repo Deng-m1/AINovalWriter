@@ -12,6 +12,8 @@ import com.ainovel.server.config.StorageConfig.AliOssProperties;
 import com.ainovel.server.config.StorageConfig.StorageProperties;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
+import com.aliyun.oss.ClientBuilderConfiguration;
+import com.aliyun.oss.common.comm.SignVersion;
 import com.aliyun.oss.common.utils.BinaryUtil;
 import com.aliyun.oss.model.MatchMode;
 import com.aliyun.oss.model.PolicyConditions;
@@ -31,6 +33,7 @@ public class AliOSSStorageProvider implements StorageProvider {
     private final String accessKeySecret;
     private final String bucketName;
     private final String baseUrl;
+    private final String region;
 
     @Autowired
     public AliOSSStorageProvider(StorageProperties storageProperties) {
@@ -40,16 +43,71 @@ public class AliOSSStorageProvider implements StorageProvider {
         this.accessKeySecret = aliOssProps.getAccessKeySecret();
         this.bucketName = aliOssProps.getBucketName();
         this.baseUrl = aliOssProps.getBaseUrl();
+        this.region = aliOssProps.getRegion();
 
-        log.info("初始化阿里云OSS存储提供者: endpoint={}, bucket={}, baseUrl={}",
-                endpoint, bucketName, baseUrl != null ? baseUrl : "未配置");
+        log.info("初始化阿里云OSS存储提供者: endpoint={}, bucket={}, region={}, baseUrl={}",
+                endpoint, bucketName, region, baseUrl != null ? baseUrl : "未配置");
     }
 
     /**
      * 获取OSS客户端实例
      */
     private OSS getOSSClient() {
-        return new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
+        // 创建ClientBuilderConfiguration实例并配置签名版本
+        ClientBuilderConfiguration conf = new ClientBuilderConfiguration();
+        // 显式指定使用V4签名算法
+        conf.setSignatureVersion(SignVersion.V4);
+
+        // 优先使用配置中指定的region，如果未配置则尝试从endpoint提取
+        String regionToUse = region;
+        if (regionToUse == null || regionToUse.isEmpty()) {
+            regionToUse = extractRegionFromEndpoint(endpoint);
+            if (regionToUse != null) {
+                log.info("从endpoint提取到region: {}", regionToUse);
+            }
+        }
+
+        if (regionToUse != null && !regionToUse.isEmpty()) {
+            // 使用V4签名需要指定region
+            return OSSClientBuilder.create()
+                    .endpoint(endpoint)
+                    .credentialsProvider(new com.aliyun.oss.common.auth.DefaultCredentialProvider(accessKeyId, accessKeySecret))
+                    .clientConfiguration(conf)
+                    .region(regionToUse)
+                    .build();
+        } else {
+            // 如果无法提取region，回退到旧方式构建
+            log.warn("未配置region且无法从endpoint提取region信息，将使用不指定region的方式初始化OSS客户端");
+            return new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret, conf);
+        }
+    }
+
+    /**
+     * 从endpoint提取region信息 例如：从 https://oss-cn-hangzhou.aliyuncs.com 提取
+     * cn-hangzhou
+     */
+    private String extractRegionFromEndpoint(String endpoint) {
+        try {
+            // 移除协议部分
+            String noProtocol = endpoint.replaceAll("^https?://", "");
+            // 查找第一个点的位置
+            int dotIndex = noProtocol.indexOf('.');
+            if (dotIndex <= 0) {
+                return null;
+            }
+
+            // 提取 oss-cn-hangzhou 部分
+            String prefix = noProtocol.substring(0, dotIndex);
+            // 如果以 oss- 开头，去掉 oss- 前缀
+            if (prefix.startsWith("oss-")) {
+                return prefix.substring(4);
+            } else {
+                return null;
+            }
+        } catch (Exception e) {
+            log.warn("从endpoint提取region时出错: {}", e.getMessage());
+            return null;
+        }
     }
 
     @Override

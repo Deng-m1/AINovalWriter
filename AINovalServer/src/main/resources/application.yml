@@ -64,6 +64,8 @@ ainovel:
   storage:
     default-provider: alioss
     covers-path: covers
+    # 是否在启动时测试OSS连接
+    test-on-startup: true
     # 阿里云OSS配置
     aliyun:
       endpoint: https://oss-cn-shanghai.aliyuncs.com
@@ -71,6 +73,7 @@ ainovel:
       access-key-secret: ${ALIYUN_OSS_ACCESS_KEY_SECRET}
       bucket-name: ${ALIYUN_OSS_BUCKET_NAME}
       base-url: ${ALIYUN_OSS_BASE_URL}
+      region: cn-shanghai
 
 # 向量存储配置
 vectorstore:
