@@ -42,6 +42,8 @@ dependencies:
   flutter_markdown: ^0.6.17
   dio: ^5.4.0
   logging: ^1.2.0
+  # 阿里云OSS
+  flutter_oss_aliyun: ^6.4.2
   # 国际化
   flutter_localizations:
     sdk: flutter

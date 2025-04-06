@@ -23,7 +23,11 @@ import 'package:ainoval/screens/editor/components/editor_sidebar.dart';
 import 'package:ainoval/screens/editor/widgets/editor_settings_panel.dart';
 import 'package:ainoval/screens/editor/widgets/editor_toolbar.dart';
 import 'package:ainoval/screens/settings/settings_panel.dart'; // <<< Import SettingsPanel
+import 'package:ainoval/services/api_service/base/api_client.dart';
+import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/api_service/repositories/impl/editor_repository_impl.dart';
+import 'package:ainoval/services/api_service/repositories/storage_repository.dart';
+import 'package:ainoval/services/api_service/repositories/impl/storage_repository_impl.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/utils/word_count_analyzer.dart';
 import 'package:flutter/material.dart';
@@ -38,6 +42,8 @@ import 'package:ainoval/services/sync_service.dart';
 import 'package:ainoval/blocs/plan/plan_bloc.dart';
 import 'package:ainoval/screens/editor/components/plan_view.dart';
 import 'package:ainoval/screens/editor/widgets/novel_settings_view.dart';
+import 'package:ainoval/services/local_storage_service.dart';
+import 'package:ainoval/services/api_service/repositories/impl/aliyun_oss_storage_repository.dart';
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({
@@ -57,6 +63,11 @@ class _EditorScreenState extends State<EditorScreen>
   Timer? _debounceTimer;
   late final EditorBloc _editorBloc;
   late TabController _tabController;
+  
+  // API Client和Repository实例
+  late final ApiClient _apiClient;
+  late final EditorRepositoryImpl _editorRepository;
+  late final LocalStorageService _localStorageService;
   
   // 同步服务实例
   late final SyncService _syncService;
@@ -124,27 +135,29 @@ class _EditorScreenState extends State<EditorScreen>
   @override
   void initState() {
     super.initState();
+    
+    // 创建必要的实例
+    _apiClient = ApiClient();
+    _editorRepository = EditorRepositoryImpl();
+    _localStorageService = LocalStorageService();
+    
     _tabController = TabController(length: 3, vsync: this);
 
     _editorBloc = EditorBloc(
-      repository: EditorRepositoryImpl(),
+      repository: _editorRepository,
       novelId: widget.novel.id,
     );
     
     // 初始化Plan模块
     _planBloc = PlanBloc(
-      repository: EditorRepositoryImpl(),
+      repository: _editorRepository,
       novelId: widget.novel.id,
     );
     
     // 初始化同步服务
-    final editorRepository = EditorRepositoryImpl();
-    final apiClient = editorRepository.getApiClient();
-    final localStorageService = editorRepository.getLocalStorageService();
-    
     _syncService = SyncService(
-      apiService: apiClient,
-      localStorageService: localStorageService,
+      apiService: _apiClient,
+      localStorageService: _localStorageService,
     );
     
     // 初始化同步服务并设置当前小说
@@ -899,9 +912,19 @@ class _EditorScreenState extends State<EditorScreen>
             // 主编辑区域与聊天侧边栏
             Expanded(
               child: _isNovelSettingsVisible
-                  ? NovelSettingsView(
-                      novel: widget.novel,
-                      onSettingsClose: _toggleNovelSettings,
+                  ? MultiRepositoryProvider(
+                      providers: [
+                        RepositoryProvider<EditorRepository>(
+                          create: (context) => _editorRepository,
+                        ),
+                        RepositoryProvider<StorageRepository>(
+                          create: (context) => AliyunOssStorageRepository(_apiClient),
+                        ),
+                      ],
+                      child: NovelSettingsView(
+                        novel: widget.novel,
+                        onSettingsClose: _toggleNovelSettings,
+                      ),
                     )
                   : Row(
                       children: [

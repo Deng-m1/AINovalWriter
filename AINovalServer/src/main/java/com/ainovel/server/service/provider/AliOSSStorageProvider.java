@@ -10,9 +10,9 @@ import org.springframework.stereotype.Service;
 
 import com.ainovel.server.config.StorageConfig.AliOssProperties;
 import com.ainovel.server.config.StorageConfig.StorageProperties;
+import com.aliyun.oss.ClientBuilderConfiguration;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
-import com.aliyun.oss.ClientBuilderConfiguration;
 import com.aliyun.oss.common.comm.SignVersion;
 import com.aliyun.oss.common.utils.BinaryUtil;
 import com.aliyun.oss.model.MatchMode;
@@ -244,9 +244,9 @@ public class AliOSSStorageProvider implements StorageProvider {
      * 获取上传域名
      */
     private String getUploadHost() {
-        if (baseUrl != null && !baseUrl.isEmpty()) {
+        /*         if (baseUrl != null && !baseUrl.isEmpty()) {
             return baseUrl;
-        }
+        } */
         return String.format("https://%s.%s", bucketName, endpoint.replaceAll("^https?://", ""));
     }
 }
