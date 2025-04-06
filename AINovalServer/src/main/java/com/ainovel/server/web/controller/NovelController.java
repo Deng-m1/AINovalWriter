@@ -690,4 +690,139 @@ public class NovelController extends ReactiveBaseController {
 
         return novelService.getNovelWithSceneSummaries(novelId);
     }
+
+    /**
+     * 更新小说元数据（标题、作者、系列）
+     *
+     * @param request 包含小说ID、标题、作者和系列信息的请求
+     * @return 更新后的小说
+     */
+    @PostMapping("/{novelId}/metadata")
+    public Mono<Novel> updateNovelMetadata(
+            @PathVariable String novelId,
+            @RequestBody Map<String, String> requestData) {
+        String title = requestData.get("title");
+        String author = requestData.get("author");
+        String series = requestData.get("seriesName");
+
+        log.info("更新小说元数据: novelId={}, title={}, author={}, series={}",
+                novelId, title, author, series);
+
+        return novelService.updateNovelMetadata(novelId, title, author, series);
+    }
+
+    /**
+     * 获取封面上传凭证
+     *
+     * @param novelId 小说ID
+     * @param requestData 包含文件名和内容类型的请求数据
+     * @return 上传凭证（包含上传URL和其他必要参数）
+     */
+    @PostMapping("/{novelId}/cover-upload-credential")
+    public Mono<Map<String, String>> getCoverUploadCredential(
+            @PathVariable String novelId,
+            @RequestBody Map<String, String> requestData) {
+        String fileName = requestData.get("fileName");
+        String contentType = requestData.get("contentType");
+
+        if (fileName == null || fileName.isEmpty()) {
+            fileName = "cover.jpg";
+        }
+
+        if (contentType == null || contentType.isEmpty()) {
+            // 根据文件扩展名尝试猜测内容类型
+            contentType = getContentTypeFromFileName(fileName);
+        }
+
+        log.info("获取封面上传凭证: novelId={}, fileName={}, contentType={}",
+                novelId, fileName, contentType);
+
+        final String finalFileName = fileName;
+        final String finalContentType = contentType;
+
+        return novelService.getCoverUploadCredential(novelId)
+                .doOnNext(credential -> {
+                    // 添加原始文件名到返回结果中，方便前端使用
+                    credential.put("originalFileName", finalFileName);
+                    if (finalContentType != null) {
+                        credential.put("contentType", finalContentType);
+                    }
+                });
+    }
+
+    /**
+     * 根据文件名获取内容类型
+     */
+    private String getContentTypeFromFileName(String fileName) {
+        if (fileName == null || fileName.isEmpty()) {
+            return "application/octet-stream";
+        }
+
+        String lowerFileName = fileName.toLowerCase();
+        if (lowerFileName.endsWith(".jpg") || lowerFileName.endsWith(".jpeg")) {
+            return "image/jpeg";
+        } else if (lowerFileName.endsWith(".png")) {
+            return "image/png";
+        } else if (lowerFileName.endsWith(".gif")) {
+            return "image/gif";
+        } else if (lowerFileName.endsWith(".webp")) {
+            return "image/webp";
+        } else if (lowerFileName.endsWith(".bmp")) {
+            return "image/bmp";
+        } else if (lowerFileName.endsWith(".svg")) {
+            return "image/svg+xml";
+        }
+
+        return "application/octet-stream";
+    }
+
+    /**
+     * 更新小说封面URL
+     *
+     * @param request 包含小说ID和封面URL的请求
+     * @return 更新后的小说
+     */
+    @PostMapping("/{novelId}/cover")
+    public Mono<Novel> updateNovelCover(
+            @PathVariable String novelId,
+            @RequestBody Map<String, String> request) {
+        String coverUrl = request.get("coverUrl");
+        log.info("更新小说封面: novelId={}, coverUrl={}", novelId, coverUrl);
+
+        return novelService.updateNovelCover(novelId, coverUrl);
+    }
+
+    /**
+     * 归档小说
+     *
+     * @param idDto 包含小说ID的DTO
+     * @return 已归档的小说
+     */
+    @PostMapping("/archive")
+    public Mono<Novel> archiveNovel(@RequestBody IdDto idDto) {
+        return novelService.archiveNovel(idDto.getId());
+    }
+
+    /**
+     * 恢复已归档小说
+     *
+     * @param idDto 包含小说ID的DTO
+     * @return 恢复后的小说
+     */
+    @PostMapping("/unarchive")
+    public Mono<Novel> unarchiveNovel(@RequestBody IdDto idDto) {
+        return novelService.unarchiveNovel(idDto.getId());
+    }
+
+    /**
+     * 永久删除小说（物理删除）
+     *
+     * @param idDto 包含小说ID的DTO
+     * @return 操作结果
+     */
+    @PostMapping("/permanently-delete")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Mono<Void> permanentlyDeleteNovel(@RequestBody IdDto idDto) {
+        return novelService.permanentlyDeleteNovel(idDto.getId());
+    }
 }

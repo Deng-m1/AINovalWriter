@@ -44,6 +44,58 @@ public interface NovelService {
     Mono<Novel> updateNovel(String id, Novel novel);
 
     /**
+     * 更新小说元数据（标题、作者、系列）
+     *
+     * @param id 小说ID
+     * @param title 标题
+     * @param author 作者
+     * @param series 系列
+     * @return 更新后的小说
+     */
+    Mono<Novel> updateNovelMetadata(String id, String title, String author, String series);
+
+    /**
+     * 获取封面上传凭证
+     *
+     * @param novelId 小说ID
+     * @return 上传凭证（包含上传URL和其他必要参数）
+     */
+    Mono<Map<String, String>> getCoverUploadCredential(String novelId);
+
+    /**
+     * 更新小说封面URL
+     *
+     * @param novelId 小说ID
+     * @param coverUrl 封面图片URL
+     * @return 更新后的小说
+     */
+    Mono<Novel> updateNovelCover(String novelId, String coverUrl);
+
+    /**
+     * 归档小说
+     *
+     * @param novelId 小说ID
+     * @return 已归档的小说
+     */
+    Mono<Novel> archiveNovel(String novelId);
+
+    /**
+     * 恢复已归档小说
+     *
+     * @param novelId 小说ID
+     * @return 恢复后的小说
+     */
+    Mono<Novel> unarchiveNovel(String novelId);
+
+    /**
+     * 永久删除小说（物理删除）
+     *
+     * @param novelId 小说ID
+     * @return 操作结果
+     */
+    Mono<Void> permanentlyDeleteNovel(String novelId);
+
+    /**
      * 更新小说信息及其场景内容
      *
      * @param id 小说ID
@@ -201,8 +253,7 @@ public interface NovelService {
     Mono<Novel> moveScene(String novelId, String sceneId, String targetChapterId, int targetPosition);
 
     /**
-     * 获取小说详情及其场景摘要（不包含场景完整内容）
-     * 适用于大纲视图，减少数据传输量
+     * 获取小说详情及其场景摘要（不包含场景完整内容） 适用于大纲视图，减少数据传输量
      *
      * @param novelId 小说ID
      * @return 小说及其场景摘要

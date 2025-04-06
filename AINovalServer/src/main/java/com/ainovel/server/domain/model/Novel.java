@@ -22,41 +22,45 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Document(collection = "novels")
 public class Novel {
-    
+
     @Id
     private String id;
-    
+
     @TextIndexed
     private String title;
-    
+
     @TextIndexed
     private String description;
-    
+
     private Author author;
-    
+
     @Builder.Default
     private List<String> genre = new ArrayList<>();
-    
+
     @Builder.Default
     private List<String> tags = new ArrayList<>();
-    
+
     private String coverImage;
-    
+
     private String status;
-    
+
     @Builder.Default
     private Structure structure = new Structure();
-    
+
     @Builder.Default
     private Metadata metadata = new Metadata();
-    
+
     // 记录上次编辑的章节ID
     private String lastEditedChapterId;
-    
+
+    // 是否归档状态
+    @Builder.Default
+    private Boolean isArchived = false;
+
     private LocalDateTime createdAt;
-    
+
     private LocalDateTime updatedAt;
-    
+
     /**
      * 作者信息
      */
@@ -65,10 +69,11 @@ public class Novel {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class Author {
+
         private String id;
         private String username;
     }
-    
+
     /**
      * 小说结构
      */
@@ -77,10 +82,11 @@ public class Novel {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class Structure {
+
         @Builder.Default
         private List<Act> acts = new ArrayList<>();
     }
-    
+
     /**
      * 卷
      */
@@ -89,6 +95,7 @@ public class Novel {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class Act {
+
         private String id;
         private String title;
         private String description;
@@ -96,7 +103,7 @@ public class Novel {
         @Builder.Default
         private List<Chapter> chapters = new ArrayList<>();
     }
-    
+
     /**
      * 章节
      */
@@ -105,6 +112,7 @@ public class Novel {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class Chapter {
+
         private String id;
         private String title;
         private String description;
@@ -113,7 +121,7 @@ public class Novel {
         @Builder.Default
         private List<String> sceneIds = new ArrayList<>();
     }
-    
+
     /**
      * 元数据
      */
@@ -122,6 +130,7 @@ public class Novel {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class Metadata {
+
         private int wordCount;
         private int readTime;
         private LocalDateTime lastEditedAt;
@@ -129,4 +138,4 @@ public class Novel {
         @Builder.Default
         private List<String> contributors = new ArrayList<>();
     }
-} 
+}

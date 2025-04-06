@@ -66,4 +66,34 @@ abstract class EditorRepository {
   /// 应用修订版本
   Future<void> applyRevision(
       String novelId, String chapterId, String revisionId);
+      
+  /// 更新小说元数据
+  Future<void> updateNovelMetadata({
+    required String novelId,
+    required String title,
+    String? author,
+    String? series,
+  });
+  
+  /// 获取封面上传凭证
+  Future<Map<String, dynamic>> getCoverUploadCredential({
+    required String novelId,
+    required String fileName,
+  });
+  
+  /// 更新小说封面
+  Future<void> updateNovelCover({
+    required String novelId,
+    required String coverUrl,
+  });
+  
+  /// 归档小说
+  Future<void> archiveNovel({
+    required String novelId,
+  });
+  
+  /// 删除小说
+  Future<void> deleteNovel({
+    required String novelId,
+  });
 }

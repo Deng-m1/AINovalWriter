@@ -115,7 +115,7 @@ class _EditorSidebarState extends State<EditorSidebar> {
           // 设置按钮
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 18),
-            tooltip: '全局设置',
+            tooltip: '小说设置',
             splashRadius: 18,
             onPressed: widget.onOpenSettings,
             style: IconButton.styleFrom(
@@ -141,7 +141,7 @@ class _EditorSidebarState extends State<EditorSidebar> {
                   maxLines: 1,
                 ),
                 Text(
-                  'Deng Binjie', // 使用作者名，此处硬编码，实际应从数据模型获取
+                  widget.novel.author ?? 'Unknown Author', // 使用模型中的作者信息
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: Colors.grey.shade600,
                     fontSize: 12,
