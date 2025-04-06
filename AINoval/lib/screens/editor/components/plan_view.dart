@@ -1,5 +1,7 @@
+import 'package:ainoval/blocs/editor/editor_bloc.dart' as editor;
 import 'package:ainoval/blocs/plan/plan_bloc.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
+import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ainoval/blocs/editor/editor_bloc.dart' as editor;

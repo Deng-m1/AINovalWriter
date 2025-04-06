@@ -177,7 +177,7 @@ class _ChapterSectionState extends State<ChapterSection> {
     
     showMenu(
       context: context,
-      position: RelativeRect.fromLTRB(100, 100, 0, 0), // 这个位置会根据点击位置自动调整
+      position: const RelativeRect.fromLTRB(100, 100, 0, 0), // 这个位置会根据点击位置自动调整
       items: [
         if (widget.scenes.isEmpty)
           PopupMenuItem(
@@ -271,9 +271,9 @@ class _AddSceneButton extends StatelessWidget {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),
-          ).copyWith(overlayColor: MaterialStateProperty.resolveWith<Color?>(
-            (Set<MaterialState> states) {
-              if (states.contains(MaterialState.hovered)) {
+          ).copyWith(overlayColor: WidgetStateProperty.resolveWith<Color?>(
+            (Set<WidgetState> states) {
+              if (states.contains(WidgetState.hovered)) {
                 return Colors.grey.shade100;
               }
               return null;

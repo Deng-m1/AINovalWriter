@@ -375,7 +375,7 @@ class ApiClient {
            AppLogger.i('ApiClient', '[SSE Connect] 连接成功，开始接收事件，响应头: ${response.headers}');
 
            final responseBody = response.data;
-           if (responseBody == null || responseBody.stream == null) {
+           if (responseBody == null) {
               AppLogger.e('ApiClient', '[SSE Error] 响应体或流为空');
                if (!controller.isClosed) {
                  controller.addError(ApiException(-1, '[SSE Error] 响应体或流为空'));
@@ -1374,6 +1374,83 @@ class ApiClient {
     } catch (e) {
       AppLogger.e('ApiClient', '移动场景失败: $novelId', e);
       return null;
+    }
+  }
+
+  /// 更新小说元数据（标题、作者、系列）
+  Future<Map<String, dynamic>?> updateNovelMetadata(
+    String novelId, 
+    String title, 
+    String author, 
+    String? series
+  ) async {
+    try {
+      final data = {
+        'title': title,
+        'author': author,
+        'series': series,
+      };
+      
+      final response = await _dio.post(
+        '/novels/$novelId/metadata',
+        data: data,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '更新小说元数据失败: $novelId', e);
+      throw ApiException(-1, '更新小说元数据失败: ${e.toString()}');
+    }
+  }
+
+  /// 获取封面图片上传凭证
+  Future<Map<String, dynamic>> getCoverUploadCredential(String novelId) async {
+    try {
+      final response = await _dio.get(
+        '/novels/$novelId/cover/upload-credential',
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取封面上传凭证失败: $novelId', e);
+      throw ApiException(-1, '获取封面上传凭证失败: ${e.toString()}');
+    }
+  }
+
+  /// 更新小说封面URL
+  Future<Map<String, dynamic>?> updateNovelCover(String novelId, String coverUrl) async {
+    try {
+      final data = {
+        'coverUrl': coverUrl,
+      };
+      
+      final response = await _dio.post(
+        '/novels/$novelId/cover',
+        data: data,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '更新小说封面失败: $novelId', e);
+      throw ApiException(-1, '更新小说封面失败: ${e.toString()}');
+    }
+  }
+
+  /// 归档小说
+  Future<Map<String, dynamic>?> archiveNovel(String novelId) async {
+    try {
+      final response = await _dio.post(
+        '/novels/$novelId/archive',
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '归档小说失败: $novelId', e);
+      throw ApiException(-1, '归档小说失败: ${e.toString()}');
     }
   }
 }

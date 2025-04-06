@@ -7,7 +7,6 @@ import 'package:ainoval/services/api_service/repositories/editor_repository.dart
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/utils/date_time_parser.dart';
 import 'package:ainoval/utils/logger.dart';
-import 'dart:convert';
 
 /// 编辑器仓库实现
 class EditorRepositoryImpl implements EditorRepository {
@@ -1341,6 +1340,196 @@ class EditorRepositoryImpl implements EditorRepository {
       AppLogger.e('_convertBackendNovelWithSummariesToFrontend',
           '转换后端NovelWithSummariesDto模型为前端Novel模型失败', e);
       rethrow;
+    }
+  }
+
+  /// 更新小说元数据
+  @override
+  Future<void> updateNovelMetadata({
+    required String novelId,
+    required String title,
+    String? author,
+    String? series,
+  }) async {
+    try {
+      // 调用API更新元数据
+      await _apiClient.updateNovelMetadata(
+        novelId,
+        title,
+        author ?? '',
+        series,
+      );
+      
+      // 更新本地存储
+      final localNovel = await _localStorageService.getNovel(novelId);
+      if (localNovel != null) {
+        // 处理作者信息
+        Author? authorObj = localNovel.author;
+        if (author != null && author.isNotEmpty) {
+          // 如果已有作者信息，更新username
+          if (authorObj != null) {
+            authorObj = Author(
+              id: authorObj.id,
+              username: author,
+            );
+          } else {
+            // 创建新的作者信息
+            authorObj = Author(
+              id: 'local_${DateTime.now().millisecondsSinceEpoch}',
+              username: author,
+            );
+          }
+        }
+        
+        // 创建新的Novel对象，因为Novel的属性是final的
+        final updatedNovel = Novel(
+          id: localNovel.id,
+          title: title,
+          author: authorObj,
+          coverImagePath: localNovel.coverImagePath,
+          acts: localNovel.acts,
+          createdAt: localNovel.createdAt,
+          updatedAt: DateTime.now(),
+          lastEditedChapterId: localNovel.lastEditedChapterId,
+        );
+        
+        await _localStorageService.saveNovel(updatedNovel);
+      }
+    } catch (e) {
+      AppLogger.e(
+        'Services/api_service/repositories/impl/editor_repository_impl',
+        '更新小说元数据失败',
+        e);
+      throw ApiException(-1, '更新小说元数据失败: $e');
+    }
+  }
+  
+  /// 获取封面上传凭证
+  @override
+  Future<Map<String, dynamic>> getCoverUploadCredential({
+    required String novelId,
+    required String fileName,
+  }) async {
+    try {
+      // 调用API获取上传凭证
+      return await _apiClient.getCoverUploadCredential(novelId);
+    } catch (e) {
+      AppLogger.e(
+        'Services/api_service/repositories/impl/editor_repository_impl',
+        '获取封面上传凭证失败',
+        e);
+      throw ApiException(-1, '获取封面上传凭证失败: $e');
+    }
+  }
+  
+  /// 更新小说封面
+  @override
+  Future<void> updateNovelCover({
+    required String novelId,
+    required String coverUrl,
+  }) async {
+    try {
+      // 调用API更新封面URL
+      await _apiClient.updateNovelCover(novelId, coverUrl);
+      
+      // 更新本地存储
+      final localNovel = await _localStorageService.getNovel(novelId);
+      if (localNovel != null) {
+        // 创建新的Novel对象，因为Novel的属性是final的
+        final updatedNovel = Novel(
+          id: localNovel.id,
+          title: localNovel.title,
+          author: localNovel.author,
+          coverImagePath: coverUrl,
+          acts: localNovel.acts,
+          createdAt: localNovel.createdAt,
+          updatedAt: DateTime.now(),
+          lastEditedChapterId: localNovel.lastEditedChapterId,
+        );
+        
+        await _localStorageService.saveNovel(updatedNovel);
+      }
+    } catch (e) {
+      AppLogger.e(
+        'Services/api_service/repositories/impl/editor_repository_impl',
+        '更新小说封面失败',
+        e);
+      throw ApiException(-1, '更新小说封面失败: $e');
+    }
+  }
+  
+  /// 归档小说
+  @override
+  Future<void> archiveNovel({
+    required String novelId,
+  }) async {
+    try {
+      // 调用API归档小说
+      await _apiClient.archiveNovel(novelId);
+      
+      // 更新本地存储
+      final localNovel = await _localStorageService.getNovel(novelId);
+      if (localNovel != null) {
+        // 创建新的Novel对象，因为Novel的属性是final的
+        final updatedNovel = Novel(
+          id: localNovel.id,
+          title: localNovel.title,
+          author: localNovel.author,
+          coverImagePath: localNovel.coverImagePath,
+          acts: localNovel.acts,
+          createdAt: localNovel.createdAt,
+          updatedAt: DateTime.now(),
+          lastEditedChapterId: localNovel.lastEditedChapterId,
+          // 目前Novel对象可能没有isArchived字段
+          // 如果有，应该设置为true
+        );
+        
+        await _localStorageService.saveNovel(updatedNovel);
+      }
+    } catch (e) {
+      AppLogger.e(
+        'Services/api_service/repositories/impl/editor_repository_impl',
+        '归档小说失败',
+        e);
+      throw ApiException(-1, '归档小说失败: $e');
+    }
+  }
+  
+  /// 删除小说
+  @override
+  Future<void> deleteNovel({
+    required String novelId,
+  }) async {
+    try {
+      // 使用新的删除方法
+      await _apiClient.deleteNovel(novelId);
+      
+      // 删除本地数据
+      try {
+        await _localStorageService.deleteNovel(novelId);
+        
+        // 清除所有与该小说相关的同步标记
+        // 如果LocalStorageService没有clearAllSyncFlagsForNovel方法，可以使用其他方法
+        final syncTypes = ['novel', 'scene', 'editor'];
+        for (final type in syncTypes) {
+          final syncList = await _localStorageService.getSyncList(type);
+          final toRemove = syncList.where((key) => key.startsWith(novelId)).toList();
+          for (final key in toRemove) {
+            await _localStorageService.clearSyncFlagByType(type, key);
+          }
+        }
+      } catch (e) {
+        AppLogger.e(
+          'Services/api_service/repositories/impl/editor_repository_impl',
+          '删除本地小说数据失败',
+          e);
+      }
+    } catch (e) {
+      AppLogger.e(
+        'Services/api_service/repositories/impl/editor_repository_impl',
+        '删除小说失败',
+        e);
+      throw ApiException(-1, '删除小说失败: $e');
     }
   }
 }

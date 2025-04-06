@@ -384,9 +384,9 @@ class _AddActButton extends StatelessWidget {
             ),
             elevation: 1,
           ).copyWith(
-            overlayColor: MaterialStateProperty.resolveWith<Color?>(
-              (Set<MaterialState> states) {
-                if (states.contains(MaterialState.hovered)) {
+            overlayColor: WidgetStateProperty.resolveWith<Color?>(
+              (Set<WidgetState> states) {
+                if (states.contains(WidgetState.hovered)) {
                   return theme.colorScheme.primary.withOpacity(0.1);
                 }
                 return null;

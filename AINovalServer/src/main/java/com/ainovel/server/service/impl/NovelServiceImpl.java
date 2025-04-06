@@ -21,6 +21,7 @@ import com.ainovel.server.domain.model.Setting;
 import com.ainovel.server.repository.NovelRepository;
 import com.ainovel.server.repository.SceneRepository;
 import com.ainovel.server.service.NovelService;
+import com.ainovel.server.service.StorageService;
 import com.ainovel.server.web.dto.NovelWithScenesDto;
 import com.ainovel.server.web.dto.NovelWithSummariesDto;
 import com.ainovel.server.web.dto.SceneSummaryDto;
@@ -34,12 +35,14 @@ import reactor.core.publisher.Mono;
  * 小说服务实现类
  */
 @Slf4j
+
 @Service
 @RequiredArgsConstructor
 public class NovelServiceImpl implements NovelService {
 
     private final NovelRepository novelRepository;
     private final SceneRepository sceneRepository;
+    private final StorageService storageService;
 
     @Override
     public Mono<Novel> createNovel(Novel novel) {
@@ -145,6 +148,155 @@ public class NovelServiceImpl implements NovelService {
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", id)))
                 .flatMap(novel -> novelRepository.delete(novel))
                 .doOnSuccess(v -> log.info("删除小说成功: {}", id));
+    }
+
+    @Override
+    public Mono<Novel> updateNovelMetadata(String id, String title, String author, String series) {
+        return novelRepository.findById(id)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", id)))
+                .flatMap(existingNovel -> {
+                    // 更新元数据字段
+                    if (title != null) {
+                        existingNovel.setTitle(title);
+                    }
+
+                    // 作者信息需要特殊处理，因为是一个对象
+                    if (author != null && existingNovel.getAuthor() != null) {
+                        // 这里假设只更新作者的用户名，保留原有的作者ID
+                        existingNovel.getAuthor().setUsername(author);
+                    }
+
+                    // 系列信息可能需要添加到元数据中，因为Novel类里没有series字段
+                    if (series != null) {
+                        // 将系列信息添加到标签中
+                        List<String> tags = existingNovel.getTags();
+                        if (tags == null) {
+                            tags = new ArrayList<>();
+                            existingNovel.setTags(tags);
+                        }
+
+                        // 移除旧的系列标签（如果存在）
+                        tags.removeIf(tag -> tag.startsWith("series:"));
+
+                        // 添加新的系列标签
+                        tags.add("series:" + series);
+                    }
+
+                    // 更新时间戳
+                    existingNovel.setUpdatedAt(LocalDateTime.now());
+
+                    return novelRepository.save(existingNovel);
+                })
+                .doOnSuccess(updated -> log.info("更新小说元数据成功: {}", updated.getId()));
+    }
+
+    @Override
+    public Mono<Map<String, String>> getCoverUploadCredential(String novelId) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> storageService.getCoverUploadCredential(novelId,
+                "cover.jpg", "image/jpeg"));
+
+    }
+
+    @Override
+    public Mono<Novel> updateNovelCover(String novelId, String coverUrl) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(existingNovel -> {
+                    // 获取旧的封面URL
+                    String oldCoverImage = existingNovel.getCoverImage();
+
+                    // 更新封面URL
+                    existingNovel.setCoverImage(coverUrl);
+                    existingNovel.setUpdatedAt(LocalDateTime.now());
+
+                    return novelRepository.save(existingNovel)
+                            .flatMap(updatedNovel -> {
+                                // 如果有旧封面且与新封面不同，尝试删除旧封面
+                                if (oldCoverImage != null && !oldCoverImage.isEmpty()
+                                        && !oldCoverImage.equals(coverUrl)) {
+                                    // 尝试从URL中提取key
+                                    String oldCoverKey = extractCoverKeyFromUrl(oldCoverImage);
+                                    if (oldCoverKey != null) {
+                                        return storageService.deleteCover(oldCoverKey)
+                                                .onErrorResume(e -> {
+                                                    log.warn("删除旧封面失败: {}, 错误: {}", oldCoverKey, e.getMessage());
+                                                    return Mono.just(false);
+                                                })
+                                                .thenReturn(updatedNovel);
+                                    }
+                                }
+                                return Mono.just(updatedNovel);
+                            });
+                })
+                .doOnSuccess(updated -> log.info("更新小说封面成功: {}, 新封面URL: {}", updated.getId(), coverUrl));
+    }
+
+    /**
+     * 从封面URL中提取存储键 这个方法需要根据实际的URL格式进行调整
+     */
+    private String extractCoverKeyFromUrl(String coverUrl) {
+        try {
+            if (coverUrl == null || coverUrl.isEmpty()) {
+                return null;
+            }
+
+            // 示例: 从URL https://bucket.endpoint/covers/novelId/filename.jpg 提取 covers/novelId/filename.jpg
+            int protocolEnd = coverUrl.indexOf("://");
+            if (protocolEnd > 0) {
+                String withoutProtocol = coverUrl.substring(protocolEnd + 3);
+                int pathStart = withoutProtocol.indexOf('/');
+                if (pathStart > 0) {
+                    return withoutProtocol.substring(pathStart + 1);
+                }
+            }
+
+            return null;
+        } catch (Exception e) {
+            log.warn("从URL提取封面键失败: {}, 错误: {}", coverUrl, e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public Mono<Novel> archiveNovel(String novelId) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(existingNovel -> {
+                    // 将小说标记为已归档
+                    existingNovel.setIsArchived(true);
+                    existingNovel.setUpdatedAt(LocalDateTime.now());
+
+                    return novelRepository.save(existingNovel);
+                })
+                .doOnSuccess(updated -> log.info("小说归档成功: {}", updated.getId()));
+    }
+
+    @Override
+    public Mono<Novel> unarchiveNovel(String novelId) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(existingNovel -> {
+                    // 将小说标记为未归档
+                    existingNovel.setIsArchived(false);
+                    existingNovel.setUpdatedAt(LocalDateTime.now());
+
+                    return novelRepository.save(existingNovel);
+                })
+                .doOnSuccess(updated -> log.info("小说恢复归档成功: {}", updated.getId()));
+    }
+
+    @Override
+    public Mono<Void> permanentlyDeleteNovel(String novelId) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 先删除与该小说相关的所有场景
+                    return sceneRepository.deleteByNovelId(novelId)
+                            .then(novelRepository.delete(novel));
+                })
+                .doOnSuccess(v -> log.info("永久删除小说及其所有场景成功: {}", novelId));
     }
 
     @Override

@@ -19,8 +19,10 @@ import 'package:ainoval/services/api_service/repositories/chat_repository.dart';
 // import 'package:ainoval/services/api_service.dart';
 import 'package:ainoval/services/api_service/repositories/impl/chat_repository_impl.dart';
 import 'package:ainoval/services/api_service/repositories/impl/novel_repository_impl.dart';
+import 'package:ainoval/services/api_service/repositories/impl/storage_repository_impl.dart';
 import 'package:ainoval/services/api_service/repositories/impl/user_ai_model_config_repository_impl.dart';
 import 'package:ainoval/services/api_service/repositories/novel_repository.dart'; // <<< 导入接口
+import 'package:ainoval/services/api_service/repositories/storage_repository.dart';
 // <<< 导入 AI Config 仓库 >>>
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
 import 'package:ainoval/services/auth_service.dart' as auth_service;
@@ -77,6 +79,9 @@ void main() async {
     apiClient: apiClient, // 使用直接创建的 apiClient
   );
 
+  // 创建StorageRepository实例
+  final storageRepository = StorageRepositoryImpl(apiClient);
+
   // 创建UserAIModelConfigRepository
   final userAIModelConfigRepository =
       UserAIModelConfigRepositoryImpl(apiClient: apiClient);
@@ -99,6 +104,7 @@ void main() async {
         RepositoryProvider<NovelRepository>.value(value: novelRepository),
         RepositoryProvider<CodexRepository>.value(value: codexRepository),
         RepositoryProvider<ChatRepository>.value(value: chatRepository),
+        RepositoryProvider<StorageRepository>.value(value: storageRepository),
         RepositoryProvider<UserAIModelConfigRepository>.value(
             value: userAIModelConfigRepository),
         RepositoryProvider<ContextProvider>.value(value: contextProvider),

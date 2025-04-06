@@ -37,6 +37,7 @@ import 'package:ainoval/services/sync_service.dart';
 // 导入Plan相关组件
 import 'package:ainoval/blocs/plan/plan_bloc.dart';
 import 'package:ainoval/screens/editor/components/plan_view.dart';
+import 'package:ainoval/screens/editor/widgets/novel_settings_view.dart';
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({
@@ -75,6 +76,7 @@ class _EditorScreenState extends State<EditorScreen>
   bool _isAIChatSidebarVisible = false; // 控制聊天侧边栏是否可见
   bool _isSettingsPanelVisible = false; // 控制设置面板是否可见
   bool _isEditorSidebarVisible = true; // 控制编辑器侧边栏是否可见
+  bool _isNovelSettingsVisible = false; // 控制小说设置视图是否可见
 
   // 聊天侧边栏宽度相关状态
   double _chatSidebarWidth = 380; // 默认宽度
@@ -102,7 +104,7 @@ class _EditorScreenState extends State<EditorScreen>
   int _cachedWordCount = 0;
   String? _wordCountCacheKey;
   // 字数统计内存缓存，用于同一次渲染周期内避免重复计算
-  Map<String, int> _memoryWordCountCache = {};
+  final Map<String, int> _memoryWordCountCache = {};
   
   // 滚动处理节流
   DateTime? _lastScrollHandleTime;
@@ -598,14 +600,10 @@ class _EditorScreenState extends State<EditorScreen>
                     setState(() {
                       _isAIChatSidebarVisible = true;
                       _isSettingsPanelVisible = false; // 关闭设置面板
+                      _isNovelSettingsVisible = false; // 关闭小说设置视图
                     });
                   },
-                  onOpenSettings: () {
-                    setState(() {
-                      _isSettingsPanelVisible = true;
-                      _isAIChatSidebarVisible = false; // 关闭聊天侧边栏
-                    });
-                  },
+                  onOpenSettings: _toggleNovelSettings, // 使用新的方法
                   onToggleSidebar: () {
                     setState(() {
                       _isEditorSidebarVisible = false;
@@ -693,8 +691,8 @@ class _EditorScreenState extends State<EditorScreen>
                       final EditorLoaded currLoaded = current;
                       
                       // 先检查时间戳，如果相同且非零，大概率内容相同
-                      final prevTimestamp = prevLoaded.novel.updatedAt?.millisecondsSinceEpoch ?? 0;
-                      final currTimestamp = currLoaded.novel.updatedAt?.millisecondsSinceEpoch ?? 0;
+                      final prevTimestamp = prevLoaded.novel.updatedAt.millisecondsSinceEpoch ?? 0;
+                      final currTimestamp = currLoaded.novel.updatedAt.millisecondsSinceEpoch ?? 0;
                       
                       // 如果时间戳都不为0但不同，内容肯定变化了
                       if (prevTimestamp != currTimestamp && 
@@ -876,6 +874,7 @@ class _EditorScreenState extends State<EditorScreen>
                           !_isAIChatSidebarVisible;
                       if (_isAIChatSidebarVisible) {
                         _isSettingsPanelVisible = false; // 打开聊天时关闭设置
+                        _isNovelSettingsVisible = false; // 关闭小说设置视图
                       }
                     });
                   },
@@ -886,6 +885,7 @@ class _EditorScreenState extends State<EditorScreen>
                           !_isSettingsPanelVisible;
                       if (_isSettingsPanelVisible) {
                         _isAIChatSidebarVisible = false; // 打开设置时关闭聊天
+                        _isNovelSettingsVisible = false; // 关闭小说设置视图
                       }
                     });
                   },
@@ -898,36 +898,41 @@ class _EditorScreenState extends State<EditorScreen>
             ),
             // 主编辑区域与聊天侧边栏
             Expanded(
-              child: Row(
-                children: [
-                  // 根据当前视图模式选择显示内容
-                  Expanded(
-                    child: _isPlanViewActive
-                        ? PlanView(
-                            novelId: widget.novel.id,
-                            planBloc: _planBloc,
-                            onSwitchToWrite: _togglePlanView,
-                          )
-                        : Padding(
-                            padding: const EdgeInsets.only(
-                                left: 16, right: 16, bottom: 16),
-                            child: EditorMainArea(
-                              novel: state.novel,
-                              editorBloc: _editorBloc,
-                              sceneControllers: _sceneControllers,
-                              sceneSummaryControllers:
-                                  _sceneSummaryControllers,
-                              activeActId: state.activeActId,
-                              activeChapterId: state.activeChapterId,
-                              activeSceneId: state.activeSceneId,
-                              scrollController: _scrollController,
-                              // Pass the keys down
-                              sceneKeys: _sceneKeys,
-                            ),
-                          ),
-                  ),
-                ],
-              ),
+              child: _isNovelSettingsVisible
+                  ? NovelSettingsView(
+                      novel: widget.novel,
+                      onSettingsClose: _toggleNovelSettings,
+                    )
+                  : Row(
+                      children: [
+                        // 根据当前视图模式选择显示内容
+                        Expanded(
+                          child: _isPlanViewActive
+                              ? PlanView(
+                                  novelId: widget.novel.id,
+                                  planBloc: _planBloc,
+                                  onSwitchToWrite: _togglePlanView,
+                                )
+                              : Padding(
+                                  padding: const EdgeInsets.only(
+                                      left: 16, right: 16, bottom: 16),
+                                  child: EditorMainArea(
+                                    novel: state.novel,
+                                    editorBloc: _editorBloc,
+                                    sceneControllers: _sceneControllers,
+                                    sceneSummaryControllers:
+                                        _sceneSummaryControllers,
+                                    activeActId: state.activeActId,
+                                    activeChapterId: state.activeChapterId,
+                                    activeSceneId: state.activeSceneId,
+                                    scrollController: _scrollController,
+                                    // Pass the keys down
+                                    sceneKeys: _sceneKeys,
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -1131,7 +1136,7 @@ class _EditorScreenState extends State<EditorScreen>
         sum + act.chapters.fold(0, (sum, chapter) => 
             sum + chapter.scenes.length));
     
-    final updatedAtMs = novel.updatedAt?.millisecondsSinceEpoch ?? 0;
+    final updatedAtMs = novel.updatedAt.millisecondsSinceEpoch ?? 0;
     final cacheKey = '${novel.id}_${updatedAtMs}_$totalSceneCount';
     
     // 首先检查内存缓存，这是最快的检查方式
@@ -1291,7 +1296,7 @@ class _EditorScreenState extends State<EditorScreen>
     }
     
     // 安全断言 - 此时我们已经确保fromChapterId不为null
-    assert(fromChapterId != null, "fromChapterId不应该为null");
+    assert(fromChapterId != null, 'fromChapterId不应该为null');
     
     // 防抖：避免短时间内多次触发相同的加载请求
     if (_lastLoadTime != null && 
@@ -1395,8 +1400,8 @@ class _EditorScreenState extends State<EditorScreen>
       final newNovel = state.novel;
 
       // 检查更新时间戳是否变化 - 表示内容实际被修改
-      final oldTimestamp = oldNovel.updatedAt?.millisecondsSinceEpoch ?? 0;
-      final newTimestamp = newNovel.updatedAt?.millisecondsSinceEpoch ?? 0;
+      final oldTimestamp = oldNovel.updatedAt.millisecondsSinceEpoch ?? 0;
+      final newTimestamp = newNovel.updatedAt.millisecondsSinceEpoch ?? 0;
       if (oldTimestamp != newTimestamp && newTimestamp > 0) {
         contentChanged = true;
       } else {
@@ -1517,13 +1522,13 @@ class _EditorScreenState extends State<EditorScreen>
       
       String reason;
       if (contentChanged) {
-        reason = "内容结构变化";
+        reason = '内容结构变化';
       } else if (activeElementsChanged) {
-        reason = "活动元素变化";
+        reason = '活动元素变化';
       } else if (timeIntervalExceeded) {
-         reason = "时间间隔超过(${_controllerLongCheckInterval.inSeconds}秒)";
+         reason = '时间间隔超过(${_controllerLongCheckInterval.inSeconds}秒)';
       } else {
-        reason = "首次加载";
+        reason = '首次加载';
       }
       
       AppLogger.i('Screens/editor/editor_screen', '触发控制器检查 - 原因: $reason');
@@ -1546,8 +1551,8 @@ class _EditorScreenState extends State<EditorScreen>
       final editorSyncList = await localStorageService.getSyncList('editor');
       
       final hasNovelToSync = novelSyncList.contains(novelId);
-      final hasScenesToSync = sceneSyncList.any((sceneKey) => sceneKey.startsWith('$novelId'));
-      final hasEditorToSync = editorSyncList.any((editorKey) => editorKey.startsWith('$novelId'));
+      final hasScenesToSync = sceneSyncList.any((sceneKey) => sceneKey.startsWith(novelId));
+      final hasEditorToSync = editorSyncList.any((editorKey) => editorKey.startsWith(novelId));
       
       if (hasNovelToSync || hasScenesToSync || hasEditorToSync) {
         AppLogger.i('EditorScreen', '检测到待同步内容，执行退出前同步: ${widget.novel.id}');
@@ -1583,6 +1588,18 @@ class _EditorScreenState extends State<EditorScreen>
         // is now responsible for setting the correct target active scene.
         // No need to reload the previous active chapter here.
         AppLogger.i('EditorScreen', 'Switched from Plan to Write view. Scroll handled by BlocListener.');
+      }
+    });
+  }
+
+  // 修改侧边栏的onOpenSettings处理函数
+  void _toggleNovelSettings() {
+    setState(() {
+      _isNovelSettingsVisible = !_isNovelSettingsVisible;
+      if (_isNovelSettingsVisible) {
+        // 显示小说设置时关闭其他面板
+        _isAIChatSidebarVisible = false;
+        _isSettingsPanelVisible = false;
       }
     });
   }

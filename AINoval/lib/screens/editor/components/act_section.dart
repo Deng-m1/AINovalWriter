@@ -183,7 +183,7 @@ class _ActSectionState extends State<ActSection> {
   void _showActMenu(BuildContext context) {
     showMenu(
       context: context,
-      position: RelativeRect.fromLTRB(100, 100, 0, 0),
+      position: const RelativeRect.fromLTRB(100, 100, 0, 0),
       items: [
         PopupMenuItem(
           child: ListTile(
@@ -291,9 +291,9 @@ class _AddChapterButton extends StatelessWidget {
             // 添加阴影
             elevation: 1,
           ).copyWith(
-            overlayColor: MaterialStateProperty.resolveWith<Color?>(
-              (Set<MaterialState> states) {
-                if (states.contains(MaterialState.hovered)) {
+            overlayColor: WidgetStateProperty.resolveWith<Color?>(
+              (Set<WidgetState> states) {
+                if (states.contains(WidgetState.hovered)) {
                   return theme.colorScheme.primary.withOpacity(0.1);
                 }
                 return null;

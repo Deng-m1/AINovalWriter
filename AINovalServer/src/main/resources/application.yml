@@ -61,6 +61,19 @@ ainovel:
     enabled: true
     auto-save-history: true
     max-history-count: 20
+  storage:
+    default-provider: alioss
+    covers-path: covers
+    # 是否在启动时测试OSS连接
+    test-on-startup: true
+    # 阿里云OSS配置
+    aliyun:
+      endpoint: https://oss-cn-shanghai.aliyuncs.com
+      access-key-id: ${ALIYUN_OSS_ACCESS_KEY_ID}
+      access-key-secret: ${ALIYUN_OSS_ACCESS_KEY_SECRET}
+      bucket-name: ${ALIYUN_OSS_BUCKET_NAME}
+      base-url: ${ALIYUN_OSS_BASE_URL}
+      region: cn-shanghai
 
 # 向量存储配置
 vectorstore:
@@ -93,3 +106,5 @@ jasypt:
     password: YOUR_SECRET_ENCRYPTION_KEY_HERE
     algorithm: PBEWITHHMACSHA512ANDAES_256
     iv-generator-classname: org.jasypt.iv.RandomIvGenerator
+
+
