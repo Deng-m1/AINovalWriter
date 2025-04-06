@@ -170,121 +170,90 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   Future<void> _onLoadMoreScenes(
       LoadMoreScenes event, Emitter<EditorState> emit) async {
     final currentState = state;
-    if (currentState is EditorLoaded) {
-      novel_models.Novel currentNovelData = currentState.novel;
-      AppLogger.i('EditorBloc/_onLoadMoreScenes', 
-          'Received LoadMoreScenes: from=${event.fromChapterId}, dir=${event.direction}, limit=${event.chaptersLimit}, targetAct=${event.targetActId}, targetChapter=${event.targetChapterId}, targetScene=${event.targetSceneId}');
-
-      try {
-        AppLogger.i('EditorBloc/_onLoadMoreScenes', 'Emitting state with isLoading: true');
-        emit(currentState.copyWith(isLoading: true));
-
-        AppLogger.i('EditorBloc/_onLoadMoreScenes', 'Calling repository.loadMoreScenes...');
-        final scenes = await repository.loadMoreScenes(
-          currentState.novel.id,
-          event.fromChapterId,
-          event.direction,
-          chaptersLimit: event.chaptersLimit,
-        );
-        
-        // 使用加载前的 novel 状态进行检查和合并的基础
-        novel_models.Novel baseNovelForUpdate = currentState.novel;
-        
-        // --- 添加日志：检查目标场景是否在当前状态中 ---
-        if (event.targetChapterId != null && event.targetActId != null) { // Check if target IDs are present in the event
-            final targetAct = baseNovelForUpdate.getAct(event.targetActId!);
-            final targetChapter = targetAct?.getChapter(event.targetChapterId!);
-            if (targetChapter != null) {
-                final sceneIdsInChapter = targetChapter.scenes.map((s) => s.id).toList();
-                AppLogger.d('EditorBloc/_onLoadMoreScenes',
-                    '检查当前状态(baseNovel): Chapter ${event.targetChapterId} 包含场景 IDs: $sceneIdsInChapter. 目标 Scene ID: ${event.targetSceneId}');
-            } else {
-                AppLogger.w('EditorBloc/_onLoadMoreScenes',
-                    '检查当前状态(baseNovel): 找不到 Chapter ${event.targetChapterId}');
-            }
-        } else {
-            AppLogger.d('EditorBloc/_onLoadMoreScenes', '事件中未提供目标 Chapter/Act ID，跳过当前状态检查。');
-        }
-        // --- 日志结束 ---
-
-        // 更新小说模型 (合并 API 返回的场景，如果 scenes 不为空)
-        novel_models.Novel updatedNovel = baseNovelForUpdate; // 开始时等于基础状态
-        if (scenes.isNotEmpty) {
-          AppLogger.i('EditorBloc/_onLoadMoreScenes', 'Starting novel update with ${scenes.keys.length} loaded chapters.'); // Corrected log message
-          updatedNovel = _mergeNewScenes(baseNovelForUpdate, scenes);
-        } else {
-           AppLogger.i('EditorBloc/_onLoadMoreScenes', 'API returned 0 scenes, proceeding without merging.');
-        }
-
-        // 确定要使用的活动 ID
-        String? activeActId = currentState.activeActId;
-        String? activeChapterId = currentState.activeChapterId;
-        String? activeSceneId = currentState.activeSceneId;
-        
-        // *使用 event 中的 target ID 来决定最终的 active ID*
-        String? finalTargetActId = event.targetActId; 
-        String? finalTargetChapterId = event.targetChapterId;
-        String? finalTargetSceneId = event.targetSceneId;
-        
-        // 如果事件中没有指定目标，则使用当前状态的活动 ID 作为后备
-        finalTargetActId ??= currentState.activeActId;
-        finalTargetChapterId ??= currentState.activeChapterId;
-        finalTargetSceneId ??= currentState.activeSceneId;
-
-        // 如果我们有明确的目标场景 ID (来自事件或状态)，尝试设置活动场景
-        AppLogger.i('EditorBloc/_onLoadMoreScenes', 'Checking if final target scene exists in *updatedNovel*: targetAct=$finalTargetActId, targetChapter=$finalTargetChapterId, targetScene=$finalTargetSceneId');
-        if (finalTargetActId != null && finalTargetChapterId != null && finalTargetSceneId != null) {
-          // 验证目标场景确实存在于 *更新后* 的 novel 数据中
-          bool sceneExists = false;
-          final checkAct = updatedNovel.getAct(finalTargetActId);
-          final checkChapter = checkAct?.getChapter(finalTargetChapterId);
-          if (checkChapter != null) {
-            sceneExists = checkChapter.scenes.any((s) => s.id == finalTargetSceneId);
-          }
-          // --- 添加日志: 打印验证结果 ---
-          AppLogger.d('EditorBloc/_onLoadMoreScenes', 'Target scene exists validation result: $sceneExists');
-          
-          if (sceneExists) {
-            activeActId = finalTargetActId;
-            activeChapterId = finalTargetChapterId;
-            activeSceneId = finalTargetSceneId;
-            AppLogger.i('Blocs/editor/editor_bloc', 
-                '设置新的活动场景: actId=$activeActId, chapterId=$activeChapterId, sceneId=$activeSceneId');
-          } else {
-            AppLogger.w('Blocs/editor/editor_bloc', 
-                '最终目标场景不存在于 updatedNovel，无法设置: actId=$finalTargetActId, chapterId=$finalTargetChapterId, sceneId=$finalTargetSceneId. 保持当前活动场景。');
-            // 保持 currentState 的 active IDs 不变
-            activeActId = currentState.activeActId;
-            activeChapterId = currentState.activeChapterId;
-            activeSceneId = currentState.activeSceneId;
-          }
-        }
-        // (省略其他活动 ID 设置逻辑，因为上面的代码块已经处理了)
-
-        AppLogger.i('EditorBloc/_onLoadMoreScenes', 'Emitting final state: isLoading=false, activeAct=$activeActId, activeChapter=$activeChapterId, activeScene=$activeSceneId');
-        emit(currentState.copyWith(
-          novel: updatedNovel,
-          isLoading: false,
-          activeActId: activeActId,
-          activeChapterId: activeChapterId,
-          activeSceneId: activeSceneId,
-        ));
-        
-        if (activeActId != null && activeChapterId != null && activeSceneId != null) {
-          AppLogger.i('Blocs/editor/editor_bloc', 
-              '加载场景后设置活动场景: actId=$activeActId, chapterId=$activeChapterId, sceneId=$activeSceneId');
-        }
-      } catch (e, stackTrace) {
-        AppLogger.e('Blocs/editor/editor_bloc', '加载更多场景失败', e, stackTrace);
-        emit(currentState.copyWith(
-          isLoading: false,
-          errorMessage: '加载场景失败: $e',
-          // 即使失败，也尝试保留 *事件中* 的目标ID (如果它们存在)，否则保留当前状态的ID
-          activeActId: event.targetActId ?? currentState.activeActId,
-          activeChapterId: event.targetChapterId ?? currentState.activeChapterId,
-          activeSceneId: event.targetSceneId ?? currentState.activeSceneId,
-        ));
+    if (currentState is! EditorLoaded) {
+      emit(const EditorError(message: '无法加载更多场景：编辑器尚未加载'));
+      return;
+    }
+    
+    // 如果已经在加载中，直接返回以防重复加载
+    if (currentState.isLoading) {
+      AppLogger.d('Blocs/editor/editor_bloc', '已有加载任务正在进行，忽略此次加载请求');
+      return;
+    }
+    
+    // 检查是否满足节流间隔
+    final now = DateTime.now();
+    if (_lastLoadRequestTime != null && 
+        now.difference(_lastLoadRequestTime!) < _loadThrottleInterval) {
+      AppLogger.d('Blocs/editor/editor_bloc', '加载请求过于频繁，已被节流');
+      return;
+    }
+    _lastLoadRequestTime = now;
+    
+    // 标记为正在加载更多
+    emit(currentState.copyWith(isLoading: true));
+    
+    try {
+      AppLogger.i('Blocs/editor/editor_bloc', 
+          '开始加载更多场景: 章节=${event.fromChapterId}, 方向=${event.direction}, 限制=${event.chaptersLimit}');
+      
+      // 调用加载更多场景的API
+      final newScenes = await repository.loadMoreScenes(
+        novelId,
+        event.fromChapterId,
+        event.direction,
+        chaptersLimit: event.chaptersLimit,
+      );
+      
+      if (newScenes.isEmpty) {
+        // 没有更多场景可加载，恢复原状态，但标记加载已结束
+        AppLogger.i('Blocs/editor/editor_bloc', '没有更多场景可加载');
+        emit(currentState.copyWith(isLoading: false));
+        return;
       }
+      
+      // 将新加载的场景合并到当前小说结构中
+      final updatedNovel = _mergeNewScenes(currentState.novel, newScenes);
+      
+      AppLogger.i('Blocs/editor/editor_bloc', 
+          '成功加载更多场景: ${newScenes.keys.length}个章节, ${newScenes.values.fold(0, (sum, scenes) => sum + scenes.length)}个场景');
+      
+      // 如果是中心加载并且指定了章节，将活动章节设置为该章节
+      String? newActiveChapterId = currentState.activeChapterId;
+      String? newActiveActId = currentState.activeActId;
+      String? newActiveSceneId = currentState.activeSceneId;
+      
+      if (event.direction == 'center') {
+        // 查找包含该章节的Act
+        for (final act in updatedNovel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == event.fromChapterId && chapter.scenes.isNotEmpty) {
+              newActiveChapterId = chapter.id;
+              newActiveActId = act.id;
+              newActiveSceneId = chapter.scenes.first.id;
+              break;
+            }
+          }
+          if (newActiveChapterId == event.fromChapterId) break;
+        }
+      }
+      
+      emit(currentState.copyWith(
+        novel: updatedNovel,
+        isLoading: false,
+        // 如果center模式找到对应章节，更新活动状态
+        activeChapterId: newActiveChapterId,
+        activeActId: newActiveActId,
+        activeSceneId: newActiveSceneId,
+      ));
+    } catch (e) {
+      AppLogger.e('Blocs/editor/editor_bloc', '加载更多场景失败', e);
+      
+      // 出错时恢复原状态，但标记加载已结束
+      emit(currentState.copyWith(
+        isLoading: false,
+        errorMessage: '加载更多场景失败: ${e.toString()}',
+      ));
     }
   }
 
