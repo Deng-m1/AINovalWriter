@@ -219,7 +219,7 @@ class SyncService {
         final backendNovelJson = {
           'id': localNovel.id,
           'title': localNovel.title,
-          'coverImage': localNovel.coverImagePath,
+          'coverImage': localNovel.coverUrl,
           // 确保包含作者信息
           'author': localNovel.author?.toJson() ??
               {
@@ -603,7 +603,7 @@ class SyncService {
       final backendNovelJson = {
         'id': localNovel.id,
         'title': localNovel.title,
-        'coverImage': localNovel.coverImagePath,
+        'coverImage': localNovel.coverUrl,
         // 确保包含作者信息
         'author': localNovel.author?.toJson() ??
             {

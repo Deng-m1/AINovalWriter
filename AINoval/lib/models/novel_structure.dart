@@ -5,12 +5,16 @@ class Novel {
   Novel({
     required this.id,
     required this.title,
-    this.coverImagePath = '',
+    this.coverUrl= '',
     required this.createdAt,
     required this.updatedAt,
     this.acts = const [],
     this.lastEditedChapterId,
     this.author,
+    this.wordCount = 0,
+    this.readTime = 0,
+    this.version = 1,
+    this.contributors = const <String>[],
   });
 
   /// 从JSON创建Novel实例
@@ -46,10 +50,17 @@ class Novel {
       }
       // --- 关键部分结束 ---
 
+      // 解析元数据
+      final metadata = json['metadata'] as Map<String, dynamic>? ?? {};
+      final wordCount = metadata['wordCount'] as int? ?? 0;
+      final readTime = metadata['readTime'] as int? ?? 0;
+      final version = metadata['version'] as int? ?? 1;
+      final contributors = (metadata['contributors'] as List?)?.cast<String>() ?? <String>[];
+
       return Novel(
         id: json['id'] as String,
         title: json['title'] as String,
-        coverImagePath: json['coverImagePath'] as String? ?? '', // 处理可能的 null
+        coverUrl: json['coverUrl'] as String? ?? '', // 处理可能的 null
         createdAt: DateTime.parse(json['createdAt'] as String),
         updatedAt: DateTime.parse(json['updatedAt'] as String),
         acts: parsedActs, // 使用上面解析得到的列表
@@ -57,6 +68,10 @@ class Novel {
         author: json['author'] != null
             ? Author.fromJson(json['author'])
             : null, // 如果有 Author 字段
+        wordCount: wordCount,
+        readTime: readTime,
+        version: version,
+        contributors: contributors,
       );
     } catch (e, stackTrace) {
       AppLogger.e('NovelModel', 'Error parsing Novel from JSON: ${json['id']}',
@@ -69,14 +84,19 @@ class Novel {
   }
   final String id;
   final String title;
-  final String coverImagePath;
+  final String coverUrl;
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<Act> acts;
   final String? lastEditedChapterId; // 上次编辑的章节ID
   final Author? author; // 作者信息
-  /// 计算小说总字数
-  int get wordCount {
+  final int wordCount; // 总字数（来自元数据）
+  final int readTime; // 估计阅读时间（分钟）
+  final int version; // 文档版本号
+  final List<String> contributors; // 贡献者列表
+
+  /// 计算小说总字数（如果需要动态计算）
+  int calculateWordCount() {
     int totalWordCount = 0;
     for (final act in acts) {
       for (final chapter in act.chapters) {
@@ -93,12 +113,18 @@ class Novel {
     return {
       'id': id,
       'title': title,
-      'coverImagePath': coverImagePath,
+      'coverUrl': coverUrl,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'acts': acts.map((act) => act.toJson()).toList(),
       'lastEditedChapterId': lastEditedChapterId,
       'author': author?.toJson(),
+      'metadata': {
+        'wordCount': wordCount,
+        'readTime': readTime,
+        'version': version,
+        'contributors': contributors,
+      },
     };
   }
 
@@ -106,22 +132,30 @@ class Novel {
   Novel copyWith({
     String? id,
     String? title,
-    String? coverImagePath,
+    String? coverUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
     List<Act>? acts,
     String? lastEditedChapterId,
     Author? author,
+    int? wordCount,
+    int? readTime,
+    int? version,
+    List<String>? contributors,
   }) {
     return Novel(
       id: id ?? this.id,
       title: title ?? this.title,
-      coverImagePath: coverImagePath ?? this.coverImagePath,
+      coverUrl: coverUrl?? this.coverUrl,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       acts: acts ?? this.acts,
       lastEditedChapterId: lastEditedChapterId ?? this.lastEditedChapterId,
       author: author ?? this.author,
+      wordCount: wordCount ?? this.wordCount,
+      readTime: readTime ?? this.readTime,
+      version: version ?? this.version,
+      contributors: contributors ?? this.contributors,
     );
   }
 

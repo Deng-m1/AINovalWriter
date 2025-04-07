@@ -546,24 +546,51 @@ class _NovelSettingsViewState extends State<NovelSettingsView> {
     }
     
     if (_coverUrl != null && _coverUrl!.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(7.0),
-        child: Image.network(
-          _coverUrl!,
-          fit: BoxFit.contain,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return Center(child: CircularProgressIndicator(
-              value: loadingProgress.expectedTotalBytes != null
-                  ? loadingProgress.cumulativeBytesLoaded / 
-                      loadingProgress.expectedTotalBytes!
-                  : null,
-            ));
-          },
-          errorBuilder: (context, error, stackTrace) {
-            return _buildUploadPlaceholder(isError: true);
-          },
-        ),
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(7.0),
+            child: Image.network(
+              _coverUrl!,
+              fit: BoxFit.contain,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Center(child: CircularProgressIndicator(
+                  value: loadingProgress.expectedTotalBytes != null
+                      ? loadingProgress.cumulativeBytesLoaded / 
+                          loadingProgress.expectedTotalBytes!
+                      : null,
+                ));
+              },
+              errorBuilder: (context, error, stackTrace) {
+                return _buildUploadPlaceholder(isError: true);
+              },
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: IconButton(
+              onPressed: _selectCoverImage,
+              icon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.edit,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+              tooltip: '修改封面',
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
+            ),
+          ),
+        ],
       );
     }
     
@@ -789,6 +816,9 @@ class _NovelSettingsViewState extends State<NovelSettingsView> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('小说元数据已更新.')), // Chinese
         );
+        
+        // 关闭设置页面，返回编辑器
+        widget.onSettingsClose();
       }
     } catch (e, stackTrace) {
       AppLogger.e('NovelSettingsView', 'Failed to save metadata', e, stackTrace);

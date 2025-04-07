@@ -259,4 +259,12 @@ public interface NovelService {
      * @return 小说及其场景摘要
      */
     Mono<NovelWithSummariesDto> getNovelWithSceneSummaries(String novelId);
+
+    /**
+     * 计算并更新小说的总字数
+     *
+     * @param novelId 小说ID
+     * @return 更新后的小说
+     */
+    Mono<Novel> updateNovelWordCount(String novelId);
 }

@@ -44,6 +44,7 @@ import 'package:ainoval/screens/editor/components/plan_view.dart';
 import 'package:ainoval/screens/editor/widgets/novel_settings_view.dart';
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/services/api_service/repositories/impl/aliyun_oss_storage_repository.dart';
+import 'package:ainoval/blocs/novel_list/novel_list_bloc.dart';
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({
@@ -586,6 +587,19 @@ class _EditorScreenState extends State<EditorScreen>
     
     // 清理TabController
     _tabController.dispose();
+    
+    // 通知小说列表页面刷新数据
+    try {
+      // 如果在Widget树上下文中有NovelListBloc，则触发重新加载
+      if (context.read<NovelListBloc>() != null) {
+        context.read<NovelListBloc>().add(LoadNovels());
+        AppLogger.i('EditorScreen', '已触发小说列表刷新');
+      } else {
+        AppLogger.w('EditorScreen', '小说列表Bloc不可用，无法触发刷新');
+      }
+    } catch (e) {
+      AppLogger.e('EditorScreen', '尝试刷新小说列表时出错', e);
+    }
     
     super.dispose();
   }

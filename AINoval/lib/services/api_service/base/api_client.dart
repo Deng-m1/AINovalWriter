@@ -687,7 +687,7 @@ class ApiClient {
     try {
       final response =
           await post('/novels/update-with-scenes', data: novelWithScenesData);
-      AppLogger.i('/novels/update-with-scenes', '更新成功，响应: $response');
+      AppLogger.i('/novels/update-with-scenes', '更新成功');
       return response;
     } catch (e) {
       AppLogger.e('/novels/update-with-scenes',

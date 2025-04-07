@@ -21,7 +21,7 @@ class MockData {
         wordCount: 45709,
         seriesName: '',
         completionPercentage: 0.7,
-        coverImagePath: '',
+        coverUrl: '',
       ),
     );
     
@@ -56,7 +56,7 @@ class MockData {
           wordCount: _random.nextInt(100000),
           seriesName: seriesName,
           completionPercentage: _random.nextDouble(),
-          coverImagePath: '',
+          coverUrl: '',
         ),
       );
     }
@@ -73,7 +73,7 @@ class MockData {
       wordCount: 0,
       seriesName: seriesName ?? '',
       completionPercentage: 0.0,
-      coverImagePath: '',
+      coverUrl: '',
     );
   }
   
@@ -89,7 +89,7 @@ class MockData {
       wordCount: _random.nextInt(50000) + 10000,
       seriesName: '',
       completionPercentage: 1.0,
-      coverImagePath: '',
+      coverUrl: '',
     );
   }
   

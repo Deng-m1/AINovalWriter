@@ -167,7 +167,10 @@ class RecentNovelCard extends StatelessWidget {
       MaterialPageRoute(
         builder: (context) => EditorScreen(novel: novel),
       ),
-    );
+    ).then((_) {
+      // 导航返回时刷新小说列表
+      context.read<NovelListBloc>().add(LoadNovels());
+    });
   }
 
   // 获取动态的柔和颜色
@@ -271,8 +274,31 @@ class RecentNovelCover extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 根据ID生成不同的抽象设计
-          _buildCoverDesign(bgColor, novel.id, index),
+          // 优先显示封面图片（如果有）
+          if (novel.coverUrl.isNotEmpty)
+            Image.network(
+              novel.coverUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                // 加载失败时使用生成的设计
+                return _buildCoverDesign(bgColor, novel.id, index);
+              },
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Center(
+                  child: CircularProgressIndicator(
+                    value: loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded /
+                            loadingProgress.expectedTotalBytes!
+                        : null,
+                    strokeWidth: 2,
+                  ),
+                );
+              },
+            )
+          else
+            // 使用生成的设计作为默认封面
+            _buildCoverDesign(bgColor, novel.id, index),
 
           // 进度条
           Positioned(

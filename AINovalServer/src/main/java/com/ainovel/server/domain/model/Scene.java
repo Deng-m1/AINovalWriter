@@ -44,6 +44,11 @@ public class Scene {
     private String summary;
 
     /**
+     * 场景字数
+     */
+    private Integer wordCount;
+
+    /**
      * 场景序号，用于排序
      */
     private Integer sequence;

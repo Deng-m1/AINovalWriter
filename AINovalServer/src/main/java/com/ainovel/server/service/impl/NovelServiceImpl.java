@@ -930,4 +930,47 @@ public class NovelServiceImpl implements NovelService {
     private boolean isChinese(char c) {
         return c >= 0x4E00 && c <= 0x9FA5; // Unicode CJK统一汉字范围
     }
+
+    /**
+     * 计算并更新小说的总字数
+     *
+     * @param novelId 小说ID
+     * @return 更新后的小说
+     */
+    @Override
+    public Mono<Novel> updateNovelWordCount(String novelId) {
+        log.info("计算并更新小说总字数: {}", novelId);
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取小说的所有场景
+                    return sceneRepository.findByNovelId(novelId)
+                            .collectList()
+                            .flatMap(scenes -> {
+                                // 计算总字数
+                                int totalWordCount = scenes.stream()
+                                        .mapToInt(scene -> scene.getWordCount() != null ? scene.getWordCount() : 0)
+                                        .sum();
+
+                                // 计算估计阅读时间 (假设每分钟阅读300字)
+                                int readTime = totalWordCount / 300;
+                                if (readTime < 1 && totalWordCount > 0) {
+                                    readTime = 1; // 最小阅读时间为1分钟
+                                }
+
+                                // 更新小说元数据
+                                if (novel.getMetadata() == null) {
+                                    novel.setMetadata(Novel.Metadata.builder().build());
+                                }
+
+                                novel.getMetadata().setWordCount(totalWordCount);
+                                novel.getMetadata().setReadTime(readTime);
+                                novel.setUpdatedAt(LocalDateTime.now());
+
+                                return novelRepository.save(novel);
+                            });
+                })
+                .doOnSuccess(updated -> log.info("小说总字数更新成功: {}, 总字数: {}", novelId,
+                updated.getMetadata() != null ? updated.getMetadata().getWordCount() : 0));
+    }
 }
