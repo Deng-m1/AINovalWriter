@@ -74,6 +74,22 @@ ainovel:
       bucket-name: ${ALIYUN_OSS_BUCKET_NAME}
       base-url: ${ALIYUN_OSS_BASE_URL}
       region: cn-shanghai
+  ai:
+    default-prompts:
+      scene-to-summary: "请根据以下小说场景内容，生成一段简洁的摘要。\n场景内容:\n{input}\n参考信息:\n{context}"
+      summary-to-scene: "请根据以下摘要/大纲，结合参考信息，生成一段详细的小说场景。\n摘要/大纲:\n{input}\n参考信息:\n{context}"
+    rag:
+      # RAG检索相关配置
+      retrieval-k: 5
+    # Resilience配置
+    resilience:
+      timeout:
+        duration: 30s
+      retry:
+        max-attempts: 3
+        backoff:
+          initial-delay: 1s
+          multiplier: 2
 
 # 向量存储配置
 vectorstore:

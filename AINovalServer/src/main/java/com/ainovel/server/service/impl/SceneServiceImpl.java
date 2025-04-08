@@ -85,7 +85,7 @@ public class SceneServiceImpl implements SceneService {
 
         // 设置初始版本
         scene.setVersion(1);
-        
+
         // 使用元数据服务更新场景元数据（包括字数统计）
         final Scene updatedScene = metadataService.updateSceneMetadata(scene);
 
@@ -334,11 +334,11 @@ public class SceneServiceImpl implements SceneService {
                     scene.setContent(content);
                     scene.setVersion(scene.getVersion() + 1);
                     scene.setUpdatedAt(LocalDateTime.now());
-                    
+
                     // 使用元数据服务更新场景字数
                     final int wordCount = metadataService.calculateWordCount(content);
                     scene.setWordCount(wordCount);
-                    
+
                     final Scene updatedScene = scene;
 
                     // 保存到数据库
@@ -392,7 +392,7 @@ public class SceneServiceImpl implements SceneService {
 
                     // 使用元数据服务更新场景字数
                     scene.setWordCount(metadataService.calculateWordCount(historyContent));
-                    
+
                     final Scene updatedScene = scene;
 
                     // 添加恢复记录

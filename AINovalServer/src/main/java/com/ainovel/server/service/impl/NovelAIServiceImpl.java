@@ -7,30 +7,39 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-import dev.langchain4j.rag.content.Content;
-import dev.langchain4j.rag.content.retriever.ContentRetriever;
-import dev.langchain4j.rag.query.Query;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
+import com.ainovel.server.domain.model.AIFeatureType;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
 import com.ainovel.server.domain.model.User.AIModelConfig;
 import com.ainovel.server.service.AIService;
 import com.ainovel.server.service.KnowledgeService;
 import com.ainovel.server.service.NovelAIService;
+import com.ainovel.server.service.NovelRagAssistant;
 import com.ainovel.server.service.NovelService;
 import com.ainovel.server.service.PromptService;
+import com.ainovel.server.service.SceneService;
+import com.ainovel.server.service.UserAIModelConfigService;
+import com.ainovel.server.service.UserPromptService;
 import com.ainovel.server.service.UserService;
 import com.ainovel.server.service.ai.AIModelProvider;
-import com.ainovel.server.service.NovelRagAssistant;
+import com.ainovel.server.service.rag.RagService;
+import com.ainovel.server.web.dto.GenerateSceneFromSummaryRequest;
+import com.ainovel.server.web.dto.GenerateSceneFromSummaryResponse;
+import com.ainovel.server.web.dto.SummarizeSceneRequest;
+import com.ainovel.server.web.dto.SummarizeSceneResponse;
 
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.rag.content.Content;
+import dev.langchain4j.rag.content.retriever.ContentRetriever;
+import dev.langchain4j.rag.query.Query;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 /**
@@ -45,6 +54,7 @@ public class NovelAIServiceImpl implements NovelAIService {
     private final NovelService novelService;
     private final PromptService promptService;
     private final UserService userService;
+    private final SceneService sceneService;
 
     // 缓存用户的AI模型提供商
     private final Map<String, Map<String, AIModelProvider>> userProviders = new ConcurrentHashMap<>();
@@ -56,17 +66,28 @@ public class NovelAIServiceImpl implements NovelAIService {
     private NovelRagAssistant novelRagAssistant;
 
     @Autowired
+    private RagService ragService;
+
+    @Autowired
+    private UserPromptService userPromptService;
+
+    @Autowired
+    private UserAIModelConfigService userAIModelConfigService;
+
+    @Autowired
     public NovelAIServiceImpl(
             @Qualifier("AIServiceImpl") AIService aiService,
             KnowledgeService knowledgeService,
             NovelService novelService,
             PromptService promptService,
-            UserService userService) {
+            UserService userService,
+            SceneService sceneService) {
         this.aiService = aiService;
         this.knowledgeService = knowledgeService;
         this.novelService = novelService;
         this.promptService = promptService;
         this.userService = userService;
+        this.sceneService = sceneService;
     }
 
     @Override
@@ -297,11 +318,11 @@ public class NovelAIServiceImpl implements NovelAIService {
         // 将可能阻塞的操作放在boundedElastic调度器上执行
         return Mono.fromCallable(() -> {
             List<Content> relevantContents = contentRetriever.retrieve(Query.from(queryText));
-            
+
             // 将Content转换为TextSegment
             List<TextSegment> relevantSegments = relevantContents.stream()
-                .map(Content::textSegment)
-                .collect(Collectors.toList());
+                    .map(Content::textSegment)
+                    .collect(Collectors.toList());
 
             if (relevantSegments.isEmpty()) {
                 log.info("RAG未找到相关上下文，使用数据库检索");
@@ -337,15 +358,15 @@ public class NovelAIServiceImpl implements NovelAIService {
 
             return request;
         })
-        .subscribeOn(Schedulers.boundedElastic()) // 在boundedElastic调度器上执行可能阻塞的操作
-        .onErrorResume(e -> {
-            log.error("使用RAG检索上下文时出错", e);
-            return getNovelContextFromDatabase(request);
-        });
+                .subscribeOn(Schedulers.boundedElastic()) // 在boundedElastic调度器上执行可能阻塞的操作
+                .onErrorResume(e -> {
+                    log.error("使用RAG检索上下文时出错", e);
+                    return getNovelContextFromDatabase(request);
+                });
     }
 
     /**
-     * 从数据库获取小说上下文（原有逻辑）
+     * 从数据库获取小说上下文
      *
      * @param request AI请求
      * @return 丰富的AI请求
@@ -353,7 +374,7 @@ public class NovelAIServiceImpl implements NovelAIService {
     private Mono<AIRequest> getNovelContextFromDatabase(AIRequest request) {
         // 原有的从数据库获取上下文的逻辑
         return knowledgeService.retrieveRelevantContext(extractQueryTextFromRequest(request), request.getNovelId())
-                .subscribeOn(Schedulers.boundedElastic())  // 在boundedElastic调度器上执行可能阻塞的操作
+                .subscribeOn(Schedulers.boundedElastic()) // 在boundedElastic调度器上执行可能阻塞的操作
                 .map(context -> {
                     if (context != null && !context.isEmpty()) {
                         log.info("从知识库中获取到相关上下文");
@@ -704,6 +725,186 @@ public class NovelAIServiceImpl implements NovelAIService {
     @Override
     public Mono<Void> clearAllProviderCache() {
         return Mono.fromRunnable(userProviders::clear);
+    }
+
+    /**
+     * 为指定场景生成摘要
+     *
+     * @param userId 用户ID
+     * @param sceneId 场景ID
+     * @param request 摘要请求参数
+     * @return 包含摘要的响应
+     */
+    @Override
+    public Mono<SummarizeSceneResponse> summarizeScene(String userId, String sceneId, SummarizeSceneRequest request) {
+        return sceneService.findSceneById(sceneId)
+                .flatMap(scene -> {
+                    // 权限校验
+                    return novelService.findNovelById(scene.getNovelId())
+                            .flatMap(novel -> {
+                                if (!novel.getAuthor().getId().equals(userId)) {
+                                    return Mono.error(new AccessDeniedException("用户无权访问该场景"));
+                                }
+
+                                // 并行获取RAG上下文和用户Prompt模板
+                                Mono<String> contextMono = ragService.retrieveRelevantContext(
+                                        scene.getNovelId(), sceneId, AIFeatureType.SCENE_TO_SUMMARY);
+
+                                Mono<String> promptTemplateMono = userPromptService.getPromptTemplate(
+                                        userId, AIFeatureType.SCENE_TO_SUMMARY);
+
+                                // 返回包含场景、上下文、模板的Tuple
+                                return Mono.zip(Mono.just(scene.getContent()), contextMono, promptTemplateMono);
+                            });
+                })
+                .flatMap(tuple -> {
+                    String sceneContent = tuple.getT1();
+                    String context = tuple.getT2();
+                    String promptTemplate = tuple.getT3();
+
+                    // 构建最终Prompt
+                    String finalPrompt = buildFinalPrompt(promptTemplate, context, sceneContent);
+
+                    // 获取AI配置并调用LLM
+                    return userAIModelConfigService.getValidatedDefaultConfiguration(userId)
+                            .flatMap(aiConfig -> {
+                                AIRequest aiRequest = new AIRequest();
+                                aiRequest.setUserId(userId);
+                                aiRequest.setModel(aiConfig.getModelName());
+
+                                // 创建系统消息
+                                AIRequest.Message systemMessage = new AIRequest.Message();
+                                systemMessage.setRole("system");
+                                systemMessage.setContent("你是一个专业的小说编辑，需要为小说场景生成简洁的摘要。");
+                                aiRequest.getMessages().add(systemMessage);
+
+                                // 创建用户消息
+                                AIRequest.Message userMessage = new AIRequest.Message();
+                                userMessage.setRole("user");
+                                userMessage.setContent(finalPrompt);
+                                aiRequest.getMessages().add(userMessage);
+
+                                // 设置生成参数
+                                aiRequest.setTemperature(0.7);
+                                aiRequest.setMaxTokens(500);
+
+                                // 获取AI模型提供商
+                                return getAIModelProvider(userId, aiConfig.getModelName())
+                                        .flatMap(provider -> provider.generateContent(aiRequest));
+                            })
+                            .map(response -> new SummarizeSceneResponse(response.getContent()));
+                })
+                .onErrorResume(e -> {
+                    log.error("生成场景摘要时出错", e);
+                    if (e instanceof AccessDeniedException) {
+                        return Mono.error(e);
+                    }
+                    return Mono.error(new RuntimeException("生成摘要失败: " + e.getMessage()));
+                });
+    }
+
+    /**
+     * 构建最终提示词
+     */
+    private String buildFinalPrompt(String template, String context, String input) {
+        return template
+                .replace("{input}", input)
+                .replace("{context}", context);
+    }
+
+    /**
+     * 根据摘要生成场景内容 (流式)
+     *
+     * @param userId 用户ID
+     * @param novelId 小说ID
+     * @param request 生成场景请求参数
+     * @return 生成的场景内容流
+     */
+    @Override
+    public Flux<String> generateSceneFromSummaryStream(String userId, String novelId, GenerateSceneFromSummaryRequest request) {
+        log.info("根据摘要生成场景内容(流式), userId: {}, novelId: {}", userId, novelId);
+
+        // 验证用户对小说的访问权限
+        return novelService.findNovelById(novelId)
+                .flatMap(novel -> {
+                    if (!novel.getAuthor().getId().equals(userId)) {
+                        return Mono.error(new AccessDeniedException("用户无权访问该小说"));
+                    }
+
+                    // 并行获取RAG上下文和用户Prompt模板
+                    Mono<String> contextMono = ragService.retrieveRelevantContext(
+                            novelId, request.getChapterId(), request.getSummary(), AIFeatureType.SUMMARY_TO_SCENE);
+
+                    Mono<String> promptTemplateMono = userPromptService.getPromptTemplate(
+                            userId, AIFeatureType.SUMMARY_TO_SCENE);
+
+                    // 返回包含上下文、模板的Tuple
+                    return Mono.zip(contextMono, promptTemplateMono);
+                })
+                .flatMapMany(tuple -> {
+                    String context = tuple.getT1();
+                    String promptTemplate = tuple.getT2();
+
+                    // 构建最终Prompt，包含用户风格指令
+                    String styleInstructions = request.getStyleInstructions() != null ? request.getStyleInstructions() : "";
+                    String inputWithStyle = request.getSummary() + (styleInstructions.isEmpty() ? "" : "\n\n风格要求: " + styleInstructions);
+
+                    String finalPrompt = buildFinalPrompt(promptTemplate, context, inputWithStyle);
+
+                    // 获取AI配置并调用LLM (流式)
+                    return userAIModelConfigService.getValidatedDefaultConfiguration(userId)
+                            .flatMapMany(aiConfig -> {
+                                AIRequest aiRequest = new AIRequest();
+                                aiRequest.setUserId(userId);
+                                aiRequest.setNovelId(novelId);
+                                aiRequest.setModel(aiConfig.getModelName());
+
+                                // 创建系统消息
+                                AIRequest.Message systemMessage = new AIRequest.Message();
+                                systemMessage.setRole("system");
+                                systemMessage.setContent("你是一位富有创意的小说家，需要根据摘要生成详细的小说场景内容。");
+                                aiRequest.getMessages().add(systemMessage);
+
+                                // 创建用户消息
+                                AIRequest.Message userMessage = new AIRequest.Message();
+                                userMessage.setRole("user");
+                                userMessage.setContent(finalPrompt);
+                                aiRequest.getMessages().add(userMessage);
+
+                                // 设置生成参数 - 场景生成可以设置稍高的温度以增加创意性
+                                aiRequest.setTemperature(0.8);
+                                aiRequest.setMaxTokens(2000);
+
+                                // 获取AI模型提供商并调用流式生成
+                                return getAIModelProvider(userId, aiConfig.getModelName())
+                                        .flatMapMany(provider -> provider.generateContentStream(aiRequest));
+                            });
+                })
+                .onErrorResume(e -> {
+                    log.error("生成场景内容时出错", e);
+                    if (e instanceof AccessDeniedException) {
+                        return Flux.error(e);
+                    }
+                    return Flux.error(new RuntimeException("生成场景内容时出错: " + e.getMessage()));
+                });
+    }
+
+    /**
+     * 根据摘要生成场景内容 (非流式)
+     *
+     * @param userId 用户ID
+     * @param novelId 小说ID
+     * @param request 生成场景请求参数
+     * @return 包含生成场景内容的响应
+     */
+    @Override
+    public Mono<GenerateSceneFromSummaryResponse> generateSceneFromSummary(String userId, String novelId, GenerateSceneFromSummaryRequest request) {
+        log.info("根据摘要生成场景内容(非流式), userId: {}, novelId: {}", userId, novelId);
+
+        // 使用流式API并收集结果
+        return generateSceneFromSummaryStream(userId, novelId, request)
+                .collect(StringBuilder::new, StringBuilder::append)
+                .map(sb -> new GenerateSceneFromSummaryResponse(sb.toString()));
     }
 
 }

@@ -189,197 +189,197 @@ public class ImportServiceImpl implements ImportService {
             Sinks.Many<ServerSentEvent<ImportStatus>> sink) {
 
         return Mono.fromCallable(() -> {
+            // 检查是否已取消
+            if (isCancelled(jobId)) {
+                log.info("Job {} 已被取消，不再继续处理", jobId);
+                throw new InterruptedException("导入任务已被用户取消");
+            }
+
+            sink.tryEmitNext(createStatusEvent(jobId, "PROCESSING", "开始解析文件..."));
+            log.info("Job {}: Processing file {}", jobId, originalFilename);
+
+            NovelParser parser = getParserForFile(originalFilename);
+
+            // 尝试使用不同的字符编码进行文件读取
+            ParsedNovelData parsedData;
+            try {
+                // 检查是否已取消
+                if (isCancelled(jobId)) {
+                    throw new InterruptedException("导入任务已被用户取消");
+                }
+
+                // 首先尝试 UTF-8
+                try (Stream<String> lines = Files.lines(tempFilePath, StandardCharsets.UTF_8)) {
+                    parsedData = parser.parseStream(lines);
+                } catch (java.nio.charset.MalformedInputException e) {
                     // 检查是否已取消
                     if (isCancelled(jobId)) {
-                        log.info("Job {} 已被取消，不再继续处理", jobId);
                         throw new InterruptedException("导入任务已被用户取消");
                     }
 
-                    sink.tryEmitNext(createStatusEvent(jobId, "PROCESSING", "开始解析文件..."));
-                    log.info("Job {}: Processing file {}", jobId, originalFilename);
+                    log.info("Job {}: UTF-8 encoding failed, trying GBK encoding", jobId);
+                    sink.tryEmitNext(createStatusEvent(jobId, "PROCESSING", "UTF-8 编码识别失败，尝试 GBK 编码..."));
 
-                    NovelParser parser = getParserForFile(originalFilename);
+                    // UTF-8 失败，尝试 GBK 编码
+                    try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(
+                                    new java.io.FileInputStream(tempFilePath.toFile()),
+                                    "GBK"))) {
 
-                    // 尝试使用不同的字符编码进行文件读取
-                    ParsedNovelData parsedData;
-                    try {
+                        Stream<String> lines = reader.lines();
+                        parsedData = parser.parseStream(lines);
+                    } catch (Exception e2) {
                         // 检查是否已取消
                         if (isCancelled(jobId)) {
                             throw new InterruptedException("导入任务已被用户取消");
                         }
 
-                        // 首先尝试 UTF-8
-                        try (Stream<String> lines = Files.lines(tempFilePath, StandardCharsets.UTF_8)) {
+                        log.info("Job {}: GBK encoding failed, trying GB18030 encoding", jobId);
+                        sink.tryEmitNext(createStatusEvent(jobId, "PROCESSING", "GBK 编码识别失败，尝试 GB18030 编码..."));
+
+                        // GBK 也失败，最后尝试 GB18030
+                        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                                new java.io.InputStreamReader(
+                                        new java.io.FileInputStream(tempFilePath.toFile()),
+                                        "GB18030"))) {
+
+                            Stream<String> lines = reader.lines();
                             parsedData = parser.parseStream(lines);
-                        } catch (java.nio.charset.MalformedInputException e) {
+                        }
+                    }
+                }
+
+                // 检查是否已取消
+                if (isCancelled(jobId)) {
+                    throw new InterruptedException("导入任务已被用户取消");
+                }
+
+                // 设置小说标题（如果解析器未设置）
+                if (parsedData.getNovelTitle() == null || parsedData.getNovelTitle().isEmpty()) {
+                    String title = extractTitleFromFilename(originalFilename);
+                    parsedData.setNovelTitle(title);
+                }
+
+                log.info("Job {}: Parsed data obtained. Scene count: {}", jobId, parsedData.getScenes().size());
+                sink.tryEmitNext(createStatusEvent(jobId, "SAVING", "解析完成，发现 " + parsedData.getScenes().size() + " 个场景，正在保存小说结构..."));
+
+                log.info("Job {}: About to call saveNovelAndScenesReactive...", jobId);
+                // 现在调用 saveNovelAndScenesReactive
+                return saveNovelAndScenesReactive(parsedData, userId)
+                        .flatMap(savedNovel -> {
                             // 检查是否已取消
                             if (isCancelled(jobId)) {
-                                throw new InterruptedException("导入任务已被用户取消");
+                                return Mono.error(new InterruptedException("导入任务已被用户取消"));
                             }
 
-                            log.info("Job {}: UTF-8 encoding failed, trying GBK encoding", jobId);
-                            sink.tryEmitNext(createStatusEvent(jobId, "PROCESSING", "UTF-8 编码识别失败，尝试 GBK 编码..."));
+                            log.info("Job {}: Novel and scenes saved successfully. Novel ID: {}", jobId, savedNovel.getId());
+                            sink.tryEmitNext(createStatusEvent(jobId, "INDEXING", "小说结构保存完成，正在为 RAG 创建索引..."));
 
-                            // UTF-8 失败，尝试 GBK 编码
-                            try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                                    new java.io.InputStreamReader(
-                                            new java.io.FileInputStream(tempFilePath.toFile()),
-                                            "GBK"))) {
+                            // 创建一个定时发送进度更新的流
+                            Flux<Long> progressUpdates = Flux.interval(java.time.Duration.ofSeconds(10))
+                                    .doOnNext(tick -> {
+                                        // 检查是否被取消
+                                        if (isCancelled(jobId)) {
+                                            log.warn("Job {}: 检测到任务已取消，停止进度更新", jobId);
+                                            throw new RuntimeException("任务已取消");
+                                        }
 
-                                Stream<String> lines = reader.lines();
-                                parsedData = parser.parseStream(lines);
-                            } catch (Exception e2) {
-                                // 检查是否已取消
-                                if (isCancelled(jobId)) {
-                                    throw new InterruptedException("导入任务已被用户取消");
-                                }
+                                        String message = String.format("正在为 RAG 创建索引，已处理 %d 秒，请耐心等待...", (tick + 1) * 10);
+                                        log.info("Job {}: Sending progress update: {}", jobId, message);
+                                        sink.tryEmitNext(createStatusEvent(jobId, "INDEXING", message));
+                                    });
 
-                                log.info("Job {}: GBK encoding failed, trying GB18030 encoding", jobId);
-                                sink.tryEmitNext(createStatusEvent(jobId, "PROCESSING", "GBK 编码识别失败，尝试 GB18030 编码..."));
+                            // 触发 RAG 索引，同时发送进度更新
+                            return Mono.defer(() -> {
+                                // 开始发送进度更新，使用线程安全的方式存储 Disposable
+                                final java.util.concurrent.atomic.AtomicReference<reactor.core.Disposable> progressRef
+                                        = new java.util.concurrent.atomic.AtomicReference<>();
 
-                                // GBK 也失败，最后尝试 GB18030
-                                try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                                        new java.io.InputStreamReader(
-                                                new java.io.FileInputStream(tempFilePath.toFile()),
-                                                "GB18030"))) {
+                                log.info("Job {}: Starting progress updates", jobId);
+                                var subscription = progressUpdates
+                                        .doOnSubscribe(s -> log.info("Job {}: Progress updates subscribed", jobId))
+                                        .doOnCancel(() -> log.info("Job {}: Progress updates cancelled", jobId))
+                                        .onErrorResume(error -> {
+                                            // 如果是因为取消而产生的错误，记录日志但不继续传播错误
+                                            if (error.getMessage() != null && error.getMessage().contains("任务已取消")) {
+                                                log.info("Job {}: Progress updates stopped due to task cancellation", jobId);
+                                                return Flux.empty();
+                                            }
+                                            log.warn("Job {}: Progress updates error: {}", jobId, error.getMessage());
+                                            return Flux.error(error);
+                                        })
+                                        .subscribe();
 
-                                    Stream<String> lines = reader.lines();
-                                    parsedData = parser.parseStream(lines);
-                                }
-                            }
-                        }
+                                progressRef.set(subscription);
+                                // 存储订阅以便可以在取消时使用
+                                progressUpdateSubscriptions.put(jobId, subscription);
 
-                        // 检查是否已取消
-                        if (isCancelled(jobId)) {
-                            throw new InterruptedException("导入任务已被用户取消");
-                        }
+                                // 执行实际的索引操作，使用 blocking 模式，确保索引完成
+                                return indexingService.indexNovel(savedNovel.getId())
+                                        .doOnSubscribe(s -> {
+                                            // 保存jobId和novelId的映射关系，以便后续取消操作
+                                            jobToNovelIdMap.put(jobId, savedNovel.getId());
+                                            log.info("Job {}: 已建立与Novel ID: {}的映射关系", jobId, savedNovel.getId());
+                                        })
+                                        .doOnSuccess(result -> {
+                                            // 检查是否被取消
+                                            if (isCancelled(jobId)) {
+                                                return;
+                                            }
 
-                        // 设置小说标题（如果解析器未设置）
-                        if (parsedData.getNovelTitle() == null || parsedData.getNovelTitle().isEmpty()) {
-                            String title = extractTitleFromFilename(originalFilename);
-                            parsedData.setNovelTitle(title);
-                        }
-
-                        log.info("Job {}: Parsed data obtained. Scene count: {}", jobId, parsedData.getScenes().size());
-                        sink.tryEmitNext(createStatusEvent(jobId, "SAVING", "解析完成，发现 " + parsedData.getScenes().size() + " 个场景，正在保存小说结构..."));
-
-                        log.info("Job {}: About to call saveNovelAndScenesReactive...", jobId);
-                        // 现在调用 saveNovelAndScenesReactive
-                        return saveNovelAndScenesReactive(parsedData, userId)
-                                .flatMap(savedNovel -> {
-                                    // 检查是否已取消
-                                    if (isCancelled(jobId)) {
-                                        return Mono.error(new InterruptedException("导入任务已被用户取消"));
-                                    }
-
-                                    log.info("Job {}: Novel and scenes saved successfully. Novel ID: {}", jobId, savedNovel.getId());
-                                    sink.tryEmitNext(createStatusEvent(jobId, "INDEXING", "小说结构保存完成，正在为 RAG 创建索引..."));
-
-                                    // 创建一个定时发送进度更新的流
-                                    Flux<Long> progressUpdates = Flux.interval(java.time.Duration.ofSeconds(10))
-                                            .doOnNext(tick -> {
-                                                // 检查是否被取消
-                                                if (isCancelled(jobId)) {
-                                                    log.warn("Job {}: 检测到任务已取消，停止进度更新", jobId);
-                                                    throw new RuntimeException("任务已取消");
+                                            log.info("Job {}: RAG indexing successfully completed for Novel ID: {}", jobId, savedNovel.getId());
+                                            // 确保取消进度更新
+                                            try {
+                                                var disposable = progressRef.getAndSet(null);
+                                                if (disposable != null) {
+                                                    disposable.dispose();
+                                                    log.info("Job {}: Progress updates disposed after success", jobId);
                                                 }
 
-                                                String message = String.format("正在为 RAG 创建索引，已处理 %d 秒，请耐心等待...", (tick + 1) * 10);
-                                                log.info("Job {}: Sending progress update: {}", jobId, message);
-                                                sink.tryEmitNext(createStatusEvent(jobId, "INDEXING", message));
-                                            });
+                                                // 清理进度更新订阅
+                                                progressUpdateSubscriptions.remove(jobId);
 
-                                    // 触发 RAG 索引，同时发送进度更新
-                                    return Mono.defer(() -> {
-                                        // 开始发送进度更新，使用线程安全的方式存储 Disposable
-                                        final java.util.concurrent.atomic.AtomicReference<reactor.core.Disposable> progressRef
-                                                = new java.util.concurrent.atomic.AtomicReference<>();
+                                                // 清理映射关系
+                                                jobToNovelIdMap.remove(jobId);
+                                            } catch (Exception e) {
+                                                log.error("Job {}: Error disposing progress updates", jobId, e);
+                                            }
+                                            // 发送完成通知
+                                            sink.tryEmitNext(createStatusEvent(jobId, "COMPLETED", "导入和索引成功完成！"));
+                                            sink.tryEmitComplete();
+                                        })
+                                        .doOnError(error -> {
+                                            log.error("Job {}: RAG indexing failed for Novel ID: {}", jobId, savedNovel.getId(), error);
+                                            // 确保取消进度更新
+                                            try {
+                                                var disposable = progressRef.getAndSet(null);
+                                                if (disposable != null) {
+                                                    disposable.dispose();
+                                                    log.info("Job {}: Progress updates disposed after error", jobId);
+                                                }
 
-                                        log.info("Job {}: Starting progress updates", jobId);
-                                        var subscription = progressUpdates
-                                                .doOnSubscribe(s -> log.info("Job {}: Progress updates subscribed", jobId))
-                                                .doOnCancel(() -> log.info("Job {}: Progress updates cancelled", jobId))
-                                                .onErrorResume(error -> {
-                                                    // 如果是因为取消而产生的错误，记录日志但不继续传播错误
-                                                    if (error.getMessage() != null && error.getMessage().contains("任务已取消")) {
-                                                        log.info("Job {}: Progress updates stopped due to task cancellation", jobId);
-                                                        return Flux.empty();
-                                                    }
-                                                    log.warn("Job {}: Progress updates error: {}", jobId, error.getMessage());
-                                                    return Flux.error(error);
-                                                })
-                                                .subscribe();
+                                                // 清理进度更新订阅
+                                                progressUpdateSubscriptions.remove(jobId);
 
-                                        progressRef.set(subscription);
-                                        // 存储订阅以便可以在取消时使用
-                                        progressUpdateSubscriptions.put(jobId, subscription);
-
-                                        // 执行实际的索引操作，使用 blocking 模式，确保索引完成
-                                        return indexingService.indexNovel(savedNovel.getId())
-                                                .doOnSubscribe(s -> {
-                                                    // 保存jobId和novelId的映射关系，以便后续取消操作
-                                                    jobToNovelIdMap.put(jobId, savedNovel.getId());
-                                                    log.info("Job {}: 已建立与Novel ID: {}的映射关系", jobId, savedNovel.getId());
-                                                })
-                                                .doOnSuccess(result -> {
-                                                    // 检查是否被取消
-                                                    if (isCancelled(jobId)) {
-                                                        return;
-                                                    }
-
-                                                    log.info("Job {}: RAG indexing successfully completed for Novel ID: {}", jobId, savedNovel.getId());
-                                                    // 确保取消进度更新
-                                                    try {
-                                                        var disposable = progressRef.getAndSet(null);
-                                                        if (disposable != null) {
-                                                            disposable.dispose();
-                                                            log.info("Job {}: Progress updates disposed after success", jobId);
-                                                        }
-
-                                                        // 清理进度更新订阅
-                                                        progressUpdateSubscriptions.remove(jobId);
-
-                                                        // 清理映射关系
-                                                        jobToNovelIdMap.remove(jobId);
-                                                    } catch (Exception e) {
-                                                        log.error("Job {}: Error disposing progress updates", jobId, e);
-                                                    }
-                                                    // 发送完成通知
-                                                    sink.tryEmitNext(createStatusEvent(jobId, "COMPLETED", "导入和索引成功完成！"));
-                                                    sink.tryEmitComplete();
-                                                })
-                                                .doOnError(error -> {
-                                                    log.error("Job {}: RAG indexing failed for Novel ID: {}", jobId, savedNovel.getId(), error);
-                                                    // 确保取消进度更新
-                                                    try {
-                                                        var disposable = progressRef.getAndSet(null);
-                                                        if (disposable != null) {
-                                                            disposable.dispose();
-                                                            log.info("Job {}: Progress updates disposed after error", jobId);
-                                                        }
-
-                                                        // 清理进度更新订阅
-                                                        progressUpdateSubscriptions.remove(jobId);
-
-                                                        // 清理映射关系
-                                                        jobToNovelIdMap.remove(jobId);
-                                                    } catch (Exception e) {
-                                                        log.error("Job {}: Error disposing progress updates", jobId, e);
-                                                    }
-                                                    // 发送失败通知
-                                                    sink.tryEmitNext(createStatusEvent(jobId, "FAILED", "RAG 索引失败: " + error.getMessage()));
-                                                    sink.tryEmitComplete();
-                                                });
-                                    });
-                                });
-                    } catch (IOException e) {
-                        log.error("Job {}: Error reading temporary file {}", jobId, tempFilePath, e);
-                        throw new RuntimeException("文件读取错误", e); // 重新抛出以便上层处理
-                    } catch (InterruptedException e) {
-                        log.info("Job {}: 导入任务被取消", jobId);
-                        throw e; // 将中断异常传递给上层
-                    }
-                }).flatMap(Function.identity()) // 展平 Mono<Mono<Void>>
+                                                // 清理映射关系
+                                                jobToNovelIdMap.remove(jobId);
+                                            } catch (Exception e) {
+                                                log.error("Job {}: Error disposing progress updates", jobId, e);
+                                            }
+                                            // 发送失败通知
+                                            sink.tryEmitNext(createStatusEvent(jobId, "FAILED", "RAG 索引失败: " + error.getMessage()));
+                                            sink.tryEmitComplete();
+                                        });
+                            });
+                        });
+            } catch (IOException e) {
+                log.error("Job {}: Error reading temporary file {}", jobId, tempFilePath, e);
+                throw new RuntimeException("文件读取错误", e); // 重新抛出以便上层处理
+            } catch (InterruptedException e) {
+                log.info("Job {}: 导入任务被取消", jobId);
+                throw e; // 将中断异常传递给上层
+            }
+        }).flatMap(Function.identity()) // 展平 Mono<Mono<Void>>
                 .doOnError(e -> { // 捕获 processAndSaveNovel 内部的同步异常或响应式链中的错误
                     // 检查是否是取消导致的错误
                     if (e instanceof InterruptedException) {

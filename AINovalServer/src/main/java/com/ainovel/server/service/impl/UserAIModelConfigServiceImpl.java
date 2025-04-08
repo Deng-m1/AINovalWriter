@@ -4,7 +4,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Objects;
 
-
+import org.jasypt.encryption.StringEncryptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -14,8 +14,7 @@ import org.springframework.util.StringUtils;
 import com.ainovel.server.domain.model.UserAIModelConfig;
 import com.ainovel.server.repository.UserAIModelConfigRepository;
 import com.ainovel.server.service.AIService;
-import com.ainovel.server.service.UserAIModelConfigService;
-import org.jasypt.encryption.StringEncryptor; // Add Jasypt import
+import com.ainovel.server.service.UserAIModelConfigService; // Add Jasypt import
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -31,7 +30,7 @@ public class UserAIModelConfigServiceImpl implements UserAIModelConfigService {
 
     @Autowired
     public UserAIModelConfigServiceImpl(UserAIModelConfigRepository configRepository,
-                                        @Qualifier("AIServiceImpl") AIService aiService,
+            @Qualifier("AIServiceImpl") AIService aiService,
             StringEncryptor encryptor) {
         this.configRepository = configRepository;
         this.aiService = aiService;
