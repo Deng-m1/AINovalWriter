@@ -35,6 +35,13 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     on<AddNewChapter>(_onAddNewChapter);
     on<AddNewScene>(_onAddNewScene);
     on<DeleteScene>(_onDeleteScene);
+    on<GenerateSceneSummaryRequested>(_onGenerateSceneSummaryRequested);
+    on<GenerateSceneFromSummaryRequested>(_onGenerateSceneFromSummaryRequested);
+    on<UpdateGeneratedSceneContent>(_onUpdateGeneratedSceneContent);
+    on<SceneGenerationCompleted>(_onSceneGenerationCompleted);
+    on<SceneGenerationFailed>(_onSceneGenerationFailed);
+    on<SceneSummaryGenerationCompleted>(_onSceneSummaryGenerationCompleted);
+    on<SceneSummaryGenerationFailed>(_onSceneSummaryGenerationFailed);
   }
   final EditorRepositoryImpl repository;
   final String novelId;
@@ -47,6 +54,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   // 加载场景节流控制
   DateTime? _lastLoadRequestTime;
   static const _loadThrottleInterval = Duration(milliseconds: 500);
+  StreamSubscription<String>? _generationStreamSubscription;
 
   Future<void> _onLoadContent(
       LoadEditorContent event, Emitter<EditorState> emit) async {
@@ -1567,9 +1575,188 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     return novel;
   }
 
+  // 处理生成场景摘要的事件
+  Future<void> _onGenerateSceneSummaryRequested(
+    GenerateSceneSummaryRequested event,
+    Emitter<EditorState> emit,
+  ) async {
+    if (state is EditorLoaded) {
+      final currentState = state as EditorLoaded;
+      
+      // 更新状态为生成中
+      emit(currentState.copyWith(
+        aiSummaryGenerationStatus: AIGenerationStatus.generating,
+        aiGenerationError: null,
+      ));
+      
+      try {
+        // 调用API生成摘要
+        final summary = await repository.summarizeScene(
+          event.sceneId,
+          styleInstructions: event.styleInstructions,
+        );
+        
+        // 摘要生成成功
+        add(SceneSummaryGenerationCompleted(summary));
+      } catch (e) {
+        // 摘要生成失败
+        add(SceneSummaryGenerationFailed(e.toString()));
+      }
+    }
+  }
+  
+  // 处理从摘要生成场景内容的事件
+  Future<void> _onGenerateSceneFromSummaryRequested(
+    GenerateSceneFromSummaryRequested event,
+    Emitter<EditorState> emit,
+  ) async {
+    if (state is EditorLoaded) {
+      final currentState = state as EditorLoaded;
+      
+      // 取消任何正在进行的生成
+      await _generationStreamSubscription?.cancel();
+      
+      // 更新状态为生成中
+      emit(currentState.copyWith(
+        aiSceneGenerationStatus: AIGenerationStatus.generating,
+        generatedSceneContent: '',
+        aiGenerationError: null,
+        isStreamingGeneration: event.useStreamingMode,
+      ));
+      
+      if (event.useStreamingMode) {
+        // 使用流式生成
+        try {
+          final stream = repository.generateSceneFromSummaryStream(
+            event.novelId,
+            event.summary,
+            chapterId: event.chapterId,
+            styleInstructions: event.styleInstructions,
+          );
+          
+          _generationStreamSubscription = stream.listen(
+            (content) {
+              // 收到流式内容更新
+              add(UpdateGeneratedSceneContent(content));
+            },
+            onError: (error) {
+              // 流式生成出错
+              add(SceneGenerationFailed(error.toString()));
+            },
+            onDone: () {
+              // 流式生成完成
+              if (state is EditorLoaded) {
+                final current = state as EditorLoaded;
+                add(SceneGenerationCompleted(current.generatedSceneContent ?? ''));
+              }
+            },
+          );
+        } catch (e) {
+          // 创建流出错
+          add(SceneGenerationFailed(e.toString()));
+        }
+      } else {
+        // 使用非流式生成
+        try {
+          final content = await repository.generateSceneFromSummary(
+            event.novelId,
+            event.summary,
+            chapterId: event.chapterId,
+            styleInstructions: event.styleInstructions,
+          );
+          
+          // 生成成功
+          add(SceneGenerationCompleted(content));
+        } catch (e) {
+          // 生成失败
+          add(SceneGenerationFailed(e.toString()));
+        }
+      }
+    }
+  }
+  
+  // 处理更新生成的场景内容事件（流式）
+  void _onUpdateGeneratedSceneContent(
+    UpdateGeneratedSceneContent event,
+    Emitter<EditorState> emit,
+  ) {
+    if (state is EditorLoaded) {
+      final currentState = state as EditorLoaded;
+      final currentContent = currentState.generatedSceneContent ?? '';
+      
+      // 将新内容追加到现有内容
+      emit(currentState.copyWith(
+        generatedSceneContent: currentContent + event.content,
+      ));
+    }
+  }
+  
+  // 处理场景生成完成事件
+  void _onSceneGenerationCompleted(
+    SceneGenerationCompleted event,
+    Emitter<EditorState> emit,
+  ) {
+    if (state is EditorLoaded) {
+      final currentState = state as EditorLoaded;
+      
+      emit(currentState.copyWith(
+        aiSceneGenerationStatus: AIGenerationStatus.completed,
+        generatedSceneContent: event.content,
+        isStreamingGeneration: false,
+      ));
+    }
+  }
+  
+  // 处理场景生成失败事件
+  void _onSceneGenerationFailed(
+    SceneGenerationFailed event,
+    Emitter<EditorState> emit,
+  ) {
+    if (state is EditorLoaded) {
+      final currentState = state as EditorLoaded;
+      
+      emit(currentState.copyWith(
+        aiSceneGenerationStatus: AIGenerationStatus.failed,
+        aiGenerationError: event.error,
+        isStreamingGeneration: false,
+      ));
+    }
+  }
+  
+  // 处理场景摘要生成完成事件
+  void _onSceneSummaryGenerationCompleted(
+    SceneSummaryGenerationCompleted event,
+    Emitter<EditorState> emit,
+  ) {
+    if (state is EditorLoaded) {
+      final currentState = state as EditorLoaded;
+      
+      emit(currentState.copyWith(
+        aiSummaryGenerationStatus: AIGenerationStatus.completed,
+        generatedSummary: event.summary,
+      ));
+    }
+  }
+  
+  // 处理场景摘要生成失败事件
+  void _onSceneSummaryGenerationFailed(
+    SceneSummaryGenerationFailed event,
+    Emitter<EditorState> emit,
+  ) {
+    if (state is EditorLoaded) {
+      final currentState = state as EditorLoaded;
+      
+      emit(currentState.copyWith(
+        aiSummaryGenerationStatus: AIGenerationStatus.failed,
+        aiGenerationError: event.error,
+      ));
+    }
+  }
+
   @override
   Future<void> close() {
     _autoSaveTimer?.cancel();
+    _generationStreamSubscription?.cancel();
     return super.close();
   }
 }

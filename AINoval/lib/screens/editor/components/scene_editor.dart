@@ -576,9 +576,22 @@ class _SceneEditorState extends State<SceneEditor> {
       children: [
         IconButton(
           icon: const Icon(Icons.refresh, size: 18),
-          tooltip: '刷新摘要 (Placeholder)',
+          tooltip: '刷新摘要',
           onPressed: () {
-            // TODO: 实现刷新摘要逻辑
+            // 实现刷新摘要逻辑
+            if (widget.summaryController.text.isNotEmpty &&
+                widget.actId != null &&
+                widget.chapterId != null &&
+                widget.sceneId != null) {
+              widget.editorBloc.add(UpdateSummary(
+                novelId: widget.editorBloc.novelId,
+                actId: widget.actId!,
+                chapterId: widget.chapterId!,
+                sceneId: widget.sceneId!,
+                summary: widget.summaryController.text,
+                shouldRebuild: false,
+              ));
+            }
           },
           color: Colors.grey.shade600,
           splashRadius: 18,
@@ -590,9 +603,19 @@ class _SceneEditorState extends State<SceneEditor> {
         ),
         IconButton(
           icon: const Icon(Icons.auto_awesome, size: 18),
-          tooltip: 'AI 生成摘要 (Placeholder)',
+          tooltip: 'AI 生成摘要',
           onPressed: () {
-            // TODO: 实现 AI 生成摘要逻辑
+            // 实现 AI 生成摘要逻辑
+            if (widget.actId != null && 
+                widget.chapterId != null && 
+                widget.sceneId != null) {
+              // 触发生成摘要事件
+              widget.editorBloc.add(
+                GenerateSceneSummaryRequested(
+                  sceneId: widget.sceneId!,
+                ),
+              );
+            }
           },
           color: Colors.grey.shade600,
           splashRadius: 18,

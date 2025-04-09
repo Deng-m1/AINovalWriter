@@ -1,3 +1,4 @@
+
 import 'package:ainoval/models/editor_content.dart';
 import 'package:ainoval/models/novel_structure.dart';
 
@@ -96,4 +97,21 @@ abstract class EditorRepository {
   Future<void> deleteNovel({
     required String novelId,
   });
+  
+  /// 为指定场景生成摘要
+  Future<String> summarizeScene(String sceneId, {String? styleInstructions});
+  
+  /// 根据摘要生成场景内容（流式）
+  Stream<String> generateSceneFromSummaryStream(
+    String novelId, 
+    String summary, 
+    {String? chapterId, String? styleInstructions}
+  );
+  
+  /// 根据摘要生成场景内容（非流式）
+  Future<String> generateSceneFromSummary(
+    String novelId, 
+    String summary, 
+    {String? chapterId, String? styleInstructions}
+  );
 }

@@ -1,5 +1,20 @@
 part of 'editor_bloc.dart';
 
+// AI生成状态
+enum AIGenerationStatus {
+  /// 初始状态
+  initial,
+  
+  /// 生成中
+  generating,
+  
+  /// 生成完成
+  completed,
+  
+  /// 生成失败
+  failed,
+}
+
 abstract class EditorState extends Equatable {
   const EditorState();
   
@@ -24,6 +39,12 @@ class EditorLoaded extends EditorState {
     this.isLoading = false,
     this.lastSaveTime,
     this.errorMessage,
+    this.aiSummaryGenerationStatus = AIGenerationStatus.initial,
+    this.aiSceneGenerationStatus = AIGenerationStatus.initial,
+    this.generatedSummary,
+    this.generatedSceneContent,
+    this.aiGenerationError,
+    this.isStreamingGeneration = false,
   });
   final novel_models.Novel novel;
   final Map<String, dynamic> settings;
@@ -35,6 +56,24 @@ class EditorLoaded extends EditorState {
   final bool isLoading;
   final DateTime? lastSaveTime;
   final String? errorMessage;
+  
+  /// AI生成状态
+  final AIGenerationStatus aiSummaryGenerationStatus;
+  
+  /// AI生成场景状态
+  final AIGenerationStatus aiSceneGenerationStatus;
+  
+  /// AI生成的摘要内容
+  final String? generatedSummary;
+  
+  /// AI生成的场景内容
+  final String? generatedSceneContent;
+  
+  /// AI生成过程中的错误消息
+  final String? aiGenerationError;
+  
+  /// 是否正在使用流式生成
+  final bool isStreamingGeneration;
   
   @override
   List<Object?> get props => [
@@ -48,6 +87,12 @@ class EditorLoaded extends EditorState {
     isLoading,
     lastSaveTime,
     errorMessage,
+    aiSummaryGenerationStatus,
+    aiSceneGenerationStatus,
+    generatedSummary,
+    generatedSceneContent,
+    aiGenerationError,
+    isStreamingGeneration,
   ];
   
   EditorLoaded copyWith({
@@ -61,6 +106,12 @@ class EditorLoaded extends EditorState {
     bool? isLoading,
     DateTime? lastSaveTime,
     String? errorMessage,
+    AIGenerationStatus? aiSummaryGenerationStatus,
+    AIGenerationStatus? aiSceneGenerationStatus,
+    String? generatedSummary,
+    String? generatedSceneContent,
+    String? aiGenerationError,
+    bool? isStreamingGeneration,
   }) {
     return EditorLoaded(
       novel: novel ?? this.novel,
@@ -73,6 +124,12 @@ class EditorLoaded extends EditorState {
       isLoading: isLoading ?? this.isLoading,
       lastSaveTime: lastSaveTime ?? this.lastSaveTime,
       errorMessage: errorMessage ?? this.errorMessage,
+      aiSummaryGenerationStatus: aiSummaryGenerationStatus ?? this.aiSummaryGenerationStatus,
+      aiSceneGenerationStatus: aiSceneGenerationStatus ?? this.aiSceneGenerationStatus,
+      generatedSummary: generatedSummary ?? this.generatedSummary,
+      generatedSceneContent: generatedSceneContent ?? this.generatedSceneContent,
+      aiGenerationError: aiGenerationError,
+      isStreamingGeneration: isStreamingGeneration ?? this.isStreamingGeneration,
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/utils/logger.dart';
+import 'package:ainoval/screens/editor/widgets/ai_generation_panel.dart';
 
 class EditorSidebar extends StatefulWidget {
   const EditorSidebar({
@@ -28,6 +29,7 @@ class EditorSidebar extends StatefulWidget {
 
 class _EditorSidebarState extends State<EditorSidebar> {
   final TextEditingController _searchController = TextEditingController();
+  String _selectedMode = 'codex';
 
   @override
   void dispose() {
@@ -78,6 +80,19 @@ class _EditorSidebarState extends State<EditorSidebar> {
 
                 // 章节目录标签页 - 替换原来的Chats标签页
                 ChapterDirectoryTab(novel: widget.novel),
+
+                // 添加AI生成选项
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome),
+                  title: const Text('AI生成'),
+                  subtitle: const Text('AI辅助内容生成'),
+                  onTap: () {
+                    setState(() {
+                      _selectedMode = 'ai_generation';
+                    });
+                  },
+                  selected: _selectedMode == 'ai_generation',
+                ),
               ],
             ),
           ),

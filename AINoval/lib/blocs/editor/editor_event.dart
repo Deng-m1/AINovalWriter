@@ -234,3 +234,87 @@ class DeleteScene extends EditorEvent {
   @override
   List<Object?> get props => [novelId, actId, chapterId, sceneId];
 }
+
+// 生成场景摘要事件
+class GenerateSceneSummaryRequested extends EditorEvent {
+  final String sceneId;
+  final String? styleInstructions;
+
+  const GenerateSceneSummaryRequested({
+    required this.sceneId,
+    this.styleInstructions,
+  });
+
+  @override
+  List<Object?> get props => [sceneId, styleInstructions];
+}
+
+// 从摘要生成场景内容事件
+class GenerateSceneFromSummaryRequested extends EditorEvent {
+  final String novelId;
+  final String summary;
+  final String? chapterId;
+  final String? styleInstructions;
+  final bool useStreamingMode;
+
+  const GenerateSceneFromSummaryRequested({
+    required this.novelId,
+    required this.summary,
+    this.chapterId,
+    this.styleInstructions,
+    this.useStreamingMode = true,
+  });
+
+  @override
+  List<Object?> get props => [novelId, summary, chapterId, styleInstructions, useStreamingMode];
+}
+
+// 更新生成的场景内容事件 (用于流式响应)
+class UpdateGeneratedSceneContent extends EditorEvent {
+  final String content;
+  
+  const UpdateGeneratedSceneContent(this.content);
+  
+  @override
+  List<Object?> get props => [content];
+}
+
+// 完成场景生成事件
+class SceneGenerationCompleted extends EditorEvent {
+  final String content;
+  
+  const SceneGenerationCompleted(this.content);
+  
+  @override
+  List<Object?> get props => [content];
+}
+
+// 场景生成失败事件
+class SceneGenerationFailed extends EditorEvent {
+  final String error;
+  
+  const SceneGenerationFailed(this.error);
+  
+  @override
+  List<Object?> get props => [error];
+}
+
+// 场景摘要生成完成事件
+class SceneSummaryGenerationCompleted extends EditorEvent {
+  final String summary;
+  
+  const SceneSummaryGenerationCompleted(this.summary);
+  
+  @override
+  List<Object?> get props => [summary];
+}
+
+// 场景摘要生成失败事件
+class SceneSummaryGenerationFailed extends EditorEvent {
+  final String error;
+  
+  const SceneSummaryGenerationFailed(this.error);
+  
+  @override
+  List<Object?> get props => [error];
+}
