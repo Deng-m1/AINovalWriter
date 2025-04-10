@@ -1542,7 +1542,7 @@ class EditorRepositoryImpl implements EditorRepository {
     try {
       final request = SummarizeSceneRequest(styleInstructions: styleInstructions);
       final response = await _apiClient.post(
-        '/api/ai/scenes/$sceneId/summarize',
+        '/scenes/$sceneId/summarize',
         data: request.toJson(),
       );
       
@@ -1568,7 +1568,7 @@ class EditorRepositoryImpl implements EditorRepository {
       );
       
       return SseClient().streamEvents<String>(
-        path: '/api/ai/novels/$novelId/scenes/generate-from-summary',
+        path: '/novels/$novelId/scenes/generate-from-summary',
         method: SSERequestType.POST,
         body: request.toJson(),
         parser: (json) => json['data'] as String? ?? '',
@@ -1593,7 +1593,7 @@ class EditorRepositoryImpl implements EditorRepository {
       );
       
       final response = await _apiClient.post(
-        '/api/novels/$novelId/scenes/generate-from-summary-sync',
+        '/novels/$novelId/scenes/generate-from-summary-sync',
         data: request.toJson(),
       );
       

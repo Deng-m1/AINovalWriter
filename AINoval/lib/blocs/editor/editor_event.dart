@@ -318,3 +318,11 @@ class SceneSummaryGenerationFailed extends EditorEvent {
   @override
   List<Object?> get props => [error];
 }
+
+// 停止场景生成事件
+class StopSceneGeneration extends EditorEvent {
+  const StopSceneGeneration();
+  
+  @override
+  List<Object?> get props => [];
+}

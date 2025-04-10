@@ -42,6 +42,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     on<SceneGenerationFailed>(_onSceneGenerationFailed);
     on<SceneSummaryGenerationCompleted>(_onSceneSummaryGenerationCompleted);
     on<SceneSummaryGenerationFailed>(_onSceneSummaryGenerationFailed);
+    on<StopSceneGeneration>(_onStopSceneGeneration);
   }
   final EditorRepositoryImpl repository;
   final String novelId;
@@ -1749,6 +1750,26 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       emit(currentState.copyWith(
         aiSummaryGenerationStatus: AIGenerationStatus.failed,
         aiGenerationError: event.error,
+      ));
+    }
+  }
+
+  // 处理停止场景生成事件
+  void _onStopSceneGeneration(
+    StopSceneGeneration event,
+    Emitter<EditorState> emit,
+  ) async {
+    if (state is EditorLoaded) {
+      final currentState = state as EditorLoaded;
+      
+      // 取消流式生成订阅
+      await _generationStreamSubscription?.cancel();
+      _generationStreamSubscription = null;
+      
+      // 更新状态为已停止
+      emit(currentState.copyWith(
+        aiSceneGenerationStatus: AIGenerationStatus.completed,
+        isStreamingGeneration: false,
       ));
     }
   }

@@ -6,7 +6,7 @@ import org.springframework.web.reactive.config.EnableWebFlux;
 import org.springframework.web.reactive.config.WebFluxConfigurer;
 import org.springframework.web.reactive.result.method.annotation.ArgumentResolverConfigurer;
 
-import com.ainovel.server.common.security.CurrentUserMethodArgumentResolver;
+import com.ainovel.server.security.CurrentUserMethodArgumentResolver ;
 
 /**
  * WebFlux配置 用于配置参数解析器、跨域等

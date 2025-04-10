@@ -31,7 +31,7 @@ import reactor.core.publisher.Mono;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/ai")
+@RequestMapping("/api/v1")
 public class AIGenerationController extends ReactiveBaseController {
     
     private final NovelAIService novelAIService;

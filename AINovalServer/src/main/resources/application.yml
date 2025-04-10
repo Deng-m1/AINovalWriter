@@ -5,6 +5,9 @@ server:
     connection-timeout: 5s
 
 spring:
+  main:
+    allow-bean-definition-overriding: true
+    allow-circular-references: true
   application:
     name: ai-novel-server
   data:

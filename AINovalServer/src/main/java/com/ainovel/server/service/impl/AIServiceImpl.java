@@ -3,13 +3,12 @@ package com.ainovel.server.service.impl;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
-import com.ainovel.server.config.ProxyConfig;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.ainovel.server.config.ProxyConfig;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
 import com.ainovel.server.service.AIService;
@@ -75,6 +74,7 @@ public class AIServiceImpl implements AIService {
                 "Qwen/Qwen2.5-32B-Instruct",
                 "Qwen/Qwen1.5-110B-Chat",
                 "google/gemma-2-9b-it",
+                "meta-llama/Meta-Llama-3.1-70B-Instruct",
                 "meta-llama/Meta-Llama-3.1-70B-Instruct"
         ));
     }
@@ -243,7 +243,7 @@ public class AIServiceImpl implements AIService {
                     case "anthropic" ->
                         new AnthropicLangChain4jModelProvider(modelName, apiKey, apiEndpoint);
                     case "gemini" ->
-                        new GeminiLangChain4jModelProvider(modelName, apiKey, apiEndpoint,proxyConfig);
+                        new GeminiLangChain4jModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
                     case "siliconflow" ->
                         new SiliconFlowLangChain4jModelProvider(modelName, apiKey, apiEndpoint);
                     default -> {
