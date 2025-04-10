@@ -6,6 +6,10 @@ import 'package:ainoval/models/novel_structure.dart';
 import 'package:ainoval/models/prompt_models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:ainoval/utils/logger.dart';
+import 'package:provider/provider.dart';
+import 'package:ainoval/screens/editor/managers/editor_layout_manager.dart';
+
 
 /// AI生成面板，提供场景摘要生成和摘要生成场景功能
 class AIGenerationPanel extends StatefulWidget {
@@ -625,18 +629,52 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                   width: double.infinity,
                   child: FilledButton.icon(
                     onPressed: _summaryController.text.isNotEmpty ? () {
-                      // 触发场景生成
-                      context.read<EditorBloc>().add(
-                        GenerateSceneFromSummaryRequested(
-                          novelId: state.novel.id,
-                          summary: _summaryController.text,
-                          chapterId: state.activeChapterId,
-                          styleInstructions: _styleInstructionsController.text.isNotEmpty
-                              ? _styleInstructionsController.text
-                              : null,
-                          useStreamingMode: true,
-                        ),
-                      );
+                      AppLogger.i('AIGenerationPanel', '点击流式生成场景按钮');
+                      
+                      try {
+                        // 检查当前状态，确保不会重复触发生成
+                        final currentState = context.read<EditorBloc>().state;
+                        if (currentState is EditorLoaded && 
+                            currentState.aiSceneGenerationStatus == AIGenerationStatus.generating) {
+                          AppLogger.w('AIGenerationPanel', '已有生成任务正在进行，忽略此次点击');
+                          
+                          // 直接切换到流式显示面板以查看当前生成进度
+                          final layoutManager = Provider.of<EditorLayoutManager>(context, listen: false);
+                          widget.onClose();
+                          layoutManager.showAIStreamGenerationDisplay();
+                          return;
+                        }
+                        
+                        // 获取布局管理器
+                        final layoutManager = Provider.of<EditorLayoutManager>(context, listen: false);
+                        
+                        // 先触发场景生成请求
+                        context.read<EditorBloc>().add(
+                          GenerateSceneFromSummaryRequested(
+                            novelId: state.novel.id,
+                            summary: _summaryController.text,
+                            chapterId: state.activeChapterId,
+                            styleInstructions: _styleInstructionsController.text.isNotEmpty
+                                ? _styleInstructionsController.text
+                                : null,
+                            useStreamingMode: true,
+                          ),
+                        );
+                        
+                        // 确保生成面板关闭
+                        widget.onClose();
+                        
+                        // 打开流式生成显示面板
+                        layoutManager.showAIStreamGenerationDisplay();
+                        
+                        AppLogger.i('AIGenerationPanel', '已切换到流式生成显示面板');
+                      } catch (e) {
+                        AppLogger.e('AIGenerationPanel', '流式生成场景按钮处理错误', e);
+                        // 显示错误提示
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('启动AI生成时出错: ${e.toString()}')),
+                        );
+                      }
                     } : null,
                     icon: const Icon(Icons.auto_awesome),
                     label: const Text('流式生成场景'),
@@ -647,18 +685,52 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: _summaryController.text.isNotEmpty ? () {
-                      // 触发场景生成（非流式）
-                      context.read<EditorBloc>().add(
-                        GenerateSceneFromSummaryRequested(
-                          novelId: state.novel.id,
-                          summary: _summaryController.text,
-                          chapterId: state.activeChapterId,
-                          styleInstructions: _styleInstructionsController.text.isNotEmpty
-                              ? _styleInstructionsController.text
-                              : null,
-                          useStreamingMode: false,
-                        ),
-                      );
+                      AppLogger.i('AIGenerationPanel', '点击快速生成场景按钮');
+                      
+                      try {
+                        // 检查当前状态，确保不会重复触发生成
+                        final currentState = context.read<EditorBloc>().state;
+                        if (currentState is EditorLoaded && 
+                            currentState.aiSceneGenerationStatus == AIGenerationStatus.generating) {
+                          AppLogger.w('AIGenerationPanel', '已有生成任务正在进行，忽略此次点击');
+                          
+                          // 直接切换到流式显示面板以查看当前生成进度
+                          final layoutManager = Provider.of<EditorLayoutManager>(context, listen: false);
+                          widget.onClose();
+                          layoutManager.showAIStreamGenerationDisplay();
+                          return;
+                        }
+                        
+                        // 获取布局管理器
+                        final layoutManager = Provider.of<EditorLayoutManager>(context, listen: false);
+                        
+                        // 触发场景生成（非流式）
+                        context.read<EditorBloc>().add(
+                          GenerateSceneFromSummaryRequested(
+                            novelId: state.novel.id,
+                            summary: _summaryController.text,
+                            chapterId: state.activeChapterId,
+                            styleInstructions: _styleInstructionsController.text.isNotEmpty
+                                ? _styleInstructionsController.text
+                                : null,
+                            useStreamingMode: false,
+                          ),
+                        );
+                        
+                        // 确保生成面板关闭
+                        widget.onClose();
+                        
+                        // 打开流式生成显示面板
+                        layoutManager.showAIStreamGenerationDisplay();
+                        
+                        AppLogger.i('AIGenerationPanel', '已切换到流式生成显示面板（快速生成模式）');
+                      } catch (e) {
+                        AppLogger.e('AIGenerationPanel', '快速生成场景按钮处理错误', e);
+                        // 显示错误提示
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('启动AI生成时出错: ${e.toString()}')),
+                        );
+                      }
                     } : null,
                     icon: const Icon(Icons.flash_on),
                     label: const Text('快速生成场景'),

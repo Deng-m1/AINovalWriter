@@ -11,6 +11,7 @@ import 'package:ainoval/screens/editor/managers/editor_dialog_manager.dart';
 import 'package:ainoval/screens/editor/managers/editor_layout_manager.dart';
 import 'package:ainoval/screens/editor/managers/editor_state_manager.dart';
 import 'package:ainoval/screens/editor/widgets/ai_generation_panel.dart';
+import 'package:ainoval/screens/editor/widgets/ai_stream_generation_display.dart';
 import 'package:ainoval/screens/editor/widgets/ai_summary_panel.dart';
 import 'package:ainoval/screens/editor/widgets/novel_settings_view.dart';
 import 'package:ainoval/screens/settings/settings_panel.dart';
@@ -18,6 +19,7 @@ import 'package:ainoval/services/api_service/repositories/editor_repository.dart
 import 'package:ainoval/services/api_service/repositories/impl/aliyun_oss_storage_repository.dart';
 import 'package:ainoval/services/api_service/repositories/prompt_repository.dart';
 import 'package:ainoval/services/api_service/repositories/storage_repository.dart';
+import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
@@ -66,6 +68,17 @@ class EditorLayout extends StatelessWidget {
               }
             });
           }
+          if (state is editor_bloc.EditorLoaded) {
+            // 当生成状态开始或内容更新时，确保流式显示面板打开
+            if (state.isStreamingGeneration && 
+                state.aiSceneGenerationStatus == editor_bloc.AIGenerationStatus.generating) {
+              final layoutManager = Provider.of<EditorLayoutManager>(context, listen: false);
+              if (!layoutManager.isAIStreamGenerationDisplayVisible) {
+                AppLogger.i('EditorLayout', '检测到流式生成状态，自动打开显示面板');
+                layoutManager.showAIStreamGenerationDisplay();
+              }
+            }
+          }
         },
         // Listen only when activeSceneId might have changed meaningfully
         listenWhen: (previous, current) {
@@ -77,6 +90,12 @@ class EditorLayout extends StatelessWidget {
           // Trigger if transitioning into EditorLoaded with an activeSceneId
           if (current is editor_bloc.EditorLoaded && current.activeSceneId != null) {
              return true;
+          }
+          if (previous is editor_bloc.EditorLoaded && current is editor_bloc.EditorLoaded) {
+            // 当生成状态变化或内容有更新时触发
+            return previous.isStreamingGeneration != current.isStreamingGeneration ||
+                   previous.aiSceneGenerationStatus != current.aiSceneGenerationStatus ||
+                   previous.generatedSceneContent != current.generatedSceneContent;
           }
           return false;
         },
@@ -272,10 +291,60 @@ class EditorLayout extends StatelessWidget {
                             ),
                       ),
                     ),
-                  )
-                ]
+                  ),
+                ],
+                
+                // 右侧流式生成显示面板
+                if (layoutState.isAIStreamGenerationDisplayVisible) ...[
+                  DraggableDivider(
+                    onDragUpdate: (delta) {
+                      layoutState.updateChatSidebarWidth(delta.delta.dx);
+                    },
+                    onDragEnd: (_) {
+                      layoutState.saveChatSidebarWidth();
+                    },
+                  ),
+                  AIStreamGenerationDisplay(
+                    onClose: layoutState.hideAIStreamGenerationDisplay,
+                    onOpenInEditor: (content) {
+                      // 创建新场景并使用生成内容
+                      if (state.activeActId != null && state.activeChapterId != null) {
+                        // 生成随机ID
+                        final sceneId = 'scene_${DateTime.now().millisecondsSinceEpoch}';
+                        
+                        // 添加新场景
+                        controllerState.editorBloc.add(editor_bloc.AddNewScene(
+                          novelId: controllerState.novel.id,
+                          actId: state.activeActId!,
+                          chapterId: state.activeChapterId!,
+                          sceneId: sceneId,
+                        ));
+                        
+                        // 等待短暂时间，确保场景已添加
+                        Future.delayed(const Duration(milliseconds: 500), () {
+                          // 设置场景内容
+                          controllerState.editorBloc.add(editor_bloc.UpdateSceneContent(
+                            novelId: controllerState.novel.id,
+                            actId: state.activeActId!,
+                            chapterId: state.activeChapterId!,
+                            sceneId: sceneId,
+                            content: content,
+                          ));
+                          
+                          // 设置为活动场景
+                          controllerState.editorBloc.add(editor_bloc.SetActiveScene(
+                            actId: state.activeActId!,
+                            chapterId: state.activeChapterId!,
+                            sceneId: sceneId,
+                          ));
+                        });
+                      }
+                    },
+                  ),
+                ],
+                
                 // 右侧AI聊天面板
-                else if (layoutState.isAIChatSidebarVisible) ...[
+                if (layoutState.isAIChatSidebarVisible) ...[
                   DraggableDivider(
                     onDragUpdate: (delta) {
                       layoutState.updateChatSidebarWidth(delta.delta.dx);

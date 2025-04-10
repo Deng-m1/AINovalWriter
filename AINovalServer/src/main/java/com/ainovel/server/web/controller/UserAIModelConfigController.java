@@ -16,11 +16,14 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ainovel.server.domain.model.UserAIModelConfig;
 import com.ainovel.server.service.AIService;
 import com.ainovel.server.service.UserAIModelConfigService;
+import com.ainovel.server.web.dto.AIModelConfigDto;
 import com.ainovel.server.web.dto.CreateUserAIModelConfigRequest;
 import com.ainovel.server.web.dto.ListUserConfigsRequest;
 import com.ainovel.server.web.dto.ProviderModelsRequest;
 import com.ainovel.server.web.dto.UpdateUserAIModelConfigRequest;
 import com.ainovel.server.web.dto.UserAIModelConfigResponse;
+import com.ainovel.server.web.dto.UserIdConfigIndexDto;
+import com.ainovel.server.web.dto.UserIdDto;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -31,6 +34,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @Slf4j
+
 @RestController
 @RequestMapping("/api/v1/user-ai-configs")
 @Tag(name = "用户AI模型配置管理", description = "管理用户个人配置的AI模型及其凭证 (所有操作使用POST)")
@@ -56,6 +60,202 @@ public class UserAIModelConfigController {
     public Mono<List<String>> listModelsForProvider(
             @Valid @RequestBody ProviderModelsRequest request) {
         return aiService.getModelsForProvider(request.provider()).collectList();
+    }
+
+    /**
+     * 获取用户的默认AI模型配置
+     *
+     * @param userIdDto 包含用户ID的DTO
+     * @return 默认AI模型配置
+     */
+    @PostMapping("/get-default")
+    @Operation(summary = "获取用户的默认AI模型配置")
+    public Mono<ResponseEntity<UserAIModelConfigResponse>> getUserDefaultAIModel(@RequestBody UserIdDto userIdDto) {
+        log.debug("Request to get default AI model config for user: {}", userIdDto.getUserId());
+        return configService.getValidatedDefaultConfiguration(userIdDto.getUserId())
+                .map(UserAIModelConfigResponse::fromEntity)
+                .map(ResponseEntity::ok)
+                .defaultIfEmpty(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * 添加AI模型配置
+     *
+     * @param aiModelConfigDto 包含用户ID和AI模型配置的DTO
+     * @return 创建的AI模型配置
+     */
+    @PostMapping("/add")
+    @Operation(summary = "添加AI模型配置（兼容旧接口）")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Mono<UserAIModelConfigResponse> addAIModelConfig(@RequestBody AIModelConfigDto aiModelConfigDto) {
+        String userId = aiModelConfigDto.getUserId();
+        Map<String, Object> config = (Map<String, Object>) aiModelConfigDto.getConfig();
+
+        String provider = (String) config.get("provider");
+        String modelName = (String) config.get("modelName");
+        String apiKey = (String) config.get("apiKey");
+        String apiEndpoint = (String) config.get("apiEndpoint");
+
+        log.debug("Request to add AI model config (legacy): userId={}, provider={}, model={}",
+                userId, provider, modelName);
+
+        return configService.addConfiguration(
+                userId,
+                provider,
+                modelName,
+                modelName, // 使用模型名称作为默认别名
+                apiKey,
+                apiEndpoint
+        ).map(UserAIModelConfigResponse::fromEntity);
+    }
+
+    /**
+     * 获取用户的AI模型配置列表
+     *
+     * @param userIdDto 包含用户ID的DTO
+     * @return AI模型配置列表
+     */
+    @PostMapping("/list")
+    @Operation(summary = "获取用户的AI模型配置列表（兼容旧接口）")
+    public Mono<List<UserAIModelConfigResponse>> getUserAIModels(@RequestBody UserIdDto userIdDto) {
+        log.debug("Request to get AI model configs (legacy) for user: {}", userIdDto.getUserId());
+        return configService.listConfigurations(userIdDto.getUserId())
+                .map(UserAIModelConfigResponse::fromEntity)
+                .collectList();
+    }
+
+    /**
+     * 更新AI模型配置
+     *
+     * @param userIdConfigIndexDto 包含用户ID、配置索引和更新的AI模型配置的DTO
+     * @return 更新后的配置
+     */
+    @PostMapping("/update")
+    @Operation(summary = "更新AI模型配置（兼容旧接口）")
+    public Mono<ResponseEntity<UserAIModelConfigResponse>> updateAIModelConfig(@RequestBody UserIdConfigIndexDto userIdConfigIndexDto) {
+        String userId = userIdConfigIndexDto.getUserId();
+        int configIndex = userIdConfigIndexDto.getConfigIndex();
+        Map<String, Object> configData = (Map<String, Object>) userIdConfigIndexDto.getConfig();
+
+        log.debug("Request to update AI model config (legacy): userId={}, configIndex={}", userId, configIndex);
+
+        // 首先根据索引查询configId
+        return configService.listConfigurations(userId)
+                .collectList()
+                .flatMap(configs -> {
+                    if (configIndex < 0 || configIndex >= configs.size()) {
+                        log.warn("Config index out of bounds: userId={}, configIndex={}, size={}",
+                                userId, configIndex, configs.size());
+                        return Mono.just(ResponseEntity.badRequest().build());
+                    }
+
+                    String configId = configs.get(configIndex).getId();
+                    Map<String, Object> updates = new java.util.HashMap<>();
+
+                    if (configData.containsKey("provider")) {
+                        log.warn("Cannot update provider via legacy API");
+                    }
+                    if (configData.containsKey("modelName")) {
+                        log.warn("Cannot update modelName via legacy API");
+                    }
+                    if (configData.containsKey("alias")) {
+                        updates.put("alias", configData.get("alias"));
+                    }
+                    if (configData.containsKey("apiKey")) {
+                        updates.put("apiKey", configData.get("apiKey"));
+                    }
+                    if (configData.containsKey("apiEndpoint")) {
+                        updates.put("apiEndpoint", configData.get("apiEndpoint"));
+                    }
+
+                    if (updates.isEmpty()) {
+                        log.warn("No valid updates for config: userId={}, configId={}", userId, configId);
+                        return Mono.just(ResponseEntity.badRequest().build());
+                    }
+
+                    return configService.updateConfiguration(userId, configId, updates)
+                            .map(UserAIModelConfigResponse::fromEntity)
+                            .map(ResponseEntity::ok)
+                            .onErrorResume(e -> {
+                                log.error("Error updating config: userId={}, configId={}, error={}",
+                                        userId, configId, e.getMessage());
+                                return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
+                            });
+                });
+    }
+
+    /**
+     * 删除AI模型配置
+     *
+     * @param userIdConfigIndexDto 包含用户ID和配置索引的DTO
+     * @return 操作结果
+     */
+    @PostMapping("/delete")
+    @Operation(summary = "删除AI模型配置（兼容旧接口）")
+    public Mono<ResponseEntity<Void>> deleteAIModelConfig(@RequestBody UserIdConfigIndexDto userIdConfigIndexDto) {
+        String userId = userIdConfigIndexDto.getUserId();
+        int configIndex = userIdConfigIndexDto.getConfigIndex();
+
+        log.debug("Request to delete AI model config (legacy): userId={}, configIndex={}", userId, configIndex);
+
+        // 首先根据索引查询configId
+        return configService.listConfigurations(userId)
+                .collectList()
+                .flatMap(configs -> {
+                    if (configIndex < 0 || configIndex >= configs.size()) {
+                        log.warn("Config index out of bounds: userId={}, configIndex={}, size={}",
+                                userId, configIndex, configs.size());
+                        return Mono.just(ResponseEntity.badRequest().<Void>build());
+                    }
+
+                    String configId = configs.get(configIndex).getId();
+                    return configService.deleteConfiguration(userId, configId)
+                            .thenReturn(ResponseEntity.noContent().<Void>build())
+                            .onErrorResume(e -> {
+                                log.error("Error deleting config: userId={}, configId={}, error={}",
+                                        userId, configId, e.getMessage());
+                                return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).<Void>build());
+                            });
+                });
+    }
+
+    /**
+     * 设置默认AI模型配置
+     *
+     * @param userIdConfigIndexDto 包含用户ID和配置索引的DTO
+     * @return 更新后的配置
+     */
+    @PostMapping("/set-default")
+    @Operation(summary = "设置默认AI模型配置（兼容旧接口）")
+    public Mono<ResponseEntity<UserAIModelConfigResponse>> setDefaultAIModelConfig(@RequestBody UserIdConfigIndexDto userIdConfigIndexDto) {
+        String userId = userIdConfigIndexDto.getUserId();
+        int configIndex = userIdConfigIndexDto.getConfigIndex();
+
+        log.debug("Request to set default AI model config (legacy): userId={}, configIndex={}", userId, configIndex);
+
+        // 首先根据索引查询configId
+        return configService.listConfigurations(userId)
+                .collectList()
+                .flatMap(configs -> {
+                    if (configIndex < 0 || configIndex >= configs.size()) {
+                        log.warn("Config index out of bounds: userId={}, configIndex={}, size={}",
+                                userId, configIndex, configs.size());
+                        return Mono.just(ResponseEntity.badRequest().build());
+                    }
+
+                    String configId = configs.get(configIndex).getId();
+                    return configService.setDefaultConfiguration(userId, configId)
+                            .map(UserAIModelConfigResponse::fromEntity)
+                            .map(ResponseEntity::ok)
+                            .onErrorResume(e -> {
+                                log.error("Error setting default config: userId={}, configId={}, error={}",
+                                        userId, configId, e.getMessage());
+                                if (e instanceof IllegalArgumentException) {
+                                    return Mono.just(ResponseEntity.badRequest().build());
+                                }
+                                return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
+                            });
+                });
     }
 
     @PostMapping("/users/{userId}/create")

@@ -16,6 +16,7 @@ class EditorLayoutManager extends ChangeNotifier {
   bool isNovelSettingsVisible = false;
   bool isAISummaryPanelVisible = false;
   bool isAISceneGenerationPanelVisible = false;
+  bool isAIStreamGenerationDisplayVisible = false;
 
   // 侧边栏宽度
   double editorSidebarWidth = 280;
@@ -119,6 +120,7 @@ class EditorLayoutManager extends ChangeNotifier {
       isNovelSettingsVisible = false;
       isAISceneGenerationPanelVisible = false;
       isAISummaryPanelVisible = false;
+      isAIStreamGenerationDisplayVisible = false;
     }
     notifyListeners();
   }
@@ -131,6 +133,7 @@ class EditorLayoutManager extends ChangeNotifier {
       isSettingsPanelVisible = false;
       isNovelSettingsVisible = false;
       isAISummaryPanelVisible = false;
+      isAIStreamGenerationDisplayVisible = false;
     }
     notifyListeners();
   }
@@ -143,6 +146,7 @@ class EditorLayoutManager extends ChangeNotifier {
       isSettingsPanelVisible = false;
       isNovelSettingsVisible = false;
       isAISceneGenerationPanelVisible = false;
+      isAIStreamGenerationDisplayVisible = false;
     }
     notifyListeners();
   }
@@ -155,6 +159,7 @@ class EditorLayoutManager extends ChangeNotifier {
       isNovelSettingsVisible = false;
       isAISceneGenerationPanelVisible = false;
       isAISummaryPanelVisible = false;
+      isAIStreamGenerationDisplayVisible = false;
     }
     notifyListeners();
   }
@@ -167,7 +172,42 @@ class EditorLayoutManager extends ChangeNotifier {
       isSettingsPanelVisible = false;
       isAISceneGenerationPanelVisible = false;
       isAISummaryPanelVisible = false;
+      isAIStreamGenerationDisplayVisible = false;
     }
     notifyListeners();
+  }
+  
+  // 新增: 切换流式生成显示面板可见性
+  void toggleAIStreamGenerationDisplay() {
+    isAIStreamGenerationDisplayVisible = !isAIStreamGenerationDisplayVisible;
+    if (isAIStreamGenerationDisplayVisible) {
+      isAIChatSidebarVisible = false;
+      isSettingsPanelVisible = false;
+      isNovelSettingsVisible = false;
+      isAISceneGenerationPanelVisible = false;
+      isAISummaryPanelVisible = false;
+    }
+    notifyListeners();
+  }
+  
+  // 新增: 仅设置流式生成显示面板可见
+  void showAIStreamGenerationDisplay() {
+    if (!isAIStreamGenerationDisplayVisible) {
+      isAIStreamGenerationDisplayVisible = true;
+      isAIChatSidebarVisible = false;
+      isSettingsPanelVisible = false;
+      isNovelSettingsVisible = false;
+      isAISceneGenerationPanelVisible = false;
+      isAISummaryPanelVisible = false;
+      notifyListeners();
+    }
+  }
+  
+  // 新增: 仅隐藏流式生成显示面板
+  void hideAIStreamGenerationDisplay() {
+    if (isAIStreamGenerationDisplayVisible) {
+      isAIStreamGenerationDisplayVisible = false;
+      notifyListeners();
+    }
   }
 }

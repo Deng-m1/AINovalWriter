@@ -53,6 +53,8 @@ public class AIServiceImpl implements AIService {
                 "gpt-3.5-turbo",
                 "gpt-4",
                 "gpt-4-turbo",
+                "google/gemini-2.5-pro-exp-03-25:free",
+                "deepseek/deepseek-v3-base:free",
                 "gpt-4o"
         ));
 
@@ -74,6 +76,7 @@ public class AIServiceImpl implements AIService {
                 "Qwen/Qwen2.5-32B-Instruct",
                 "Qwen/Qwen1.5-110B-Chat",
                 "google/gemma-2-9b-it",
+                "meta-llama/Meta-Llama-3.1-70B-Instruct",
                 "meta-llama/Meta-Llama-3.1-70B-Instruct"
         ));
     }
