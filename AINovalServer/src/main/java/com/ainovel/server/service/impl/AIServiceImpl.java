@@ -74,6 +74,7 @@ public class AIServiceImpl implements AIService {
                 "Qwen/Qwen2.5-32B-Instruct",
                 "Qwen/Qwen1.5-110B-Chat",
                 "google/gemma-2-9b-it",
+                "meta-llama/Meta-Llama-3.1-70B-Instruct",
                 "meta-llama/Meta-Llama-3.1-70B-Instruct"
         ));
     }
