@@ -18,6 +18,7 @@ import com.ainovel.server.domain.model.Scene.HistoryEntry;
 import com.ainovel.server.domain.model.SceneVersionDiff;
 import com.ainovel.server.repository.SceneRepository;
 import com.ainovel.server.service.IndexingService;
+import com.ainovel.server.service.MetadataService;
 import com.ainovel.server.service.SceneService;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.UnifiedDiffUtils;
@@ -35,6 +36,8 @@ import reactor.core.publisher.Mono;
 public class SceneServiceImpl implements SceneService {
 
     private final SceneRepository sceneRepository;
+    private final MetadataService metadataService;
+
     @Autowired
     private IndexingService indexingService;
 
@@ -83,27 +86,38 @@ public class SceneServiceImpl implements SceneService {
         // 设置初始版本
         scene.setVersion(1);
 
+        // 使用元数据服务更新场景元数据（包括字数统计）
+        final Scene updatedScene = metadataService.updateSceneMetadata(scene);
+
         // 如果没有设置序号，查找当前章节的最后一个场景序号并加1
-        if (scene.getSequence() == null) {
-            return sceneRepository.findByChapterIdOrderBySequenceAsc(scene.getChapterId())
+        if (updatedScene.getSequence() == null) {
+            return sceneRepository.findByChapterIdOrderBySequenceAsc(updatedScene.getChapterId())
                     .collectList()
                     .flatMap(scenes -> {
                         // 如果章节中没有场景，则序号为0
                         if (scenes.isEmpty()) {
-                            scene.setSequence(0);
+                            updatedScene.setSequence(0);
                         } else {
                             // 获取最大序号并加1
                             int maxSequence = scenes.stream()
                                     .mapToInt(Scene::getSequence)
                                     .max()
                                     .orElse(-1);
-                            scene.setSequence(maxSequence + 1);
+                            updatedScene.setSequence(maxSequence + 1);
                         }
-                        return sceneRepository.save(scene);
+                        return sceneRepository.save(updatedScene)
+                                .doOnSuccess(savedScene -> {
+                                    // 异步触发小说元数据更新
+                                    metadataService.triggerNovelMetadataUpdate(savedScene).subscribe();
+                                });
                     });
         }
 
-        return sceneRepository.save(scene);
+        return sceneRepository.save(updatedScene)
+                .doOnSuccess(savedScene -> {
+                    // 异步触发小说元数据更新
+                    metadataService.triggerNovelMetadataUpdate(savedScene).subscribe();
+                });
     }
 
     @Override
@@ -118,6 +132,8 @@ public class SceneServiceImpl implements SceneService {
             scene.setCreatedAt(now);
             scene.setUpdatedAt(now);
             scene.setVersion(1);
+            // 使用元数据服务更新每个场景的元数据
+            metadataService.updateSceneMetadata(scene);
         });
 
         // 按章节ID分组
@@ -152,7 +168,11 @@ public class SceneServiceImpl implements SceneService {
                             }
                         }
 
-                        return sceneRepository.saveAll(chapterScenes);
+                        return sceneRepository.saveAll(chapterScenes)
+                                .doOnNext(savedScene -> {
+                                    // 对每个保存的场景异步触发小说元数据更新
+                                    metadataService.triggerNovelMetadataUpdate(savedScene).subscribe();
+                                });
                     });
 
             fluxes.add(flux);
@@ -187,28 +207,36 @@ public class SceneServiceImpl implements SceneService {
                         scene.setSequence(existingScene.getSequence());
                     }
 
+                    // 使用元数据服务更新场景元数据（包括字数统计）
+                    final Scene updatedScene = metadataService.updateSceneMetadata(scene);
+                    final Scene finalExistingScene = existingScene;
+
                     // 在更新场景时，检查内容是否发生变化
-                    if (!Objects.equals(existingScene.getContent(), scene.getContent())) {
+                    if (!Objects.equals(finalExistingScene.getContent(), updatedScene.getContent())) {
                         // 如果内容发生变化，添加历史记录
                         HistoryEntry historyEntry = new HistoryEntry();
                         historyEntry.setUpdatedAt(LocalDateTime.now());
-                        historyEntry.setContent(existingScene.getContent());
+                        historyEntry.setContent(finalExistingScene.getContent());
                         historyEntry.setUpdatedBy("system");
                         historyEntry.setReason("内容更新");
 
                         // 复制现有历史记录并添加新记录
-                        if (scene.getHistory() == null) {
-                            scene.setHistory(new ArrayList<>());
+                        if (updatedScene.getHistory() == null) {
+                            updatedScene.setHistory(new ArrayList<>());
                         }
-                        scene.getHistory().addAll(existingScene.getHistory());
-                        scene.getHistory().add(historyEntry);
+                        updatedScene.getHistory().addAll(finalExistingScene.getHistory());
+                        updatedScene.getHistory().add(historyEntry);
                     } else {
                         // 如果内容没变，保留原有历史记录
-                        scene.setHistory(existingScene.getHistory());
+                        updatedScene.setHistory(finalExistingScene.getHistory());
                     }
 
                     // 保存更新后的场景
-                    return sceneRepository.save(scene);
+                    return sceneRepository.save(updatedScene)
+                            .doOnSuccess(savedScene -> {
+                                // 异步触发小说元数据更新
+                                metadataService.triggerNovelMetadataUpdate(savedScene).subscribe();
+                            });
                 });
     }
 
@@ -235,7 +263,17 @@ public class SceneServiceImpl implements SceneService {
     public Mono<Void> deleteScene(String id) {
         return sceneRepository.findById(id)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景不存在: " + id)))
-                .flatMap(scene -> sceneRepository.delete(scene));
+                .flatMap(scene -> {
+                    String novelId = scene.getNovelId();
+                    return sceneRepository.delete(scene)
+                            .then(Mono.defer(() -> {
+                                // 触发小说元数据更新（如果有novelId）
+                                if (novelId != null && !novelId.isEmpty()) {
+                                    return metadataService.updateNovelMetadata(novelId).then();
+                                }
+                                return Mono.empty();
+                            }));
+                });
     }
 
     @Override
@@ -245,7 +283,26 @@ public class SceneServiceImpl implements SceneService {
 
     @Override
     public Mono<Void> deleteScenesByChapterId(String chapterId) {
-        return sceneRepository.deleteByChapterId(chapterId);
+        // 首先获取章节的场景列表，记录novelId
+        return sceneRepository.findByChapterId(chapterId)
+                .collectList()
+                .flatMap(scenes -> {
+                    if (scenes.isEmpty()) {
+                        return Mono.empty();
+                    }
+
+                    // 获取novelId用于后续更新元数据
+                    String novelId = scenes.get(0).getNovelId();
+
+                    return sceneRepository.deleteByChapterId(chapterId)
+                            .then(Mono.defer(() -> {
+                                // 触发小说元数据更新
+                                if (novelId != null && !novelId.isEmpty()) {
+                                    return metadataService.updateNovelMetadata(novelId).then();
+                                }
+                                return Mono.empty();
+                            }));
+                });
     }
 
     @Override
@@ -278,12 +335,22 @@ public class SceneServiceImpl implements SceneService {
                     scene.setVersion(scene.getVersion() + 1);
                     scene.setUpdatedAt(LocalDateTime.now());
 
+                    // 使用元数据服务更新场景字数
+                    final int wordCount = metadataService.calculateWordCount(content);
+                    scene.setWordCount(wordCount);
+
+                    final Scene updatedScene = scene;
+
                     // 保存到数据库
-                    return sceneRepository.save(scene)
+                    return sceneRepository.save(updatedScene)
                             .flatMap(savedScene -> {
                                 // 触发场景索引
                                 return indexingService.indexScene(savedScene)
                                         .thenReturn(savedScene);
+                            })
+                            .doOnSuccess(savedScene -> {
+                                // 异步触发小说元数据更新
+                                metadataService.triggerNovelMetadataUpdate(savedScene).subscribe();
                             });
                 });
     }
@@ -308,7 +375,7 @@ public class SceneServiceImpl implements SceneService {
                     }
 
                     // 获取历史版本内容
-                    String historyContent = history.get(historyIndex).getContent();
+                    final String historyContent = history.get(historyIndex).getContent();
 
                     // 添加当前版本到历史记录
                     HistoryEntry currentVersion = new HistoryEntry();
@@ -323,6 +390,11 @@ public class SceneServiceImpl implements SceneService {
                     scene.setVersion(scene.getVersion() + 1);
                     scene.setUpdatedAt(LocalDateTime.now());
 
+                    // 使用元数据服务更新场景字数
+                    scene.setWordCount(metadataService.calculateWordCount(historyContent));
+
+                    final Scene updatedScene = scene;
+
                     // 添加恢复记录
                     HistoryEntry restoreEntry = new HistoryEntry();
                     restoreEntry.setContent(null); // 不存储内容，因为就是当前版本
@@ -331,8 +403,64 @@ public class SceneServiceImpl implements SceneService {
                     restoreEntry.setReason("恢复到历史版本 #" + (historyIndex + 1) + ": " + reason);
                     history.add(restoreEntry);
 
+                    return sceneRepository.save(updatedScene)
+                            .doOnSuccess(savedScene -> {
+                                // 异步触发小说元数据更新
+                                metadataService.triggerNovelMetadataUpdate(savedScene).subscribe();
+                            });
+                });
+    }
+
+    @Override
+    public Mono<Scene> updateSummary(String id, String summaryText) {
+        return sceneRepository.findById(id)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景不存在: " + id)))
+                .flatMap(scene -> {
+                    // 更新摘要
+                    if (summaryText != null) {
+                        scene.setSummary(summaryText);
+                    }
+
+                    // 更新场景
+                    scene.setUpdatedAt(LocalDateTime.now());
                     return sceneRepository.save(scene);
                 });
+    }
+
+    @Override
+    public Mono<Scene> addScene(String novelId, String chapterId, String title, String summaryText, Integer position) {
+        // 创建新场景
+        Scene newScene = new Scene();
+        newScene.setId(UUID.randomUUID().toString());
+        newScene.setNovelId(novelId);
+        newScene.setChapterId(chapterId);
+        newScene.setTitle(title);
+        newScene.setContent(""); // 初始内容为空
+        newScene.setCreatedAt(LocalDateTime.now());
+        newScene.setUpdatedAt(LocalDateTime.now());
+        newScene.setVersion(1);
+        newScene.setSummary(summaryText);
+        newScene.setWordCount(0); // 初始字数为0
+
+        if (position != null) {
+            newScene.setSequence(position);
+            return createScene(newScene);
+        } else {
+            // 查找当前章节中最大的场景序号
+            return sceneRepository.findByChapterIdOrderBySequenceAsc(chapterId)
+                    .collectList()
+                    .flatMap(scenes -> {
+                        int sequence = 0;
+                        if (!scenes.isEmpty()) {
+                            sequence = scenes.stream()
+                                    .mapToInt(Scene::getSequence)
+                                    .max()
+                                    .orElse(-1) + 1;
+                        }
+                        newScene.setSequence(sequence);
+                        return createScene(newScene);
+                    });
+        }
     }
 
     @Override
@@ -401,56 +529,5 @@ public class SceneServiceImpl implements SceneService {
                     // 其他错误继续传播
                     return Mono.error(e);
                 });
-    }
-
-    @Override
-    public Mono<Scene> updateSummary(String id, String summaryText) {
-        return sceneRepository.findById(id)
-                .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景不存在: " + id)))
-                .flatMap(scene -> {
-                    // 如果场景没有摘要，创建一个新的
-
-                    if (summaryText != null) {
-                        scene.setSummary(summaryText);
-                    }
-                    // 更新场景
-                    scene.setUpdatedAt(LocalDateTime.now());
-                    return sceneRepository.save(scene);
-                });
-    }
-
-    @Override
-    public Mono<Scene> addScene(String novelId, String chapterId, String title, String summaryText, Integer position) {
-        // 创建新场景
-        Scene newScene = new Scene();
-        newScene.setId(UUID.randomUUID().toString());
-        newScene.setNovelId(novelId);
-        newScene.setChapterId(chapterId);
-        newScene.setTitle(title);
-        newScene.setContent(""); // 初始内容为空
-        newScene.setCreatedAt(LocalDateTime.now());
-        newScene.setUpdatedAt(LocalDateTime.now());
-        newScene.setVersion(1);
-        newScene.setSummary(summaryText);
-
-        if (position != null) {
-            newScene.setSequence(position);
-            return createScene(newScene);
-        } else {
-            // 查找当前章节中最大的场景序号
-            return sceneRepository.findByChapterIdOrderBySequenceAsc(chapterId)
-                    .collectList()
-                    .flatMap(scenes -> {
-                        int sequence = 0;
-                        if (!scenes.isEmpty()) {
-                            sequence = scenes.stream()
-                                    .mapToInt(Scene::getSequence)
-                                    .max()
-                                    .orElse(-1) + 1;
-                        }
-                        newScene.setSequence(sequence);
-                        return createScene(newScene);
-                    });
-        }
     }
 }

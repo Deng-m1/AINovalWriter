@@ -243,6 +243,45 @@ class ApiClient {
     }
   }
 
+  /// 基础GET请求方法
+  Future<dynamic> get(String path, {Options? options}) async {
+    try {
+      final response = await _dio.get(path, options: options);
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', 'get 执行出错，路径: $path', e);
+      throw ApiException(-1, '执行 GET 请求时发生意外错误: ${e.toString()}');
+    }
+  }
+
+  /// 基础PUT请求方法
+  Future<dynamic> put(String path, {dynamic data, Options? options}) async {
+    try {
+      final response = await _dio.put(path, data: data, options: options);
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', 'put 执行出错，路径: $path', e);
+      throw ApiException(-1, '执行 PUT 请求时发生意外错误: ${e.toString()}');
+    }
+  }
+
+  /// 基础DELETE请求方法
+  Future<dynamic> delete(String path, {dynamic data, Options? options}) async {
+    try {
+      final response = await _dio.delete(path, data: data, options: options);
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', 'delete 执行出错，路径: $path', e);
+      throw ApiException(-1, '执行 DELETE 请求时发生意外错误: ${e.toString()}');
+    }
+  }
+
   //==== 小说相关接口 ====//
 
   /// 导入小说文件
@@ -687,7 +726,7 @@ class ApiClient {
     try {
       final response =
           await post('/novels/update-with-scenes', data: novelWithScenesData);
-      AppLogger.i('/novels/update-with-scenes', '更新成功，响应: $response');
+      AppLogger.i('/novels/update-with-scenes', '更新成功');
       return response;
     } catch (e) {
       AppLogger.e('/novels/update-with-scenes',
@@ -1407,8 +1446,12 @@ class ApiClient {
   /// 获取封面图片上传凭证
   Future<Map<String, dynamic>> getCoverUploadCredential(String novelId) async {
     try {
-      final response = await _dio.get(
-        '/novels/$novelId/cover/upload-credential',
+      final response = await _dio.post(
+        '/novels/$novelId/cover-upload-credential',
+        data: {
+          'fileName': 'cover.jpg',
+          'contentType': 'image/jpeg'
+        },
       );
       return response.data;
     } on DioException catch (e) {

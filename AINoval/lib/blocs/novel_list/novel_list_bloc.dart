@@ -176,11 +176,15 @@ class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
       final novelSummaries = novels.map((novel) => NovelSummary(
         id: novel.id,
         title: novel.title,
-        coverImagePath: novel.coverImagePath,
+        coverUrl: novel.coverUrl,
         lastEditTime: novel.updatedAt,
         wordCount: novel.wordCount,
+        readTime: novel.readTime,
+        version: novel.version,
         completionPercentage: 0.0,
         lastEditedChapterId: novel.lastEditedChapterId,
+        author: novel.author?.username,
+        contributors: novel.contributors,
       )).toList();
       emit(NovelListLoaded(novels: novelSummaries));
     } catch (e) {
@@ -197,10 +201,14 @@ class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
         final novelSummaries = searchResults.map((novel) => NovelSummary(
           id: novel.id,
           title: novel.title,
-          coverImagePath: novel.coverImagePath,
+          coverUrl: novel.coverUrl,
           lastEditTime: novel.updatedAt,
           wordCount: novel.wordCount,
+          readTime: novel.readTime,
+          version: novel.version,
           completionPercentage: 0.0,
+          author: novel.author?.username,
+          contributors: novel.contributors,
         )).toList();
         emit(NovelListLoaded(
           novels: novelSummaries,
@@ -300,11 +308,15 @@ class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
       final novelSummary = NovelSummary(
         id: newNovel.id,
         title: newNovel.title,
-        coverImagePath: newNovel.coverImagePath,
+        coverUrl: newNovel.coverUrl,
         lastEditTime: newNovel.updatedAt,
         wordCount: newNovel.wordCount,
+        readTime: newNovel.readTime,
+        version: newNovel.version,
         seriesName: event.seriesName ?? '',
         completionPercentage: 0.0,
+        author: newNovel.author?.username,
+        contributors: newNovel.contributors,
       );
       
       // 直接更新状态，添加新创建的小说

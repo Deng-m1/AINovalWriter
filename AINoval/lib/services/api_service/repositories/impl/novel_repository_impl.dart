@@ -462,6 +462,12 @@ class NovelRepositoryImpl implements NovelRepository {
 
     // 提取元数据
     final metadata = novelData['metadata'] as Map<String, dynamic>? ?? {};
+    
+    // 从元数据中获取字数和其他信息
+    final wordCount = metadata['wordCount'] as int? ?? 0;
+    final readTime = metadata['readTime'] as int? ?? 0;
+    final version = metadata['version'] as int? ?? 1;
+    final contributors = (metadata['contributors'] as List?)?.cast<String>() ?? <String>[];
 
     // 解析创建时间和更新时间
     DateTime createdAt;
@@ -480,14 +486,29 @@ class NovelRepositoryImpl implements NovelRepository {
       updatedAt = DateTime.now();
     }
 
+    // 创建Author对象
+    Author? author;
+    if (novelData['author'] != null) {
+      final authorData = novelData['author'] as Map<String, dynamic>;
+      author = Author(
+        id: authorData['id'] ?? '',
+        username: authorData['username'] ?? '未知作者',
+      );
+    }
+
     return Novel(
       id: novelData['id'],
       title: novelData['title'] ?? '无标题',
-      coverImagePath: novelData['coverImage'] ?? '',
+      coverUrl: novelData['coverImage'] ?? '',
       createdAt: createdAt,
       updatedAt: updatedAt,
       acts: acts,
       lastEditedChapterId: novelData['lastEditedChapterId'],
+      author: author,
+      wordCount: wordCount, // 使用从元数据提取的字数
+      readTime: readTime,   // 使用从元数据提取的阅读时间
+      version: version,     // 使用从元数据提取的版本号
+      contributors: contributors, // 使用从元数据提取的贡献者列表
     );
   }
 

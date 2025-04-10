@@ -5,6 +5,10 @@ import java.util.Map;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
 import com.ainovel.server.service.ai.AIModelProvider;
+import com.ainovel.server.web.dto.GenerateSceneFromSummaryRequest;
+import com.ainovel.server.web.dto.GenerateSceneFromSummaryResponse;
+import com.ainovel.server.web.dto.SummarizeSceneRequest;
+import com.ainovel.server.web.dto.SummarizeSceneResponse;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -162,4 +166,34 @@ public interface NovelAIService {
      * @return 生成的多个剧情大纲选项
      */
     Mono<AIResponse> generateNextOutlines(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance);
+
+    /**
+     * 为指定场景生成摘要
+     *
+     * @param userId 用户ID
+     * @param sceneId 场景ID
+     * @param request 摘要请求参数
+     * @return 包含摘要的响应
+     */
+    Mono<SummarizeSceneResponse> summarizeScene(String userId, String sceneId, SummarizeSceneRequest request);
+
+    /**
+     * 根据摘要生成场景内容 (流式)
+     *
+     * @param userId 用户ID
+     * @param novelId 小说ID
+     * @param request 生成场景请求参数
+     * @return 生成的场景内容流
+     */
+    Flux<String> generateSceneFromSummaryStream(String userId, String novelId, GenerateSceneFromSummaryRequest request);
+
+    /**
+     * 根据摘要生成场景内容 (非流式)
+     *
+     * @param userId 用户ID
+     * @param novelId 小说ID
+     * @param request 生成场景请求参数
+     * @return 包含生成场景内容的响应
+     */
+    Mono<GenerateSceneFromSummaryResponse> generateSceneFromSummary(String userId, String novelId, GenerateSceneFromSummaryRequest request);
 }

@@ -1,5 +1,6 @@
-package com.ainovel.server.common.security;
+package com.ainovel.server.security;
 
+import org.jetbrains.annotations.NotNull;
 import org.springframework.core.MethodParameter;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
@@ -14,17 +15,19 @@ import com.ainovel.server.domain.model.User;
 import reactor.core.publisher.Mono;
 
 /**
- * 用于解析带有@CurrentUser注解的方法参数的解析器 从SecurityContext中获取当前认证用户ID
+ * 当前用户方法参数解析器
+ * 用于解析标注了@AuthenticationPrincipal的方法参数，将其解析为CurrentUser对象
  */
 @Component
 public class CurrentUserMethodArgumentResolver implements HandlerMethodArgumentResolver {
 
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
-        return parameter.hasParameterAnnotation(CurrentUser.class)
-                && parameter.getParameterType().equals(String.class);
+        return parameter.getParameterAnnotation(org.springframework.security.core.annotation.AuthenticationPrincipal.class) != null
+                && parameter.getParameterType().equals(CurrentUser.class);
     }
 
+    @NotNull
     @Override
     public Mono<Object> resolveArgument(MethodParameter parameter, BindingContext bindingContext,
             ServerWebExchange exchange) {
@@ -34,8 +37,8 @@ public class CurrentUserMethodArgumentResolver implements HandlerMethodArgumentR
                 .filter(Authentication::isAuthenticated)
                 .map(Authentication::getPrincipal)
                 .cast(User.class)
-                .map(User::getId)
+                .map(user -> new CurrentUser(user.getId(), user.getUsername()))
                 .cast(Object.class)
                 .switchIfEmpty(Mono.error(new IllegalStateException("当前用户未认证")));
     }
-}
+} 

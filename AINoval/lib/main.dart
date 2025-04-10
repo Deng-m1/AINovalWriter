@@ -38,6 +38,9 @@ import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:ainoval/blocs/prompt/prompt_bloc.dart';
+import 'package:ainoval/services/api_service/repositories/prompt_repository.dart';
+import 'package:ainoval/services/api_service/repositories/impl/prompt_repository_impl.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -91,6 +94,9 @@ void main() async {
   final contextProvider = ContextProvider(
       novelRepository: novelRepository, codexRepository: codexRepository);
 
+  // 创建PromptRepository
+  final promptRepository = PromptRepositoryImpl(apiClient);
+
   AppLogger.i('Main', '应用程序初始化完成，准备启动界面');
 
   AppLogger.i('Main', '应用程序初始化完成，准备启动界面');
@@ -110,6 +116,9 @@ void main() async {
         RepositoryProvider<ContextProvider>.value(value: contextProvider),
         RepositoryProvider<LocalStorageService>.value(
             value: localStorageService),
+        RepositoryProvider<PromptRepository>(
+          create: (context) => promptRepository,
+        ),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -139,6 +148,11 @@ void main() async {
           BlocProvider<EditorVersionBloc>(
             create: (context) => EditorVersionBloc(
               novelRepository: context.read<NovelRepository>(),
+            ),
+          ),
+          BlocProvider<PromptBloc>(
+            create: (context) => PromptBloc(
+              promptRepository: context.read<PromptRepository>(),
             ),
           ),
         ],

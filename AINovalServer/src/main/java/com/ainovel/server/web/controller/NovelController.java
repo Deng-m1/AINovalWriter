@@ -204,7 +204,8 @@ public class NovelController extends ReactiveBaseController {
      */
     @PostMapping("/get-by-author")
     public Flux<Novel> getNovelsByAuthor(@RequestBody AuthorIdDto authorIdDto) {
-        return novelService.findNovelsByAuthorId(authorIdDto.getAuthorId());
+        return novelService.findNovelsByAuthorId(authorIdDto.getAuthorId())
+                .flatMap(novel -> novelService.updateNovelWordCount(novel.getId()));
     }
 
     /**
@@ -824,5 +825,16 @@ public class NovelController extends ReactiveBaseController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> permanentlyDeleteNovel(@RequestBody IdDto idDto) {
         return novelService.permanentlyDeleteNovel(idDto.getId());
+    }
+
+    /**
+     * 更新小说字数统计
+     *
+     * @param idDto 小说ID
+     * @return 更新后的小说
+     */
+    @PostMapping("/update-word-count")
+    public Mono<Novel> updateNovelWordCount(@RequestBody IdDto idDto) {
+        return novelService.updateNovelWordCount(idDto.getId());
     }
 }

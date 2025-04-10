@@ -7,6 +7,9 @@ import 'package:ainoval/services/api_service/repositories/editor_repository.dart
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/utils/date_time_parser.dart';
 import 'package:ainoval/utils/logger.dart';
+import 'package:ainoval/models/api/editor_dtos.dart';
+import 'package:ainoval/services/api_service/base/sse_client.dart';
+import 'package:flutter_client_sse/constants/sse_request_type_enum.dart';
 
 /// 编辑器仓库实现
 class EditorRepositoryImpl implements EditorRepository {
@@ -18,6 +21,7 @@ class EditorRepositoryImpl implements EditorRepository {
 
   final ApiClient _apiClient;
   final LocalStorageService _localStorageService;
+  static const String _tag = 'EditorRepositoryImpl';
 
   /// 获取本地存储服务
   LocalStorageService getLocalStorageService() {
@@ -251,7 +255,7 @@ class EditorRepositoryImpl implements EditorRepository {
       return Novel(
         id: backendNovel['id'],
         title: backendNovel['title'] ?? '无标题',
-        coverImagePath: backendNovel['coverImage'] ?? '',
+        coverUrl: backendNovel['coverImage'] ?? '',
         createdAt: createdAt,
         updatedAt: updatedAt,
         acts: acts,
@@ -473,7 +477,7 @@ class EditorRepositoryImpl implements EditorRepository {
     return {
       'id': novel.id,
       'title': novel.title,
-      'coverImage': novel.coverImagePath,
+      'coverImage': novel.coverUrl,
       'createdAt': novel.createdAt.toIso8601String(),
       'updatedAt': novel.updatedAt.toIso8601String(),
       'lastEditedChapterId': novel.lastEditedChapterId,
@@ -1329,7 +1333,7 @@ class EditorRepositoryImpl implements EditorRepository {
       return Novel(
         id: backendNovel['id'],
         title: backendNovel['title'] ?? '无标题',
-        coverImagePath: backendNovel['coverImage'] ?? '',
+        coverUrl: backendNovel['coverImage'] ?? '',
         createdAt: createdAt,
         updatedAt: updatedAt,
         acts: acts,
@@ -1386,7 +1390,7 @@ class EditorRepositoryImpl implements EditorRepository {
           id: localNovel.id,
           title: title,
           author: authorObj,
-          coverImagePath: localNovel.coverImagePath,
+          coverUrl: localNovel.coverUrl,
           acts: localNovel.acts,
           createdAt: localNovel.createdAt,
           updatedAt: DateTime.now(),
@@ -1440,7 +1444,7 @@ class EditorRepositoryImpl implements EditorRepository {
           id: localNovel.id,
           title: localNovel.title,
           author: localNovel.author,
-          coverImagePath: coverUrl,
+          coverUrl: coverUrl,
           acts: localNovel.acts,
           createdAt: localNovel.createdAt,
           updatedAt: DateTime.now(),
@@ -1475,7 +1479,7 @@ class EditorRepositoryImpl implements EditorRepository {
           id: localNovel.id,
           title: localNovel.title,
           author: localNovel.author,
-          coverImagePath: localNovel.coverImagePath,
+          coverUrl: localNovel.coverUrl,
           acts: localNovel.acts,
           createdAt: localNovel.createdAt,
           updatedAt: DateTime.now(),
@@ -1530,6 +1534,74 @@ class EditorRepositoryImpl implements EditorRepository {
         '删除小说失败',
         e);
       throw ApiException(-1, '删除小说失败: $e');
+    }
+  }
+
+  @override
+  Future<String> summarizeScene(String sceneId, {String? styleInstructions}) async {
+    try {
+      final request = SummarizeSceneRequest(styleInstructions: styleInstructions);
+      final response = await _apiClient.post(
+        '/scenes/$sceneId/summarize',
+        data: request.toJson(),
+      );
+      
+      final summaryResponse = SummarizeSceneResponse.fromJson(response);
+      return summaryResponse.summary;
+    } catch (e) {
+      AppLogger.e(_tag, '生成场景摘要失败，场景ID: $sceneId', e);
+      throw Exception('生成场景摘要失败: ${e.toString()}');
+    }
+  }
+  
+  @override
+  Stream<String> generateSceneFromSummaryStream(
+    String novelId, 
+    String summary, 
+    {String? chapterId, String? styleInstructions}
+  ) {
+    try {
+      final request = GenerateSceneFromSummaryRequest(
+        summary: summary,
+        chapterId: chapterId,
+        styleInstructions: styleInstructions,
+      );
+      
+      return SseClient().streamEvents<String>(
+        path: '/novels/$novelId/scenes/generate-from-summary',
+        method: SSERequestType.POST,
+        body: request.toJson(),
+        parser: (json) => json['data'] as String? ?? '',
+      );
+    } catch (e) {
+      AppLogger.e(_tag, '流式生成场景内容失败，小说ID: $novelId', e);
+      return Stream.error(Exception('流式生成场景内容失败: ${e.toString()}'));
+    }
+  }
+  
+  @override
+  Future<String> generateSceneFromSummary(
+    String novelId, 
+    String summary, 
+    {String? chapterId, String? styleInstructions}
+  ) async {
+    try {
+      final request = GenerateSceneFromSummaryRequest(
+        summary: summary,
+        chapterId: chapterId,
+        styleInstructions: styleInstructions,
+      );
+      
+      final response = await _apiClient.post(
+        '/novels/$novelId/scenes/generate-from-summary-sync',
+        data: request.toJson(),
+      );
+      
+      final sceneResponse = GenerateSceneFromSummaryResponse.fromJson(response);
+      return sceneResponse.content;
+    } catch (e) {
+      AppLogger.e(_tag, '生成场景内容失败，小说ID: $novelId', e);
+      throw Exception('生成场景内容失败: ${e.toString()}');
     }
   }
 }

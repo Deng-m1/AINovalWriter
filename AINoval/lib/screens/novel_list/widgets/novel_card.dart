@@ -142,8 +142,17 @@ class _NovelCardState extends State<NovelCard> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: SizedBox.expand(
-                        child: NovelCoverDesign(
-                            bgColor: bgColor, id: widget.novel.id),
+                        child: widget.novel.coverUrl.isNotEmpty
+                            ? Image.network(
+                                widget.novel.coverUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return NovelCoverDesign(
+                                      bgColor: bgColor, id: widget.novel.id);
+                                },
+                              )
+                            : NovelCoverDesign(
+                                bgColor: bgColor, id: widget.novel.id),
                       ),
                     ),
                     // 完成度进度条
@@ -220,8 +229,34 @@ class NovelCoverWidget extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 根据小说ID选择不同的封面设计
-          NovelCoverDesign(bgColor: bgColor, id: novel.id),
+          // 优先显示封面图片（如果有coverUrl）
+          if (novel.coverUrl.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Image.network(
+                novel.coverUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  // 图片加载失败时显示默认设计
+                  return NovelCoverDesign(bgColor: bgColor, id: novel.id);
+                },
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Center(
+                    child: CircularProgressIndicator(
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded /
+                              loadingProgress.expectedTotalBytes!
+                          : null,
+                      strokeWidth: 2,
+                    ),
+                  );
+                },
+              ),
+            )
+          else
+            // 如果没有封面URL，则使用默认设计
+            NovelCoverDesign(bgColor: bgColor, id: novel.id),
 
           // 显示完成进度条
           Positioned(
@@ -314,6 +349,25 @@ class NovelInfoWidget extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 4),
+          // 添加字数信息
+          Row(
+            children: [
+              Icon(
+                Icons.text_fields,
+                size: 12,
+                color: Colors.grey.shade600,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '${_formatWordCount(novel.wordCount)}字',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
           if (novel.seriesName.isNotEmpty) ...[
             const SizedBox(height: 4),
             Row(
@@ -382,23 +436,59 @@ class NovelInfoWidget extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              Icon(
-                Icons.text_fields,
-                size: 14,
-                color: theme.colorScheme.outline,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '${novel.wordCount}字',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 11,
-                  color: theme.colorScheme.outline,
+              // 美化字数显示
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.text_fields,
+                      size: 12,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_formatWordCount(novel.wordCount)}字',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              // 阅读时间提示（如果阅读时间不为0）
+              if (novel.readTime > 0) ...[
+                const SizedBox(width: 8),
+                Text(
+                  '约${novel.readTime}分钟',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 10,
+                    fontStyle: FontStyle.italic,
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
+              ],
             ],
           ),
         ],
       );
+    }
+  }
+  
+  // 格式化字数显示
+  String _formatWordCount(int count) {
+    if (count < 1000) {
+      return count.toString();
+    } else if (count < 10000) {
+      return '${(count / 1000).toStringAsFixed(1)}K';
+    } else {
+      return '${(count / 10000).toStringAsFixed(1)}万';
     }
   }
 }

@@ -10,8 +10,10 @@ import 'dart:convert';
  * 5. 高效数据结构：使用Set和预分配列表，减少字符串操作
  */
 
-import 'package:ainoval/blocs/editor/editor_bloc.dart';
-import 'package:ainoval/config/app_config.dart'; // <<< Import AppConfig
+import 'package:ainoval/blocs/editor/editor_bloc.dart' as editor_bloc;
+import 'package:ainoval/blocs/novel_list/novel_list_bloc.dart';
+import 'package:ainoval/blocs/plan/plan_bloc.dart' as plan_bloc;
+import 'package:ainoval/config/app_config.dart';
 import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/models/novel_summary.dart';
@@ -22,22 +24,36 @@ import 'package:ainoval/screens/editor/components/editor_main_area.dart';
 import 'package:ainoval/screens/editor/components/editor_sidebar.dart';
 import 'package:ainoval/screens/editor/widgets/editor_settings_panel.dart';
 import 'package:ainoval/screens/editor/widgets/editor_toolbar.dart';
-import 'package:ainoval/screens/settings/settings_panel.dart'; // <<< Import SettingsPanel
+import 'package:ainoval/screens/editor/widgets/novel_settings_view.dart';
+import 'package:ainoval/screens/settings/settings_panel.dart';
+import 'package:ainoval/services/api_service/base/api_client.dart';
+import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/api_service/repositories/impl/editor_repository_impl.dart';
+import 'package:ainoval/services/api_service/repositories/storage_repository.dart';
+import 'package:ainoval/services/api_service/repositories/impl/storage_repository_impl.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/utils/word_count_analyzer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart' show ScrollActivity; // 导入ScrollActivity
+import 'package:flutter/widgets.dart' show ScrollActivity;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart' hide EditorState;
-import 'package:shared_preferences/shared_preferences.dart'; // 导入持久化功能
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ainoval/services/sync_service.dart';
 // 导入Plan相关组件
-import 'package:ainoval/blocs/plan/plan_bloc.dart';
 import 'package:ainoval/screens/editor/components/plan_view.dart';
-import 'package:ainoval/screens/editor/widgets/novel_settings_view.dart';
+import 'package:ainoval/services/local_storage_service.dart';
+import 'package:ainoval/services/api_service/repositories/impl/aliyun_oss_storage_repository.dart';
+// 导入AI生成面板相关组件
+import 'package:ainoval/screens/editor/widgets/ai_summary_side_panel.dart';
+import 'package:ainoval/screens/editor/widgets/ai_scene_generation_side_panel.dart';
+
+// 为EditorState类型引用和EditorBloc引用冲突创建类型别名
+typedef EditorBlocState = editor_bloc.EditorState;
+typedef EditorLoaded = editor_bloc.EditorLoaded;
+typedef EditorSettingsOpen = editor_bloc.EditorSettingsOpen;
+typedef EditorError = editor_bloc.EditorError;
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({
@@ -55,14 +71,19 @@ class _EditorScreenState extends State<EditorScreen>
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
   Timer? _debounceTimer;
-  late final EditorBloc _editorBloc;
+  late final editor_bloc.EditorBloc _editorBloc;
   late TabController _tabController;
+  
+  // API Client和Repository实例
+  late final ApiClient _apiClient;
+  late final EditorRepositoryImpl _editorRepository;
+  late final LocalStorageService _localStorageService;
   
   // 同步服务实例
   late final SyncService _syncService;
   
   // Plan相关状态
-  late final PlanBloc _planBloc;
+  late final plan_bloc.PlanBloc _planBloc;
   bool _isPlanViewActive = false;
 
   final Map<String, QuillController> _sceneControllers = {};
@@ -77,6 +98,10 @@ class _EditorScreenState extends State<EditorScreen>
   bool _isSettingsPanelVisible = false; // 控制设置面板是否可见
   bool _isEditorSidebarVisible = true; // 控制编辑器侧边栏是否可见
   bool _isNovelSettingsVisible = false; // 控制小说设置视图是否可见
+  
+  // AI侧边栏状态
+  bool _isAISummaryPanelVisible = false; // 控制AI摘要生成面板是否可见
+  bool _isAISceneGenerationPanelVisible = false; // 控制AI场景生成面板是否可见
 
   // 聊天侧边栏宽度相关状态
   double _chatSidebarWidth = 380; // 默认宽度
@@ -98,7 +123,7 @@ class _EditorScreenState extends State<EditorScreen>
   static const Duration _controllerCheckInterval = Duration(milliseconds: 500);
   // 控制器检查间隔，单独设置为5秒，降低频率
   static const Duration _controllerLongCheckInterval = Duration(seconds: 5);
-  EditorLoaded? _lastEditorState; // 缓存上一次的EditorLoaded状态
+  editor_bloc.EditorLoaded? _lastEditorState; // 缓存上一次的EditorLoaded状态
   
   // 字数统计缓存
   int _cachedWordCount = 0;
@@ -124,27 +149,29 @@ class _EditorScreenState extends State<EditorScreen>
   @override
   void initState() {
     super.initState();
+    
+    // 创建必要的实例
+    _apiClient = ApiClient();
+    _editorRepository = EditorRepositoryImpl();
+    _localStorageService = LocalStorageService();
+    
     _tabController = TabController(length: 3, vsync: this);
 
-    _editorBloc = EditorBloc(
-      repository: EditorRepositoryImpl(),
+    _editorBloc = editor_bloc.EditorBloc(
+      repository: _editorRepository,
       novelId: widget.novel.id,
     );
     
     // 初始化Plan模块
-    _planBloc = PlanBloc(
-      repository: EditorRepositoryImpl(),
+    _planBloc = plan_bloc.PlanBloc(
+      repository: _editorRepository,
       novelId: widget.novel.id,
     );
     
     // 初始化同步服务
-    final editorRepository = EditorRepositoryImpl();
-    final apiClient = editorRepository.getApiClient();
-    final localStorageService = editorRepository.getLocalStorageService();
-    
     _syncService = SyncService(
-      apiService: apiClient,
-      localStorageService: localStorageService,
+      apiService: _apiClient,
+      localStorageService: _localStorageService,
     );
     
     // 初始化同步服务并设置当前小说
@@ -156,7 +183,7 @@ class _EditorScreenState extends State<EditorScreen>
     
     // 使用分页加载，而不是加载所有内容
     // 从小说列表进入时，使用lastEditedChapterId为null，让后端自动选择最近编辑的章节
-    _editorBloc.add(LoadEditorContentPaginated(
+    _editorBloc.add(editor_bloc.LoadEditorContentPaginated(
       novelId: widget.novel.id,
       lastEditedChapterId: widget.novel.lastEditedChapterId,
       chaptersLimit: 2, // 减少初始加载章节数，只加载最近编辑章节的前后各2章
@@ -164,9 +191,9 @@ class _EditorScreenState extends State<EditorScreen>
 
     // 添加监听器确保数据变化时界面更新
     _editorBloc.stream.listen((state) {
-      if (state is EditorLoaded && mounted) {
+      if (state is editor_bloc.EditorLoaded && mounted) {
         // 不再始终更新UI，只在必要时更新
-        final EditorLoaded lastState = _lastEditorState ?? state;
+        final editor_bloc.EditorLoaded lastState = _lastEditorState ?? state;
         
         // 只有在以下情况才更新UI:
         // 1. 保存状态变化
@@ -574,11 +601,25 @@ class _EditorScreenState extends State<EditorScreen>
     // 清理TabController
     _tabController.dispose();
     
+    // 通知小说列表页面刷新数据
+    try {
+      // 如果在Widget树上下文中有NovelListBloc，则触发重新加载
+      if (context.read<NovelListBloc>() != null) {
+        context.read<NovelListBloc>().add(LoadNovels());
+        AppLogger.i('EditorScreen', '已触发小说列表刷新');
+      } else {
+        AppLogger.w('EditorScreen', '小说列表Bloc不可用，无法触发刷新');
+      }
+    } catch (e) {
+      AppLogger.e('EditorScreen', '尝试刷新小说列表时出错', e);
+    }
+    
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     // 清除内存缓存，确保每次build周期都使用新的内存缓存
     // 这样可以在同一个build周期内避免重复计算，但不会在不同的build周期之间复用可能过期的结果
     _memoryWordCountCache.clear();
@@ -631,9 +672,9 @@ class _EditorScreenState extends State<EditorScreen>
             ],
             // 主编辑区域
             Expanded(
-              child: BlocListener<EditorBloc, EditorState>(
+              child: BlocListener<editor_bloc.EditorBloc, EditorBlocState>(
                 listener: (context, state) {
-                  if (state is EditorLoaded && state.activeSceneId != null) {
+                  if (state is editor_bloc.EditorLoaded && state.activeSceneId != null) {
                     final targetKeyId = '${state.activeActId}_${state.activeChapterId}_${state.activeSceneId}';
                     var key = _sceneKeys[targetKeyId]; // Try initial lookup
 
@@ -667,18 +708,18 @@ class _EditorScreenState extends State<EditorScreen>
                 },
                 // Listen only when activeSceneId might have changed meaningfully
                 listenWhen: (previous, current) {
-                  if (previous is EditorLoaded && current is EditorLoaded) {
+                  if (previous is editor_bloc.EditorLoaded && current is editor_bloc.EditorLoaded) {
                     // Only trigger if activeSceneId actually changes *and* is not null
                     return previous.activeSceneId != current.activeSceneId &&
                            current.activeSceneId != null;
                   }
                   // Trigger if transitioning into EditorLoaded with an activeSceneId
-                  if (current is EditorLoaded && current.activeSceneId != null) {
+                  if (current is editor_bloc.EditorLoaded && current.activeSceneId != null) {
                      return true;
                   }
                   return false;
                 },
-                child: BlocBuilder<EditorBloc, EditorState>(
+                child: BlocBuilder<editor_bloc.EditorBloc, EditorBlocState>(
                   buildWhen: (previous, current) {
                     // 只在状态类型变化或数据结构真正变化时重建UI
                     if (previous.runtimeType != current.runtimeType) {
@@ -686,9 +727,9 @@ class _EditorScreenState extends State<EditorScreen>
                     }
                     
                     // 如果都是EditorLoaded状态，做深度比较
-                    if (previous is EditorLoaded && current is EditorLoaded) {
-                      final EditorLoaded prevLoaded = previous;
-                      final EditorLoaded currLoaded = current;
+                    if (previous is editor_bloc.EditorLoaded && current is editor_bloc.EditorLoaded) {
+                      final editor_bloc.EditorLoaded prevLoaded = previous;
+                      final editor_bloc.EditorLoaded currLoaded = current;
                       
                       // 先检查时间戳，如果相同且非零，大概率内容相同
                       final prevTimestamp = prevLoaded.novel.updatedAt.millisecondsSinceEpoch ?? 0;
@@ -714,11 +755,11 @@ class _EditorScreenState extends State<EditorScreen>
                     return true; // 其他情况保守处理，进行重建
                   },
                   builder: (context, state) {
-                    if (state is EditorLoading) {
+                    if (state is editor_bloc.EditorLoading) {
                       return const Center(child: CircularProgressIndicator());
-                    } else if (state is EditorError) {
+                    } else if (state is editor_bloc.EditorError) {
                       return Center(child: Text('错误: ${state.message}'));
-                    } else if (state is EditorLoaded) {
+                    } else if (state is editor_bloc.EditorLoaded) {
                       // 使用节流函数决定是否需要检查控制器
                       if (_shouldCheckControllers(state)) {
                         _ensureControllersForNovel(state.novel);
@@ -751,19 +792,19 @@ class _EditorScreenState extends State<EditorScreen>
               ),
               SizedBox(
                 width: _chatSidebarWidth,
-                child: BlocBuilder<EditorBloc, EditorState>(
+                child: BlocBuilder<editor_bloc.EditorBloc, EditorBlocState>(
                   buildWhen: (previous, current) {
                     // 只在状态类型变化或chapterId变化时重建
                     if (previous.runtimeType != current.runtimeType) {
                       return true;
                     }
-                    if (previous is EditorLoaded && current is EditorLoaded) {
+                    if (previous is editor_bloc.EditorLoaded && current is editor_bloc.EditorLoaded) {
                       return previous.activeChapterId != current.activeChapterId;
                     }
                     return true;
                   },
                   builder: (context, state) {
-                    if (state is EditorLoaded) {
+                    if (state is editor_bloc.EditorLoaded) {
                       return AIChatSidebar(
                         novelId: widget.novel.id,
                         chapterId: state.activeChapterId,
@@ -781,18 +822,18 @@ class _EditorScreenState extends State<EditorScreen>
             ],
           ],
         ),
-        floatingActionButton: BlocBuilder<EditorBloc, EditorState>(
+        floatingActionButton: BlocBuilder<editor_bloc.EditorBloc, EditorBlocState>(
           buildWhen: (previous, current) {
             if (previous.runtimeType != current.runtimeType) {
               return true;
             }
-            if (previous is EditorLoaded && current is EditorLoaded) {
+            if (previous is editor_bloc.EditorLoaded && current is editor_bloc.EditorLoaded) {
               return previous.isSaving != current.isSaving;
             }
             return true;
           },
           builder: (context, state) {
-            if (state is EditorLoaded && state.isSaving) {
+            if (state is editor_bloc.EditorLoaded && state.isSaving) {
               return FloatingActionButton(
                 heroTag: 'saving',
                 onPressed: null,
@@ -833,7 +874,7 @@ class _EditorScreenState extends State<EditorScreen>
 
   // 为指定章节手动加载场景内容
   void _loadScenesForChapter(String chapterId) {
-    _editorBloc.add(LoadMoreScenes(
+    _editorBloc.add(editor_bloc.LoadMoreScenes(
       fromChapterId: chapterId,
       direction: 'center',
       chaptersLimit: 1, // 只加载当前章节
@@ -845,7 +886,7 @@ class _EditorScreenState extends State<EditorScreen>
     _loadScenesForChapter(chapterId);
   }
 
-  Widget _buildLoadedEditor(BuildContext context, EditorLoaded state) {
+  Widget _buildLoadedEditor(BuildContext context, editor_bloc.EditorLoaded state) {
     final fallbackController = _getFallbackController(state);
 
     // Get userId, provide default or handle error if null
@@ -899,9 +940,19 @@ class _EditorScreenState extends State<EditorScreen>
             // 主编辑区域与聊天侧边栏
             Expanded(
               child: _isNovelSettingsVisible
-                  ? NovelSettingsView(
-                      novel: widget.novel,
-                      onSettingsClose: _toggleNovelSettings,
+                  ? MultiRepositoryProvider(
+                      providers: [
+                        RepositoryProvider<EditorRepository>(
+                          create: (context) => _editorRepository,
+                        ),
+                        RepositoryProvider<StorageRepository>(
+                          create: (context) => AliyunOssStorageRepository(_apiClient),
+                        ),
+                      ],
+                      child: NovelSettingsView(
+                        novel: widget.novel,
+                        onSettingsClose: _toggleNovelSettings,
+                      ),
                     )
                   : Row(
                       children: [
@@ -1045,7 +1096,7 @@ class _EditorScreenState extends State<EditorScreen>
     );
   }
 
-  QuillController _getFallbackController(EditorLoaded state) {
+  QuillController _getFallbackController(editor_bloc.EditorLoaded state) {
     if (state.activeActId != null &&
         state.activeChapterId != null &&
         state.activeSceneId != null) {
@@ -1070,14 +1121,14 @@ class _EditorScreenState extends State<EditorScreen>
   }
 
   Widget _buildSettingsScreen(
-      BuildContext context, EditorSettingsOpen state, AppLocalizations l10n) {
+      BuildContext context, editor_bloc.EditorSettingsOpen state, AppLocalizations l10n) {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.editorSettings),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            context.read<EditorBloc>().add(const ToggleEditorSettings());
+            context.read<editor_bloc.EditorBloc>().add(const editor_bloc.ToggleEditorSettings());
           },
         ),
       ),
@@ -1085,8 +1136,8 @@ class _EditorScreenState extends State<EditorScreen>
         settings: EditorSettings.fromMap(state.settings),
         onSettingsChanged: (newSettings) {
           context
-              .read<EditorBloc>()
-              .add(UpdateEditorSettings(settings: newSettings.toMap()));
+              .read<editor_bloc.EditorBloc>()
+              .add(editor_bloc.UpdateEditorSettings(settings: newSettings.toMap()));
         },
       ),
     );
@@ -1204,8 +1255,8 @@ class _EditorScreenState extends State<EditorScreen>
     _lastScrollHandleTime = now;
     
     // 如果正在加载中，不触发新的加载请求
-    if (_editorBloc.state is EditorLoaded && 
-        (_editorBloc.state as EditorLoaded).isLoading) {
+    if (_editorBloc.state is editor_bloc.EditorLoaded && 
+        (_editorBloc.state as editor_bloc.EditorLoaded).isLoading) {
       return;
     }
     
@@ -1258,7 +1309,7 @@ class _EditorScreenState extends State<EditorScreen>
   // 加载更多场景函数
   void _loadMoreScenes(String direction) {
     final state = _editorBloc.state;
-    if (state is! EditorLoaded) return;
+    if (state is! editor_bloc.EditorLoaded) return;
     
     // 滚动事件节流 - 避免短时间内频繁处理滚动事件
     final now = DateTime.now();
@@ -1314,7 +1365,7 @@ class _EditorScreenState extends State<EditorScreen>
     AppLogger.i('EditorScreen', '加载更多场景: 方向=$direction, 起始章节=$fromChapterId');
     
     // 触发加载更多事件 - 使用非空断言操作符，因为我们已经确保fromChapterId不为null
-    _editorBloc.add(LoadMoreScenes(
+    _editorBloc.add(editor_bloc.LoadMoreScenes(
       fromChapterId: fromChapterId!, // 使用!操作符确保非空
       direction: direction,
       chaptersLimit: 3, // 每次加载3章内容
@@ -1385,7 +1436,7 @@ class _EditorScreenState extends State<EditorScreen>
   }
 
   // 优化后的控制器检查方法，加入节流功能
-  bool _shouldCheckControllers(EditorLoaded state) {
+  bool _shouldCheckControllers(editor_bloc.EditorLoaded state) {
     // 如果状态对象引用变化，表示小说数据结构可能发生变化，需要检查
     final bool stateChanged = _lastEditorState != state;
     final now = DateTime.now();
@@ -1579,10 +1630,10 @@ class _EditorScreenState extends State<EditorScreen>
       
       // 如果激活Plan视图，加载Plan数据
       if (_isPlanViewActive) {
-        _planBloc.add(const LoadPlanContent());
+        _planBloc.add(const plan_bloc.LoadPlanContent());
       }
       // 如果从Plan视图切换到Write视图，确保编辑器内容正常显示
-      else if (isPlanToWrite && currentState is EditorLoaded) {
+      else if (isPlanToWrite && currentState is editor_bloc.EditorLoaded) {
         // --- Removed Redundant LoadMoreScenes Dispatch ---
         // The LoadMoreScenes event dispatched from PlanView's onTap
         // is now responsible for setting the correct target active scene.

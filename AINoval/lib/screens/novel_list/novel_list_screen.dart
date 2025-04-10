@@ -62,16 +62,27 @@ class _NovelListScreenState extends State<NovelListScreen>
         child: Center(
           child: ScaleTransition(
             scale: _cardScaleAnimation,
-            child: MainCard(
-              maxWidth: maxContentWidth,
-              maxHeight: maxContentHeight,
-              isGridView: _isGridView,
-              searchController: _searchController,
-              onViewTypeChanged: (isGrid) {
-                setState(() {
-                  _isGridView = isGrid;
-                });
-              },
+            child: BlocProvider(
+              create: (context) => NovelListBloc(
+                repository: context.read<NovelRepository>(),
+              ),
+              child: Builder(
+                builder: (context) {
+                  // 获取NovelListBloc实例，以便可以在导航时共享
+                  final novelListBloc = context.read<NovelListBloc>();
+                  return MainCard(
+                    maxWidth: maxContentWidth,
+                    maxHeight: maxContentHeight,
+                    isGridView: _isGridView,
+                    searchController: _searchController,
+                    onViewTypeChanged: (isGrid) {
+                      setState(() {
+                        _isGridView = isGrid;
+                      });
+                    },
+                  );
+                }
+              ),
             ),
           ),
         ),
@@ -738,6 +749,9 @@ class NovelListSection extends StatelessWidget {
       MaterialPageRoute(
         builder: (context) => EditorScreen(novel: novel),
       ),
-    );
+    ).then((result) {
+      // 无论返回结果如何，都触发小说列表刷新
+      context.read<NovelListBloc>().add(LoadNovels());
+    });
   }
 }

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluttertoast/fluttertoast.dart'; // <<< Import fluttertoast
 // import 'package:flutter_gen/gen_l10n/app_localizations.dart'; // For delete confirmation dialog
+import 'package:ainoval/screens/settings/widgets/prompt_management_panel.dart';
 
 class SettingsPanel extends StatefulWidget {
   const SettingsPanel({
@@ -28,6 +29,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
   UserAIModelConfigModel?
       _configToEdit; // Track config being edited, null for add mode
   bool _showAddEditForm = false; // Flag to show the add/edit form view
+  String _selectedSetting = '';
 
   // Define category titles and icons (adjust as needed)
   final List<Map<String, dynamic>> _categories = [
@@ -256,6 +258,8 @@ class _SettingsPanelState extends State<SettingsPanel> {
     switch (categoryTitle) {
       case '模型服务':
         return _buildAiConfigList(key: key, bloc: bloc);
+      case '提示词管理':
+        return const PromptManagementPanel();
       default:
         return Center(
             key: key,

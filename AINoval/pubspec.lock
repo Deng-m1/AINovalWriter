@@ -512,6 +512,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "0.6.23"
+  flutter_oss_aliyun:
+    dependency: "direct main"
+    description:
+      name: flutter_oss_aliyun
+      sha256: "8280c1e8dfb792dec6449d1e6052e1d3492b3b3a1dfee456cc41d3f31b4cbc26"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "6.4.2"
   flutter_plugin_android_lifecycle:
     dependency: transitive
     description:
