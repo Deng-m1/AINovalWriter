@@ -49,10 +49,10 @@ class PromptRepositoryImpl implements PromptRepository {
       final url = '$_baseUrl/${featureType.toString().split('.').last}';
       final result = await _apiClient.get(url);
       final dto = UserPromptTemplateDto.fromJson(result);
-      
+
       // 获取默认提示词
       final defaultPrompt = await _getDefaultPrompt(featureType);
-      
+
       return PromptData(
         userPrompt: dto.promptText,
         defaultPrompt: defaultPrompt,
@@ -81,10 +81,10 @@ class PromptRepositoryImpl implements PromptRepository {
       final request = UpdatePromptRequest(promptText: promptText);
       final result = await _apiClient.put(url, data: request.toJson());
       final dto = UserPromptTemplateDto.fromJson(result);
-      
+
       // 获取默认提示词
       final defaultPrompt = await _getDefaultPrompt(featureType);
-      
+
       return PromptData(
         userPrompt: dto.promptText,
         defaultPrompt: defaultPrompt,
@@ -119,4 +119,48 @@ class PromptRepositoryImpl implements PromptRepository {
       return '请生成内容';
     }
   }
-} 
+
+  @override
+  Future<String> generateSceneSummary({
+    required String novelId,
+    required String sceneId,
+  }) async {
+    try {
+      final url = '/api/novels/$novelId/scenes/$sceneId/summary';
+      final result = await _apiClient.post(url);
+
+      if (result is Map && result.containsKey('summary')) {
+        return result['summary'] as String;
+      } else {
+        throw Exception('生成摘要失败: 响应格式错误');
+      }
+    } catch (e) {
+      AppLogger.e(_tag, '生成场景摘要失败', e);
+      throw Exception('生成摘要失败: ${e.toString()}');
+    }
+  }
+
+  @override
+  Future<String> generateSceneFromSummary({
+    required String novelId,
+    required String summary,
+  }) async {
+    try {
+      final url = '/api/novels/$novelId/scenes/generate';
+      final request = {
+        'summary': summary,
+      };
+
+      final result = await _apiClient.post(url, data: request);
+
+      if (result is Map && result.containsKey('content')) {
+        return result['content'] as String;
+      } else {
+        throw Exception('生成场景失败: 响应格式错误');
+      }
+    } catch (e) {
+      AppLogger.e(_tag, '生成场景内容失败', e);
+      throw Exception('生成场景失败: ${e.toString()}');
+    }
+  }
+}

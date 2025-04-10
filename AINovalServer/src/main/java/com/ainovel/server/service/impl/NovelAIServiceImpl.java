@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+import com.ainovel.server.domain.model.UserAIModelConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.access.AccessDeniedException;
@@ -643,7 +644,7 @@ public class NovelAIServiceImpl implements NovelAIService {
     public Mono<AIModelProvider> getAIModelProvider(String userId, String modelName) {
         // 如果没有指定模型名称，则使用用户的默认模型
         if (modelName == null || modelName.isEmpty()) {
-            return userService.getUserDefaultAIModelConfig(userId)
+            return userAIModelConfigService.getValidatedDefaultConfiguration(userId)
                     .flatMap(config -> {
                         if (config == null) {
                             return Mono.error(new IllegalArgumentException("用户没有配置默认AI模型"));
@@ -653,7 +654,7 @@ public class NovelAIServiceImpl implements NovelAIService {
         }
 
         // 如果指定了模型名称，则查找对应的配置
-        return userService.getUserAIModelConfigs(userId)
+        return userAIModelConfigService.listConfigurations(userId)
                 .filter(config -> modelName.equals(config.getModelName()))
                 .next()
                 .flatMap(config -> getOrCreateAIModelProvider(userId, config))
@@ -667,7 +668,7 @@ public class NovelAIServiceImpl implements NovelAIService {
      * @param config AI模型配置
      * @return AI模型提供商
      */
-    private Mono<AIModelProvider> getOrCreateAIModelProvider(String userId, AIModelConfig config) {
+    private Mono<AIModelProvider> getOrCreateAIModelProvider(String userId, UserAIModelConfig config) {
         // 检查缓存中是否已存在
         Map<String, AIModelProvider> userProviderMap = userProviders.computeIfAbsent(userId, k -> new HashMap<>());
         String key = config.getProvider() + ":" + config.getModelName();

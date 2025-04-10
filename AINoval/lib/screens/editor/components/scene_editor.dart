@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:ainoval/blocs/editor/editor_bloc.dart';
+import 'package:ainoval/blocs/editor/editor_bloc.dart' as editor_bloc;
 import 'package:ainoval/screens/editor/widgets/selection_toolbar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/utils/word_count_analyzer.dart';
@@ -43,7 +44,7 @@ class SceneEditor extends StatefulWidget {
   final bool isFirst;
   final QuillController controller;
   final TextEditingController summaryController;
-  final EditorBloc editorBloc;
+  final editor_bloc.EditorBloc editorBloc;
 
   @override
   State<SceneEditor> createState() => _SceneEditorState();
@@ -118,9 +119,9 @@ class _SceneEditorState extends State<SceneEditor> {
   void _setActiveElements() {
     if (widget.actId != null && widget.chapterId != null) {
       widget.editorBloc.add(
-          SetActiveChapter(actId: widget.actId!, chapterId: widget.chapterId!));
+          editor_bloc.SetActiveChapter(actId: widget.actId!, chapterId: widget.chapterId!));
       if (widget.sceneId != null) {
-        widget.editorBloc.add(SetActiveScene(
+        widget.editorBloc.add(editor_bloc.SetActiveScene(
             actId: widget.actId!,
             chapterId: widget.chapterId!,
             sceneId: widget.sceneId!));
@@ -164,7 +165,7 @@ class _SceneEditorState extends State<SceneEditor> {
         AppLogger.i(
             'SceneEditor', '保存场景: ${widget.sceneId} 内容已更新, 字数: $wordCount');
 
-        widget.editorBloc.add(UpdateSceneContent(
+        widget.editorBloc.add(editor_bloc.UpdateSceneContent(
           novelId: widget.editorBloc.novelId,
           actId: widget.actId!,
           chapterId: widget.chapterId!,
@@ -551,7 +552,7 @@ class _SceneEditorState extends State<SceneEditor> {
                     widget.actId != null &&
                     widget.chapterId != null &&
                     widget.sceneId != null) {
-                  widget.editorBloc.add(UpdateSummary(
+                  widget.editorBloc.add(editor_bloc.UpdateSummary(
                     novelId: widget.editorBloc.novelId,
                     actId: widget.actId!,
                     chapterId: widget.chapterId!,
@@ -583,7 +584,7 @@ class _SceneEditorState extends State<SceneEditor> {
                 widget.actId != null &&
                 widget.chapterId != null &&
                 widget.sceneId != null) {
-              widget.editorBloc.add(UpdateSummary(
+              widget.editorBloc.add(editor_bloc.UpdateSummary(
                 novelId: widget.editorBloc.novelId,
                 actId: widget.actId!,
                 chapterId: widget.chapterId!,
@@ -611,10 +612,41 @@ class _SceneEditorState extends State<SceneEditor> {
                 widget.sceneId != null) {
               // 触发生成摘要事件
               widget.editorBloc.add(
-                GenerateSceneSummaryRequested(
+                editor_bloc.GenerateSceneSummaryRequested(
                   sceneId: widget.sceneId!,
                 ),
               );
+              
+              // 监听生成完成状态，更新摘要控制器
+              // 使用StreamSubscription监听状态变化
+              StreamSubscription<editor_bloc.EditorState>? stateSubscription;
+              stateSubscription = widget.editorBloc.stream.listen((state) {
+                if (state is editor_bloc.EditorLoaded) {
+                  // 当摘要生成完成时
+                  if (state.aiSummaryGenerationStatus == editor_bloc.AIGenerationStatus.completed &&
+                      state.generatedSummary != null &&
+                      widget.sceneId == state.activeSceneId) {
+                    // 更新摘要文本
+                    widget.summaryController.text = state.generatedSummary!;
+                    
+                    // 触发摘要保存
+                    widget.editorBloc.add(editor_bloc.UpdateSummary(
+                      novelId: widget.editorBloc.novelId,
+                      actId: widget.actId!,
+                      chapterId: widget.chapterId!,
+                      sceneId: widget.sceneId!,
+                      summary: state.generatedSummary!,
+                      shouldRebuild: false,
+                    ));
+                    
+                    // 取消监听
+                    stateSubscription?.cancel();
+                  } else if (state.aiSummaryGenerationStatus == editor_bloc.AIGenerationStatus.failed) {
+                    // 生成失败时也要取消监听
+                    stateSubscription?.cancel();
+                  }
+                }
+              });
             }
           },
           color: Colors.grey.shade600,
@@ -650,6 +682,31 @@ class _SceneEditorState extends State<SceneEditor> {
           onPressed: () {/* TODO */},
         ),
         const SizedBox(width: 8),
+        
+        // 新增：从摘要生成场景按钮
+        if (widget.summaryController.text.isNotEmpty)
+          _ActionButton(
+            icon: Icons.auto_stories,
+            label: 'AI生成场景',
+            tooltip: '从摘要生成场景内容',
+            onPressed: () {
+              if (widget.actId != null && 
+                  widget.chapterId != null && 
+                  widget.sceneId != null) {
+                // 触发场景生成事件
+                widget.editorBloc.add(
+                  editor_bloc.GenerateSceneFromSummaryRequested(
+                    novelId: widget.editorBloc.novelId,
+                    summary: widget.summaryController.text,
+                    chapterId: widget.chapterId,
+                    useStreamingMode: true,
+                  ),
+                );
+              }
+            },
+          ),
+        const SizedBox(width: 8),
+        
         // 更多操作按钮
         PopupMenuButton<String>(
           onSelected: (String result) {
@@ -660,7 +717,7 @@ class _SceneEditorState extends State<SceneEditor> {
                 if (widget.actId != null &&
                     widget.chapterId != null &&
                     widget.sceneId != null) {
-                  widget.editorBloc.add(DeleteScene(
+                  widget.editorBloc.add(editor_bloc.DeleteScene(
                       novelId: widget.editorBloc.novelId,
                       actId: widget.actId!,
                       chapterId: widget.chapterId!,

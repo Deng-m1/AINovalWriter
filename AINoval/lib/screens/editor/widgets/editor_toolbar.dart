@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:ainoval/blocs/editor/editor_bloc.dart';
+import 'package:ainoval/screens/editor/widgets/generate_scene_dialog.dart';
 
 class EditorToolbar extends StatelessWidget {
   const EditorToolbar({
@@ -84,8 +87,53 @@ class EditorToolbar extends StatelessWidget {
                 controller.formatSelection(Attribute.underline);
               },
             ),
+            const Spacer(),
+            // 新增：AI生成场景按钮
+            IconButton(
+              icon: const Icon(Icons.auto_stories),
+              tooltip: 'AI 生成场景',
+              onPressed: () => _showGenerateSceneDialog(context),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  // 显示生成场景对话框
+  void _showGenerateSceneDialog(BuildContext context) async {
+    final editorBloc = context.read<EditorBloc>();
+    final state = editorBloc.state;
+    
+    // 必须要有加载好的小说结构
+    if (state is! EditorLoaded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请等待编辑器加载完成')),
+      );
+      return;
+    }
+    
+    // 显示对话框
+    final result = await showDialog<GenerateSceneDialogResult>(
+      context: context,
+      builder: (context) => GenerateSceneDialog(
+        novel: state.novel,
+        initialChapterId: state.activeChapterId,
+      ),
+    );
+    
+    // 如果用户取消了对话框，结果为null
+    if (result == null) {
+      return;
+    }
+    
+    // 触发场景生成事件
+    editorBloc.add(
+      GenerateSceneFromSummaryRequested(
+        novelId: editorBloc.novelId,
+        summary: result.summary,
+        chapterId: result.chapterId,
+        styleInstructions: result.styleInstructions,
       ),
     );
   }

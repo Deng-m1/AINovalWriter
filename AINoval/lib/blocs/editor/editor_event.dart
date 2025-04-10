@@ -22,7 +22,7 @@ class LoadEditorContentPaginated extends EditorEvent {
   final String novelId;
   final String? lastEditedChapterId;
   final int chaptersLimit;
-  
+
   @override
   List<Object?> get props => [novelId, lastEditedChapterId, chaptersLimit];
 }
@@ -44,14 +44,14 @@ class LoadMoreScenes extends EditorEvent {
   final String? targetActId;
   final String? targetChapterId;
   final String? targetSceneId;
-  
+
   @override
   List<Object?> get props => [
-    fromChapterId, 
-    direction, 
-    chaptersLimit, 
-    targetActId, 
-    targetChapterId, 
+    fromChapterId,
+    direction,
+    chaptersLimit,
+    targetActId,
+    targetChapterId,
     targetSceneId
   ];
 }
@@ -272,9 +272,9 @@ class GenerateSceneFromSummaryRequested extends EditorEvent {
 // 更新生成的场景内容事件 (用于流式响应)
 class UpdateGeneratedSceneContent extends EditorEvent {
   final String content;
-  
+
   const UpdateGeneratedSceneContent(this.content);
-  
+
   @override
   List<Object?> get props => [content];
 }
@@ -282,9 +282,9 @@ class UpdateGeneratedSceneContent extends EditorEvent {
 // 完成场景生成事件
 class SceneGenerationCompleted extends EditorEvent {
   final String content;
-  
+
   const SceneGenerationCompleted(this.content);
-  
+
   @override
   List<Object?> get props => [content];
 }
@@ -292,9 +292,9 @@ class SceneGenerationCompleted extends EditorEvent {
 // 场景生成失败事件
 class SceneGenerationFailed extends EditorEvent {
   final String error;
-  
+
   const SceneGenerationFailed(this.error);
-  
+
   @override
   List<Object?> get props => [error];
 }
@@ -302,9 +302,9 @@ class SceneGenerationFailed extends EditorEvent {
 // 场景摘要生成完成事件
 class SceneSummaryGenerationCompleted extends EditorEvent {
   final String summary;
-  
+
   const SceneSummaryGenerationCompleted(this.summary);
-  
+
   @override
   List<Object?> get props => [summary];
 }
@@ -312,9 +312,25 @@ class SceneSummaryGenerationCompleted extends EditorEvent {
 // 场景摘要生成失败事件
 class SceneSummaryGenerationFailed extends EditorEvent {
   final String error;
-  
+
   const SceneSummaryGenerationFailed(this.error);
-  
+
   @override
   List<Object?> get props => [error];
+}
+
+// 停止场景生成事件
+class StopSceneGeneration extends EditorEvent {
+  const StopSceneGeneration();
+
+  @override
+  List<Object?> get props => [];
+}
+
+// 刷新编辑器事件
+class RefreshEditor extends EditorEvent {
+  const RefreshEditor();
+
+  @override
+  List<Object?> get props => [];
 }

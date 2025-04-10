@@ -5,6 +5,9 @@ server:
     connection-timeout: 5s
 
 spring:
+  main:
+    allow-bean-definition-overriding: true
+    allow-circular-references: true
   application:
     name: ai-novel-server
   data:
@@ -119,7 +122,7 @@ ai:
 
 jasypt:
   encryptor:
-    password: YOUR_SECRET_ENCRYPTION_KEY_HERE
+    password: AINoval_Secure_Encryption_Key_2025
     algorithm: PBEWITHHMACSHA512ANDAES_256
     iv-generator-classname: org.jasypt.iv.RandomIvGenerator
 

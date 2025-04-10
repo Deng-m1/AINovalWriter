@@ -24,8 +24,7 @@ import com.ainovel.server.security.JwtAuthenticationManager;
 import com.ainovel.server.security.JwtServerAuthenticationConverter;
 
 /**
- * 安全配置类
- * 配置JWT认证和授权规则
+ * 安全配置类 配置JWT认证和授权规则
  */
 @Configuration
 @EnableWebFluxSecurity
@@ -37,7 +36,7 @@ public class SecurityConfig {
 
     @Autowired
     public SecurityConfig(JwtAuthenticationManager authenticationManager,
-                          JwtServerAuthenticationConverter authenticationConverter) {
+            JwtServerAuthenticationConverter authenticationConverter) {
         this.authenticationManager = authenticationManager;
         this.authenticationConverter = authenticationConverter;
     }
@@ -49,25 +48,25 @@ public class SecurityConfig {
         authenticationWebFilter.setServerAuthenticationConverter(authenticationConverter);
         // 设置过滤器匹配所有请求
         authenticationWebFilter.setRequiresAuthenticationMatcher(
-            ServerWebExchangeMatchers.anyExchange()
+                ServerWebExchangeMatchers.anyExchange()
         );
 
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .cors(corsSpec -> corsSpec.configurationSource(corsConfigurationSource()))
                 .authorizeExchange(exchanges -> exchanges
-                        // 公开端点
-                        .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .pathMatchers("/api/v1/auth/**").permitAll()
-                        .pathMatchers("/api/v1/users/register").permitAll()
-                        // 需要认证的端点
-                        .pathMatchers("/api/v1/novels/**").authenticated()
-                        .pathMatchers("/api/v1/scenes/**").authenticated()
-                        .pathMatchers("/api/v1/users/**").authenticated()
-                        .pathMatchers("/api/v1/ai/**").authenticated()
-                        .pathMatchers("/api/v1/chats/**").authenticated()
-                        // 其他所有请求需要认证
-                        .anyExchange().authenticated()
+                // 公开端点
+                .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .pathMatchers("/api/v1/auth/**").permitAll()
+                .pathMatchers("/api/v1/users/register").permitAll()
+                // 需要认证的端点
+                .pathMatchers("/api/v1/novels/**").authenticated()
+                .pathMatchers("/api/v1/scenes/**").authenticated()
+                .pathMatchers("/api/v1/users/**").authenticated()
+                .pathMatchers("/api/v1/ai/**").authenticated()
+                .pathMatchers("/api/v1/chats/**").authenticated()
+                // 其他所有请求需要认证
+                .anyExchange().authenticated()
                 )
                 // 使用addFilterAt替代addFilter，并指定正确的过滤器顺序
                 .addFilterAt(authenticationWebFilter, SecurityWebFiltersOrder.AUTHENTICATION)

@@ -1,5 +1,6 @@
 package com.ainovel.server.security;
 
+import org.jetbrains.annotations.NotNull;
 import org.springframework.core.MethodParameter;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
@@ -26,6 +27,7 @@ public class CurrentUserMethodArgumentResolver implements HandlerMethodArgumentR
                 && parameter.getParameterType().equals(CurrentUser.class);
     }
 
+    @NotNull
     @Override
     public Mono<Object> resolveArgument(MethodParameter parameter, BindingContext bindingContext,
             ServerWebExchange exchange) {
