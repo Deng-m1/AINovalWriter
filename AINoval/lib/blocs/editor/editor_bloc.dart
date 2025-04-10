@@ -43,6 +43,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     on<SceneSummaryGenerationCompleted>(_onSceneSummaryGenerationCompleted);
     on<SceneSummaryGenerationFailed>(_onSceneSummaryGenerationFailed);
     on<StopSceneGeneration>(_onStopSceneGeneration);
+    on<RefreshEditor>(_onRefreshEditor);
   }
   final EditorRepositoryImpl repository;
   final String novelId;
@@ -51,7 +52,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   bool _isDirty = false;
   DateTime? _lastSaveTime;
   final EditorSettings _settings = const EditorSettings();
-  
+
   // 加载场景节流控制
   DateTime? _lastLoadRequestTime;
   static const _loadThrottleInterval = Duration(milliseconds: 500);
@@ -111,7 +112,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     try {
       // 获取小说数据（分页），如果lastEditedChapterId为null，使用空字符串
       final String lastEditedChapterId = event.lastEditedChapterId ?? '';
-      
+
       final novel = await repository.getNovelWithPaginatedScenes(
         event.novelId,
         lastEditedChapterId,
@@ -152,10 +153,10 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       // 如果没有找到活动章节，使用第一个可用的
       if (activeActId == null && novel.acts.isNotEmpty) {
         activeActId = novel.acts.first.id;
-        
+
         if (novel.acts.first.chapters.isNotEmpty) {
           activeChapterId = novel.acts.first.chapters.first.id;
-          
+
           if (novel.acts.first.chapters.first.scenes.isNotEmpty) {
             activeSceneId = novel.acts.first.chapters.first.scenes.first.id;
           }
@@ -183,29 +184,29 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       emit(const EditorError(message: '无法加载更多场景：编辑器尚未加载'));
       return;
     }
-    
+
     // 如果已经在加载中，直接返回以防重复加载
     if (currentState.isLoading) {
       AppLogger.d('Blocs/editor/editor_bloc', '已有加载任务正在进行，忽略此次加载请求');
       return;
     }
-    
+
     // 检查是否满足节流间隔
     final now = DateTime.now();
-    if (_lastLoadRequestTime != null && 
+    if (_lastLoadRequestTime != null &&
         now.difference(_lastLoadRequestTime!) < _loadThrottleInterval) {
       AppLogger.d('Blocs/editor/editor_bloc', '加载请求过于频繁，已被节流');
       return;
     }
     _lastLoadRequestTime = now;
-    
+
     // 标记为正在加载更多
     emit(currentState.copyWith(isLoading: true));
-    
+
     try {
-      AppLogger.i('Blocs/editor/editor_bloc', 
+      AppLogger.i('Blocs/editor/editor_bloc',
           '开始加载更多场景: 章节=${event.fromChapterId}, 方向=${event.direction}, 限制=${event.chaptersLimit}');
-      
+
       // 调用加载更多场景的API
       final newScenes = await repository.loadMoreScenes(
         novelId,
@@ -213,25 +214,25 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         event.direction,
         chaptersLimit: event.chaptersLimit,
       );
-      
+
       if (newScenes.isEmpty) {
         // 没有更多场景可加载，恢复原状态，但标记加载已结束
         AppLogger.i('Blocs/editor/editor_bloc', '没有更多场景可加载');
         emit(currentState.copyWith(isLoading: false));
         return;
       }
-      
+
       // 将新加载的场景合并到当前小说结构中
       final updatedNovel = _mergeNewScenes(currentState.novel, newScenes);
-      
-      AppLogger.i('Blocs/editor/editor_bloc', 
+
+      AppLogger.i('Blocs/editor/editor_bloc',
           '成功加载更多场景: ${newScenes.keys.length}个章节, ${newScenes.values.fold(0, (sum, scenes) => sum + scenes.length)}个场景');
-      
+
       // 如果是中心加载并且指定了章节，将活动章节设置为该章节
       String? newActiveChapterId = currentState.activeChapterId;
       String? newActiveActId = currentState.activeActId;
       String? newActiveSceneId = currentState.activeSceneId;
-      
+
       if (event.direction == 'center') {
         // 查找包含该章节的Act
         for (final act in updatedNovel.acts) {
@@ -246,7 +247,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           if (newActiveChapterId == event.fromChapterId) break;
         }
       }
-      
+
       emit(currentState.copyWith(
         novel: updatedNovel,
         isLoading: false,
@@ -257,7 +258,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       ));
     } catch (e) {
       AppLogger.e('Blocs/editor/editor_bloc', '加载更多场景失败', e);
-      
+
       // 出错时恢复原状态，但标记加载已结束
       emit(currentState.copyWith(
         isLoading: false,
@@ -397,7 +398,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         event.sceneId,
         event.content,
       );
-      
+
       try {
         // 使用传递的字数或重新计算
         final wordCount = event.wordCount ??
@@ -431,17 +432,17 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         // 保存成功后，更新状态为已保存
         AppLogger.i('EditorBloc',
             '场景保存成功，更新状态 - 场景ID: ${event.sceneId}, 最终字数: ${updatedScene.wordCount}');
-        
+
         // 保存小说，包括lastEditedChapterId更新
         await repository.saveNovel(finalNovel);
-        
+
         emit(currentState.copyWith(
           novel: finalNovel,
           isDirty: false,
           isSaving: false,
           lastSaveTime: DateTime.now(),
         ));
-        
+
         if (finalNovel.lastEditedChapterId != currentState.novel.lastEditedChapterId) {
           AppLogger.i('EditorBloc',
               '已更新最后编辑章节ID: ${finalNovel.lastEditedChapterId}');
@@ -520,13 +521,13 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
 
           // 更新小说
           _novel = updatedNovel.copyWith(acts: updatedActs);
-          
+
           // 保存小说，包括lastEditedChapterId更新
           await repository.saveNovel(_novel!);
-          
+
           _isDirty = false;
           _lastSaveTime = DateTime.now();
-          
+
           if (_novel!.lastEditedChapterId != currentState.novel.lastEditedChapterId) {
             AppLogger.i('EditorBloc',
                 '已更新最后编辑章节ID: ${_novel!.lastEditedChapterId} (不触发UI重建)');
@@ -593,7 +594,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           acts: updatedActs,
           updatedAt: DateTime.now(),
         );
-        
+
         // 保存小说，包括lastEditedChapterId更新
         await repository.saveNovel(finalNovel);
 
@@ -604,7 +605,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           isSaving: false,
           lastSaveTime: DateTime.now(),
         ));
-        
+
         if (finalNovel.lastEditedChapterId != currentState.novel.lastEditedChapterId) {
           AppLogger.i('EditorBloc',
               '已更新最后编辑章节ID: ${finalNovel.lastEditedChapterId}');
@@ -686,7 +687,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         // 只有当章节ID变化时才进行更新操作
         AppLogger.i('Blocs/editor/editor_bloc', 'Updating lastEditedChapterId from ${currentState.novel.lastEditedChapterId} to ${event.chapterId}');
         final updatedNovel = _updateNovelWithLastEditedChapter(currentState.novel, event.chapterId);
-        
+
         // 触发状态更新
         AppLogger.i('Blocs/editor/editor_bloc', 'Emitting state with updated novel and active scene');
         emit(currentState.copyWith(
@@ -695,7 +696,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           activeChapterId: event.chapterId,
           activeSceneId: event.sceneId,
         ));
-        
+
         // 在用户选择新场景时，自动保存lastEditedChapterId的更新
         try {
           await repository.saveNovel(updatedNovel);
@@ -1469,85 +1470,85 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
 
   // 辅助方法：将新加载的场景合并到当前小说结构中
   novel_models.Novel _mergeNewScenes(
-      novel_models.Novel currentNovel, 
+      novel_models.Novel currentNovel,
       Map<String, List<novel_models.Scene>> newScenes) {
-    
-    AppLogger.i('Blocs/editor/editor_bloc', 
+
+    AppLogger.i('Blocs/editor/editor_bloc',
         '开始合并新场景: ${newScenes.keys.length}个章节, ${newScenes.values.fold(0, (sum, scenes) => sum + scenes.length)}个场景');
-    
+
     // 深拷贝当前小说以避免直接修改状态
     final List<novel_models.Act> updatedActs = List.from(currentNovel.acts);
-    
+
     // 遍历新加载的场景，按章节ID归类
     newScenes.forEach((chapterId, scenes) {
-      AppLogger.d('Blocs/editor/editor_bloc', 
+      AppLogger.d('Blocs/editor/editor_bloc',
           '处理章节 $chapterId 的 ${scenes.length} 个场景');
-      
+
       // 在现有结构中查找对应的章节
       bool chapterFound = false;
-      
+
       for (int actIndex = 0; actIndex < updatedActs.length; actIndex++) {
         final novel_models.Act act = updatedActs[actIndex];
         final List<novel_models.Chapter> updatedChapters = List.from(act.chapters);
-        
+
         for (int chapterIndex = 0; chapterIndex < updatedChapters.length; chapterIndex++) {
           final novel_models.Chapter chapter = updatedChapters[chapterIndex];
-          
+
           if (chapter.id == chapterId) {
             // 找到对应章节，更新其场景列表
             chapterFound = true;
-            
+
             // 创建已有场景ID集合，用于去重
             final existingSceneIds = chapter.scenes.map((s) => s.id).toSet();
-            
+
             // 过滤掉已存在的场景，只添加新场景
             final List<novel_models.Scene> newUniqueScenesForChapter = scenes
                 .where((scene) => !existingSceneIds.contains(scene.id))
                 .toList();
-            
+
             if (newUniqueScenesForChapter.isEmpty) {
-              AppLogger.i('Blocs/editor/editor_bloc', 
+              AppLogger.i('Blocs/editor/editor_bloc',
                   '章节 $chapterId 没有新的场景需要添加');
               break;
             }
-            
+
             // 添加新场景
             final List<novel_models.Scene> mergedScenes = [
-              ...chapter.scenes, 
+              ...chapter.scenes,
               ...newUniqueScenesForChapter
             ];
-            
+
             // 按场景ID排序，确保顺序一致
             mergedScenes.sort((a, b) => a.id.compareTo(b.id));
-            
+
             // 创建更新后的章节
             final updatedChapter = chapter.copyWith(scenes: mergedScenes);
             updatedChapters[chapterIndex] = updatedChapter;
-            
+
             // 更新Act中的chapters列表
             updatedActs[actIndex] = act.copyWith(chapters: updatedChapters);
-            
-            AppLogger.i('Blocs/editor/editor_bloc', 
+
+            AppLogger.i('Blocs/editor/editor_bloc',
                 '已将 ${newUniqueScenesForChapter.length} 个新场景合并到章节 $chapterId，现在总共有 ${mergedScenes.length} 个场景');
             break;
           }
         }
-        
+
         if (chapterFound) break;
       }
-      
+
       // 如果没有找到对应章节，记录警告
       if (!chapterFound) {
-        AppLogger.w('Blocs/editor/editor_bloc', 
+        AppLogger.w('Blocs/editor/editor_bloc',
             '未找到对应章节 $chapterId，无法合并 ${scenes.length} 个场景');
       }
     });
-    
+
     // 创建更新后的Novel对象
     final updatedNovel = currentNovel.copyWith(
       acts: updatedActs,
     );
-    
+
     // 记录日志
     int totalScenes = 0;
     for (final act in updatedNovel.acts) {
@@ -1555,10 +1556,10 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         totalScenes += chapter.scenes.length;
       }
     }
-    
-    AppLogger.i('Blocs/editor/editor_bloc', 
+
+    AppLogger.i('Blocs/editor/editor_bloc',
         '场景合并完成，小说现在总共有 ${updatedNovel.acts.length} 个act, ${updatedNovel.acts.fold(0, (sum, act) => sum + act.chapters.length)} 个章节, $totalScenes 个场景');
-    
+
     return updatedNovel;
   }
 
@@ -1583,20 +1584,20 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   ) async {
     if (state is EditorLoaded) {
       final currentState = state as EditorLoaded;
-      
+
       // 更新状态为生成中
       emit(currentState.copyWith(
         aiSummaryGenerationStatus: AIGenerationStatus.generating,
         aiGenerationError: null,
       ));
-      
+
       try {
         // 调用API生成摘要
         final summary = await repository.summarizeScene(
           event.sceneId,
           styleInstructions: event.styleInstructions,
         );
-        
+
         // 摘要生成成功
         add(SceneSummaryGenerationCompleted(summary));
       } catch (e) {
@@ -1605,7 +1606,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       }
     }
   }
-  
+
   // 处理从摘要生成场景内容的事件
   Future<void> _onGenerateSceneFromSummaryRequested(
     GenerateSceneFromSummaryRequested event,
@@ -1613,10 +1614,10 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   ) async {
     if (state is EditorLoaded) {
       final currentState = state as EditorLoaded;
-      
+
       // 取消任何正在进行的生成
       await _generationStreamSubscription?.cancel();
-      
+
       // 更新状态为生成中
       emit(currentState.copyWith(
         aiSceneGenerationStatus: AIGenerationStatus.generating,
@@ -1624,7 +1625,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         aiGenerationError: null,
         isStreamingGeneration: event.useStreamingMode,
       ));
-      
+
       if (event.useStreamingMode) {
         // 使用流式生成
         try {
@@ -1634,7 +1635,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
             chapterId: event.chapterId,
             styleInstructions: event.styleInstructions,
           );
-          
+
           _generationStreamSubscription = stream.listen(
             (content) {
               // 收到流式内容更新
@@ -1665,7 +1666,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
             chapterId: event.chapterId,
             styleInstructions: event.styleInstructions,
           );
-          
+
           // 生成成功
           add(SceneGenerationCompleted(content));
         } catch (e) {
@@ -1675,7 +1676,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       }
     }
   }
-  
+
   // 处理更新生成的场景内容事件（流式）
   void _onUpdateGeneratedSceneContent(
     UpdateGeneratedSceneContent event,
@@ -1684,14 +1685,14 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     if (state is EditorLoaded) {
       final currentState = state as EditorLoaded;
       final currentContent = currentState.generatedSceneContent ?? '';
-      
+
       // 将新内容追加到现有内容
       emit(currentState.copyWith(
         generatedSceneContent: currentContent + event.content,
       ));
     }
   }
-  
+
   // 处理场景生成完成事件
   void _onSceneGenerationCompleted(
     SceneGenerationCompleted event,
@@ -1699,7 +1700,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   ) {
     if (state is EditorLoaded) {
       final currentState = state as EditorLoaded;
-      
+
       emit(currentState.copyWith(
         aiSceneGenerationStatus: AIGenerationStatus.completed,
         generatedSceneContent: event.content,
@@ -1707,7 +1708,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       ));
     }
   }
-  
+
   // 处理场景生成失败事件
   void _onSceneGenerationFailed(
     SceneGenerationFailed event,
@@ -1715,7 +1716,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   ) {
     if (state is EditorLoaded) {
       final currentState = state as EditorLoaded;
-      
+
       emit(currentState.copyWith(
         aiSceneGenerationStatus: AIGenerationStatus.failed,
         aiGenerationError: event.error,
@@ -1723,7 +1724,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       ));
     }
   }
-  
+
   // 处理场景摘要生成完成事件
   void _onSceneSummaryGenerationCompleted(
     SceneSummaryGenerationCompleted event,
@@ -1731,14 +1732,14 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   ) {
     if (state is EditorLoaded) {
       final currentState = state as EditorLoaded;
-      
+
       emit(currentState.copyWith(
         aiSummaryGenerationStatus: AIGenerationStatus.completed,
         generatedSummary: event.summary,
       ));
     }
   }
-  
+
   // 处理场景摘要生成失败事件
   void _onSceneSummaryGenerationFailed(
     SceneSummaryGenerationFailed event,
@@ -1746,7 +1747,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   ) {
     if (state is EditorLoaded) {
       final currentState = state as EditorLoaded;
-      
+
       emit(currentState.copyWith(
         aiSummaryGenerationStatus: AIGenerationStatus.failed,
         aiGenerationError: event.error,
@@ -1761,16 +1762,26 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   ) async {
     if (state is EditorLoaded) {
       final currentState = state as EditorLoaded;
-      
+
       // 取消流式生成订阅
       await _generationStreamSubscription?.cancel();
       _generationStreamSubscription = null;
-      
+
       // 更新状态为已停止
       emit(currentState.copyWith(
         aiSceneGenerationStatus: AIGenerationStatus.completed,
         isStreamingGeneration: false,
       ));
+    }
+  }
+
+  // 刷新编辑器
+  Future<void> _onRefreshEditor(RefreshEditor event, Emitter<EditorState> emit) async {
+    if (state is EditorLoaded) {
+      final currentState = state as EditorLoaded;
+      // 只是简单地重新发送当前状态，触发UI刷新
+      AppLogger.i('EditorBloc', '刷新编辑器状态');
+      emit(currentState);
     }
   }
 

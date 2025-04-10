@@ -122,7 +122,7 @@ ai:
 
 jasypt:
   encryptor:
-    password: YOUR_SECRET_ENCRYPTION_KEY_HERE
+    password: AINoval_Secure_Encryption_Key_2025
     algorithm: PBEWITHHMACSHA512ANDAES_256
     iv-generator-classname: org.jasypt.iv.RandomIvGenerator
 

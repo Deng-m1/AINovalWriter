@@ -1,8 +1,4 @@
-import 'package:ainoval/theme/text_styles.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-import 'package:ainoval/screens/ai_config/ai_config_management_screen.dart';
-import 'package:ainoval/screens/ai_config/widgets/ai_model_selector.dart';
 import 'package:intl/intl.dart'; // For date formatting
 
 class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // 新增写作按钮回调
@@ -21,6 +17,9 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
     required this.onPlanPressed,
     required this.isPlanActive,
     this.onWritePressed, // 新增可选参数
+    this.onAIGenerationPressed,
+    this.onAISummaryPressed,
+    this.isAIGenerationActive = false,
   });
   final String novelTitle;
   final int wordCount;
@@ -34,11 +33,13 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
   final VoidCallback onPlanPressed;
   final bool isPlanActive;
   final VoidCallback? onWritePressed;
+  final VoidCallback? onAIGenerationPressed;
+  final VoidCallback? onAISummaryPressed;
+  final bool isAIGenerationActive;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final materialL10n = MaterialLocalizations.of(context);
 
     String lastSaveText = '从未保存';
     if (lastSaveTime != null) {
@@ -53,7 +54,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
     final String wordCountText = '${wordCount.toString()} 字';
 
     return AppBar(
-      titleSpacing: 0, 
+      titleSpacing: 0,
       automaticallyImplyLeading: false, // 禁用自动leading按钮
       title: Row(
         children: [
@@ -63,7 +64,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
             splashRadius: 22,
             onPressed: onBackPressed,
           ),
-          
+
           // 左对齐的功能图标区域
           Row(
             children: [
@@ -75,7 +76,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
                 isActive: isPlanActive,
                 onPressed: onPlanPressed,
               ),
-              
+
               // 写作按钮
               _buildNavButton(
                 context: context,
@@ -84,7 +85,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
                 isActive: !isPlanActive, // 写作状态与Plan状态相反
                 onPressed: onWritePressed ?? () {},
               ),
-              
+
               // 设置按钮
               _buildNavButton(
                 context: context,
@@ -93,7 +94,85 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
                 isActive: isSettingsActive,
                 onPressed: onAiConfigPressed,
               ),
-              
+
+              // AI生成按钮
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                child: PopupMenuButton<String>(
+                  offset: const Offset(0, 40),
+                  tooltip: 'AI生成',
+                  onSelected: (value) {
+                    if (value == 'scene') {
+                      onAIGenerationPressed?.call();
+                    } else if (value == 'summary') {
+                      onAISummaryPressed?.call();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem<String>(
+                      value: 'scene',
+                      child: Row(
+                        children: [
+                          Icon(Icons.auto_awesome),
+                          SizedBox(width: 8),
+                          Text('AI生成场景'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'summary',
+                      child: Row(
+                        children: [
+                          Icon(Icons.summarize),
+                          SizedBox(width: 8),
+                          Text('AI生成摘要'),
+                        ],
+                      ),
+                    ),
+                  ],
+                  child: TextButton.icon(
+                    icon: Icon(
+                      Icons.auto_awesome,
+                      size: 20,
+                      color: isAIGenerationActive
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    label: Row(
+                      children: [
+                        Text(
+                          'AI生成',
+                          style: TextStyle(
+                            color: isAIGenerationActive
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.arrow_drop_down,
+                          size: 16,
+                          color: isAIGenerationActive
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                    style: TextButton.styleFrom(
+                      backgroundColor: isAIGenerationActive
+                          ? theme.colorScheme.primaryContainer.withAlpha(76)
+                          : Colors.transparent,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    onPressed: null, // 由 PopupMenuButton 处理点击事件
+                  ),
+                ),
+              ),
+
               // 聊天按钮
               _buildNavButton(
                 context: context,
@@ -165,7 +244,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
       foregroundColor: theme.colorScheme.onSurface,
     );
   }
-  
+
   // 构建导航按钮的辅助方法
   Widget _buildNavButton({
     required BuildContext context,
@@ -175,7 +254,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
     required VoidCallback onPressed,
   }) {
     final theme = Theme.of(context);
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4.0),
       child: TextButton.icon(
@@ -197,7 +276,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
         ),
         style: TextButton.styleFrom(
           backgroundColor: isActive
-              ? theme.colorScheme.primaryContainer.withOpacity(0.3)
+              ? theme.colorScheme.primaryContainer.withAlpha(76)
               : Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           shape: RoundedRectangleBorder(

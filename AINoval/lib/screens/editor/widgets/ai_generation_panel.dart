@@ -1,15 +1,22 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/blocs/prompt/prompt_bloc.dart';
 import 'package:ainoval/blocs/prompt/prompt_event.dart';
 import 'package:ainoval/blocs/prompt/prompt_state.dart';
+import 'package:ainoval/models/novel_structure.dart';
 import 'package:ainoval/models/prompt_models.dart';
-import 'package:ainoval/models/novel_structure.dart' hide Scene;
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 /// AI生成面板，提供场景摘要生成和摘要生成场景功能
 class AIGenerationPanel extends StatefulWidget {
-  const AIGenerationPanel({Key? key}) : super(key: key);
+  const AIGenerationPanel({
+    Key? key,
+    required this.novelId,
+    required this.onClose,
+  }) : super(key: key);
+
+  final String novelId;
+  final VoidCallback onClose;
 
   @override
   State<AIGenerationPanel> createState() => _AIGenerationPanelState();
@@ -19,16 +26,16 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
   late TabController _tabController;
   final TextEditingController _summaryController = TextEditingController();
   final TextEditingController _styleInstructionsController = TextEditingController();
-  
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    
+
     // 加载提示词
     context.read<PromptBloc>().add(const LoadAllPromptsRequested());
   }
-  
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -36,7 +43,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
     _styleInstructionsController.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<EditorBloc, EditorState>(
@@ -44,38 +51,64 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
         if (editorState is! EditorLoaded) {
           return const Center(child: CircularProgressIndicator());
         }
-        
+
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 面板标题
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                'AI助手',
-                style: Theme.of(context).textTheme.titleLarge,
+            // 面板标题栏
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  bottom: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                    width: 1.0,
+                  ),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'AI生成助手',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: widget.onClose,
+                    tooltip: '关闭',
+                  ),
+                ],
               ),
             ),
-            
-            // 标签栏
-            TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(text: '生成摘要'),
-                Tab(text: '生成场景'),
-              ],
-            ),
-            
-            // 标签内容
+
+            // 面板内容
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 场景生成摘要面板
-                  _buildSceneToSummaryPanel(context, editorState),
-                  
-                  // 摘要生成场景面板
-                  _buildSummaryToScenePanel(context, editorState),
+                  // 标签栏
+                  TabBar(
+                    controller: _tabController,
+                    tabs: const [
+                      Tab(text: '生成摘要'),
+                      Tab(text: '生成场景'),
+                    ],
+                  ),
+
+                  // 标签内容
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        // 场景生成摘要面板
+                        _buildSceneToSummaryPanel(context, editorState),
+
+                        // 摘要生成场景面板
+                        _buildSummaryToScenePanel(context, editorState),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -84,15 +117,15 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
       },
     );
   }
-  
+
   /// 构建场景生成摘要面板
   Widget _buildSceneToSummaryPanel(BuildContext context, EditorLoaded state) {
     // 获取当前活跃的场景
     final activeSceneId = state.activeSceneId;
-    final activeScene = activeSceneId != null 
-        ? _findSceneById(state.novel, activeSceneId) 
+    final activeScene = activeSceneId != null
+        ? _findSceneById(state.novel, activeSceneId)
         : null;
-    
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -115,7 +148,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
             ),
           ],
           const SizedBox(height: 16),
-          
+
           // 风格指令输入
           TextField(
             controller: _styleInstructionsController,
@@ -126,16 +159,16 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
             ),
           ),
           const SizedBox(height: 16),
-          
+
           // 提示词信息
           BlocBuilder<PromptBloc, PromptState>(
             builder: (context, promptState) {
-              final sceneToSummaryPrompt = promptState?.prompts[AIFeatureType.sceneToSummary];
-              
+              final sceneToSummaryPrompt = promptState.prompts[AIFeatureType.sceneToSummary];
+
               return Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceVariant,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Column(
@@ -148,7 +181,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                         TextButton(
                           onPressed: () {
                             // 跳转到设置页面
-                            // TODO: 实现跳转到提示词设置页面的逻辑
+                            // TODO(prompt): 实现跳转到提示词设置页面的逻辑
                           },
                           child: const Text('编辑'),
                         ),
@@ -166,9 +199,9 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
             },
           ),
           const SizedBox(height: 16),
-          
+
           // 生成结果
-          if (state.aiSummaryGenerationStatus == AIGenerationStatus.completed && 
+          if (state.aiSummaryGenerationStatus == AIGenerationStatus.completed &&
               state.generatedSummary != null) ...[
             Text(
               '生成结果',
@@ -204,9 +237,9 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                 FilledButton.icon(
                   onPressed: activeSceneId != null ? () {
                     // 使用生成的摘要更新场景摘要
-                    if (state.generatedSummary != null && 
-                        state.activeSceneId != null && 
-                        state.activeChapterId != null && 
+                    if (state.generatedSummary != null &&
+                        state.activeSceneId != null &&
+                        state.activeChapterId != null &&
                         state.activeActId != null) {
                       context.read<EditorBloc>().add(UpdateSummary(
                         novelId: state.novel.id,
@@ -251,8 +284,8 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                         context.read<EditorBloc>().add(
                           GenerateSceneSummaryRequested(
                             sceneId: activeSceneId,
-                            styleInstructions: _styleInstructionsController.text.isNotEmpty 
-                                ? _styleInstructionsController.text 
+                            styleInstructions: _styleInstructionsController.text.isNotEmpty
+                                ? _styleInstructionsController.text
                                 : null,
                           ),
                         );
@@ -266,7 +299,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
           ] else ...[
             const Spacer(),
           ],
-          
+
           // 生成按钮
           if (state.aiSummaryGenerationStatus != AIGenerationStatus.generating)
             SizedBox(
@@ -277,8 +310,8 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                   context.read<EditorBloc>().add(
                     GenerateSceneSummaryRequested(
                       sceneId: activeSceneId,
-                      styleInstructions: _styleInstructionsController.text.isNotEmpty 
-                          ? _styleInstructionsController.text 
+                      styleInstructions: _styleInstructionsController.text.isNotEmpty
+                          ? _styleInstructionsController.text
                           : null,
                     ),
                   );
@@ -291,14 +324,14 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
       ),
     );
   }
-  
+
   /// 构建摘要生成场景面板
   Widget _buildSummaryToScenePanel(BuildContext context, EditorLoaded state) {
     final isGenerating = state.aiSceneGenerationStatus == AIGenerationStatus.generating;
-    final hasGenerated = state.aiSceneGenerationStatus == AIGenerationStatus.completed && 
+    final hasGenerated = state.aiSceneGenerationStatus == AIGenerationStatus.completed &&
                          state.generatedSceneContent != null;
     final hasFailed = state.aiSceneGenerationStatus == AIGenerationStatus.failed;
-    
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -315,7 +348,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
             ),
           ),
           const SizedBox(height: 16),
-          
+
           // 风格指令输入
           TextField(
             controller: _styleInstructionsController,
@@ -326,16 +359,16 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
             ),
           ),
           const SizedBox(height: 16),
-          
+
           // 提示词信息
           BlocBuilder<PromptBloc, PromptState>(
             builder: (context, promptState) {
-              final summaryToScenePrompt = promptState?.prompts[AIFeatureType.summaryToScene];
-              
+              final summaryToScenePrompt = promptState.prompts[AIFeatureType.summaryToScene];
+
               return Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceVariant,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Column(
@@ -348,7 +381,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                         TextButton(
                           onPressed: () {
                             // 跳转到设置页面
-                            // TODO: 实现跳转到提示词设置页面的逻辑
+                            // TODO(prompt): 实现跳转到提示词设置页面的逻辑
                           },
                           child: const Text('编辑'),
                         ),
@@ -366,7 +399,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
             },
           ),
           const SizedBox(height: 16),
-          
+
           // 章节选择（可选）
           if (state.novel.acts.isNotEmpty) ...[
             DropdownButtonFormField<String>(
@@ -389,7 +422,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                     }
                     if (actId != null) break;
                   }
-                  
+
                   if (actId != null) {
                     // 更新活跃章节
                     context.read<EditorBloc>().add(SetActiveChapter(
@@ -402,7 +435,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
             ),
           ],
           const SizedBox(height: 16),
-          
+
           // 生成结果
           if (hasGenerated) ...[
             Text(
@@ -439,7 +472,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                 FilledButton.icon(
                   onPressed: state.activeChapterId != null ? () {
                     // 创建新场景并使用生成的内容
-                    // TODO: 实现创建新场景并使用生成内容的逻辑
+                    // TODO(scene): 实现创建新场景并使用生成内容的逻辑
                   } : null,
                   icon: const Icon(Icons.add),
                   label: const Text('创建新场景'),
@@ -448,37 +481,92 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
             ),
           ] else if (isGenerating) ...[
             Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 16),
-                    Text(
-                      state.isStreamingGeneration 
-                          ? '正在流式生成场景内容...' 
-                          : '正在生成场景内容，请稍候...',
-                    ),
-                    if (state.isStreamingGeneration && state.generatedSceneContent != null) ...[
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        height: 150,
-                        child: SingleChildScrollView(
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surface,
-                              border: Border.all(color: Theme.of(context).colorScheme.outline),
-                              borderRadius: BorderRadius.circular(4),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        // 如果有流式生成的内容，显示它
+                        if (state.isStreamingGeneration && 
+                            state.generatedSceneContent != null && 
+                            state.generatedSceneContent!.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surface,
+                                border: Border.all(color: Theme.of(context).colorScheme.outline),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: SingleChildScrollView(
+                                child: Text(state.generatedSceneContent!),
+                              ),
                             ),
-                            child: Text(state.generatedSceneContent!),
+                          ),
+
+                        // 半透明遮罩和加载指示器
+                        Container(
+                          color: Colors.black.withAlpha(25),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context).colorScheme.surface,
+                                    borderRadius: BorderRadius.circular(8),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withAlpha(50),
+                                        blurRadius: 10,
+                                        spreadRadius: 2,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const CircularProgressIndicator(),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        state.isStreamingGeneration
+                                            ? '正在流式生成场景内容...'
+                                            : '正在生成场景内容，请稍候...',
+                                        style: Theme.of(context).textTheme.bodyMedium,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
+                      ],
+                    ),
+                  ),
+                  
+                  // 如果有流式生成的内容，显示预览区域
+                  if (state.isStreamingGeneration && state.generatedSceneContent != null) ...[
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 150,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface,
+                          border: Border.all(color: Theme.of(context).colorScheme.outline),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: SingleChildScrollView(
+                          child: Text(state.generatedSceneContent!),
+                        ),
                       ),
-                    ],
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
           ] else if (hasFailed) ...[
@@ -489,7 +577,19 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                   children: [
                     const Icon(Icons.error_outline, color: Colors.red, size: 48),
                     const SizedBox(height: 16),
-                    Text('生成失败: ${state.aiGenerationError ?? "未知错误"}'),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withAlpha(25),
+                        border: Border.all(color: Colors.red),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text('生成失败: ${state.aiGenerationError ?? "未知错误"}',
+                        style: const TextStyle(color: Colors.red),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     TextButton(
                       onPressed: () {
@@ -500,8 +600,8 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                               novelId: state.novel.id,
                               summary: _summaryController.text,
                               chapterId: state.activeChapterId,
-                              styleInstructions: _styleInstructionsController.text.isNotEmpty 
-                                  ? _styleInstructionsController.text 
+                              styleInstructions: _styleInstructionsController.text.isNotEmpty
+                                  ? _styleInstructionsController.text
                                   : null,
                             ),
                           );
@@ -516,7 +616,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
           ] else ...[
             const Spacer(),
           ],
-          
+
           // 生成按钮
           if (!isGenerating)
             Column(
@@ -531,8 +631,8 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                           novelId: state.novel.id,
                           summary: _summaryController.text,
                           chapterId: state.activeChapterId,
-                          styleInstructions: _styleInstructionsController.text.isNotEmpty 
-                              ? _styleInstructionsController.text 
+                          styleInstructions: _styleInstructionsController.text.isNotEmpty
+                              ? _styleInstructionsController.text
                               : null,
                           useStreamingMode: true,
                         ),
@@ -553,8 +653,8 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
                           novelId: state.novel.id,
                           summary: _summaryController.text,
                           chapterId: state.activeChapterId,
-                          styleInstructions: _styleInstructionsController.text.isNotEmpty 
-                              ? _styleInstructionsController.text 
+                          styleInstructions: _styleInstructionsController.text.isNotEmpty
+                              ? _styleInstructionsController.text
                               : null,
                           useStreamingMode: false,
                         ),
@@ -570,11 +670,11 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
       ),
     );
   }
-  
+
   /// 构建章节下拉菜单选项
   List<DropdownMenuItem<String>> _buildChapterDropdownItems(Novel novel) {
     final items = <DropdownMenuItem<String>>[];
-    
+
     for (final act in novel.acts) {
       // 添加Act分组标题
       items.add(
@@ -589,7 +689,7 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
           ),
         ),
       );
-      
+
       // 添加Act下的Chapter
       for (final chapter in act.chapters) {
         items.add(
@@ -603,10 +703,10 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
         );
       }
     }
-    
+
     return items;
   }
-  
+
   /// 在Novel中查找指定ID的场景
   SceneInfo? _findSceneById(Novel novel, String sceneId) {
     for (final act in novel.acts) {
@@ -628,13 +728,13 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> with SingleTicker
 
 /// 场景信息，用于显示
 class SceneInfo {
-  final String id;
-  final String title;
-  final int wordCount;
-  
   SceneInfo({
     required this.id,
     required this.title,
     required this.wordCount,
   });
-} 
+
+  final String id;
+  final String title;
+  final int wordCount;
+}
