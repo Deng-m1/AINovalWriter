@@ -386,7 +386,7 @@ class _AIStreamGenerationDisplayState extends State<AIStreamGenerationDisplay> {
                         children: [
                           Expanded(
                             child: FilledButton.icon(
-                              onPressed: _summaryController.text.isNotEmpty
+                              onPressed: (_summaryController.text.isNotEmpty || content.isNotEmpty)
                                   ? () => _generateScene(context)
                                   : null,
                               icon: const Icon(Icons.auto_awesome, size: 16),

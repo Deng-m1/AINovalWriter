@@ -2,10 +2,13 @@ import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/blocs/prompt/prompt_bloc.dart';
 import 'package:ainoval/blocs/prompt/prompt_event.dart';
 import 'package:ainoval/blocs/prompt/prompt_state.dart';
+import 'package:ainoval/models/novel_structure.dart';
 import 'package:ainoval/models/prompt_models.dart';
+import 'package:ainoval/screens/editor/managers/editor_layout_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:provider/provider.dart';
 
 /// AI摘要面板，提供场景摘要生成功能
 class AISummaryPanel extends StatefulWidget {
@@ -24,7 +27,9 @@ class AISummaryPanel extends StatefulWidget {
 
 class _AISummaryPanelState extends State<AISummaryPanel> {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _summaryController = TextEditingController();
   bool _userScrolled = false;
+  bool _contentEdited = false;
 
   @override
   void initState() {
@@ -40,6 +45,7 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
   void dispose() {
     _scrollController.removeListener(_handleUserScroll);
     _scrollController.dispose();
+    _summaryController.dispose();
     super.dispose();
   }
   
@@ -99,12 +105,47 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    padding: const EdgeInsets.all(4),
-                    onPressed: widget.onClose,
-                    tooltip: '关闭',
+                  Row(
+                    children: [
+                      // 状态指示器
+                      BlocBuilder<PromptBloc, PromptState>(
+                        builder: (context, promptState) {
+                          if (promptState.isGenerating) {
+                            return Row(
+                              children: [
+                                SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '正在生成...',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(context).colorScheme.primary,
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        padding: const EdgeInsets.all(4),
+                        onPressed: widget.onClose,
+                        tooltip: '关闭',
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -112,7 +153,7 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
 
             // 面板内容
             Expanded(
-              child: _buildSceneToSummaryPanel(context, editorState),
+              child: _buildSummaryContentPanel(context, editorState),
             ),
           ],
         );
@@ -120,8 +161,8 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
     );
   }
 
-  // 构建场景生成摘要面板
-  Widget _buildSceneToSummaryPanel(BuildContext context, EditorLoaded state) {
+  // 构建摘要内容面板
+  Widget _buildSummaryContentPanel(BuildContext context, EditorLoaded state) {
     final activeScene = _getActiveScene(state);
 
     return Padding(
@@ -129,61 +170,6 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 提示词信息
-          BlocBuilder<PromptBloc, PromptState>(
-            builder: (context, promptState) {
-              final sceneToSummaryPrompt = promptState.prompts[AIFeatureType.sceneToSummary];
-
-              return Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                    width: 0.5,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '使用的提示词', 
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            // 跳转到设置页面
-                            // TODO(prompt): 实现跳转到提示词设置页面的逻辑
-                          },
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            textStyle: const TextStyle(fontSize: 12),
-                          ),
-                          child: const Text('编辑'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      sceneToSummaryPrompt?.activePrompt ?? '加载中...',
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-
-          const SizedBox(height: 16),
-
           // 当前场景信息
           Card(
             elevation: 0,
@@ -219,7 +205,7 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            activeScene?.toString() ?? '当前场景',
+                            '场景位置：${_getSceneLocationString(state, activeScene)}',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         ),
@@ -235,11 +221,32 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '字数: ${activeScene?.toString().length ?? 0}',
+                          '字数: ${activeScene.wordCount}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
+                    if (activeScene.summary.content.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.description_outlined, 
+                            size: 16, 
+                            color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '现有摘要: ${activeScene.summary.content}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ] else ...[
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
@@ -267,6 +274,26 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
           // 生成结果
           BlocBuilder<PromptBloc, PromptState>(
             builder: (context, promptState) {
+              // 如果生成内容有更新且未被手动编辑，则更新控制器内容
+              if (promptState.generatedContent.isNotEmpty && 
+                  !_contentEdited &&
+                  _summaryController.text != promptState.generatedContent) {
+                _summaryController.text = promptState.generatedContent;
+                
+                // 如果用户没有主动滚动，自动滚动到底部
+                if (!_userScrolled && _scrollController.hasClients) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (_scrollController.hasClients) {
+                      _scrollController.animateTo(
+                        _scrollController.position.maxScrollExtent,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOut,
+                      );
+                    }
+                  });
+                }
+              }
+              
               return Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,12 +308,39 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
                           ),
                         ),
                         if (promptState.generatedContent.isNotEmpty)
-                          IconButton(
-                            onPressed: () => _copyToClipboard(promptState.generatedContent),
-                            icon: const Icon(Icons.copy, size: 18),
-                            tooltip: '复制',
-                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                            padding: const EdgeInsets.all(8),
+                          Row(
+                            children: [
+                              IconButton(
+                                onPressed: () => _copyToClipboard(_summaryController.text),
+                                icon: const Icon(Icons.copy, size: 18),
+                                tooltip: '复制',
+                                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                padding: const EdgeInsets.all(8),
+                              ),
+                              IconButton(
+                                onPressed: () {
+                                  // 将摘要应用到场景
+                                  if (state.activeSceneId != null && 
+                                      state.activeChapterId != null && 
+                                      state.activeActId != null) {
+                                    context.read<EditorBloc>().add(UpdateSummary(
+                                      novelId: widget.novelId,
+                                      actId: state.activeActId!,
+                                      chapterId: state.activeChapterId!,
+                                      sceneId: state.activeSceneId!,
+                                      summary: _summaryController.text,
+                                    ));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('摘要已应用到场景')),
+                                    );
+                                  }
+                                },
+                                icon: const Icon(Icons.save, size: 18),
+                                tooltip: '应用为场景摘要',
+                                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                padding: const EdgeInsets.all(8),
+                              ),
+                            ],
                           ),
                       ],
                     ),
@@ -294,69 +348,65 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
                     Expanded(
                       child: Stack(
                         children: [
-                          // 生成内容
-                          if (promptState.generatedContent.isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surface,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.outlineVariant,
-                                  width: 0.5,
-                                ),
+                          // 生成内容显示区域（可编辑）
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surface,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.outlineVariant,
+                                width: 0.5,
                               ),
-                              child: SingleChildScrollView(
-                                controller: _scrollController,
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                child: Text(
-                                  promptState.generatedContent,
+                            ),
+                            child: promptState.generatedContent.isNotEmpty
+                              ? TextField(
+                                  controller: _summaryController,
+                                  scrollController: _scrollController,
+                                  maxLines: null,
+                                  expands: true,
+                                  decoration: const InputDecoration(
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.all(4),
+                                  ),
                                   style: TextStyle(
                                     height: 1.8,
                                     fontSize: 15,
                                     color: Theme.of(context).colorScheme.onSurface,
                                   ),
-                                ),
-                              ),
-                            )
-                          else if (!promptState.isGenerating)
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              width: double.infinity,
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.outlineVariant,
-                                  width: 0.5,
-                                ),
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.description_outlined,
-                                    size: 48,
-                                    color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+                                  onChanged: (value) {
+                                    _contentEdited = true;
+                                  },
+                                  enabled: !promptState.isGenerating, // 生成过程中禁用编辑
+                                )
+                              : Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.description_outlined,
+                                        size: 48,
+                                        color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        '生成的摘要将显示在这里',
+                                        style: TextStyle(
+                                          color: Theme.of(context).colorScheme.outline,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    '生成的摘要将显示在这里',
-                                    style: TextStyle(
-                                      color: Theme.of(context).colorScheme.outline,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                                ),
+                          ),
 
-                          // 生成错误
+                          // 生成错误提示
                           if (promptState.generationError != null && !promptState.isGenerating)
                             Positioned(
                               bottom: 16,
-                              left: 0,
-                              right: 0,
+                              left: 16,
+                              right: 16,
                               child: Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
@@ -374,73 +424,47 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
                               ),
                             ),
 
-                          // 加载指示器
-                          if (promptState.isGenerating)
-                            promptState.generatedContent.isEmpty
-                              ? Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SizedBox(
-                                        width: 32,
-                                        height: 32,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 3,
-                                          valueColor: AlwaysStoppedAnimation<Color>(
-                                            Theme.of(context).colorScheme.primary,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Text(
-                                        '正在准备内容...',
-                                        style: TextStyle(
-                                          color: Theme.of(context).colorScheme.primary,
-                                          fontSize: 14,
-                                        ),
-                                      ),
+                          // 生成进度指示器（底部提示，不遮挡文字）
+                          if (promptState.isGenerating && promptState.generatedContent.isNotEmpty)
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              left: 0,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Theme.of(context).colorScheme.surface.withOpacity(0),
+                                      Theme.of(context).colorScheme.surface,
                                     ],
                                   ),
-                                )
-                              : Positioned(
-                                  bottom: 0,
-                                  right: 0,
-                                  left: 0,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [
-                                          Theme.of(context).colorScheme.surface.withOpacity(0),
-                                          Theme.of(context).colorScheme.surface,
-                                        ],
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).colorScheme.primary,
+                                        borderRadius: BorderRadius.circular(3),
                                       ),
                                     ),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Container(
-                                          width: 6,
-                                          height: 6,
-                                          decoration: BoxDecoration(
-                                            color: Theme.of(context).colorScheme.primary,
-                                            borderRadius: BorderRadius.circular(3),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          '正在生成中...',
-                                          style: TextStyle(
-                                            color: Theme.of(context).colorScheme.primary,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '正在生成中...',
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.primary,
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -448,29 +472,53 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
                     const SizedBox(height: 16),
                     
                     // 生成按钮
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: activeScene != null && !promptState.isGenerating
-                          ? () {
-                              // 生成摘要
-                              context.read<PromptBloc>().add(
-                                GenerateSceneSummary(
-                                  novelId: widget.novelId,
-                                  sceneId: activeScene.id,
-                                ),
-                              );
-                              
-                              // 重置用户滚动标记
-                              _userScrolled = false;
-                            }
-                          : null,
-                        icon: const Icon(Icons.auto_awesome, size: 16),
-                        label: const Text('生成摘要'),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: activeScene != null && !promptState.isGenerating
+                              ? () {
+                                  // 生成摘要
+                                  context.read<PromptBloc>().add(
+                                    GenerateSceneSummary(
+                                      novelId: widget.novelId,
+                                      sceneId: activeScene.id,
+                                    ),
+                                  );
+                                  
+                                  // 重置用户滚动标记和编辑标记
+                                  _userScrolled = false;
+                                  _contentEdited = false;
+                                }
+                              : null,
+                            icon: const Icon(Icons.auto_awesome, size: 16),
+                            label: const Text('生成摘要'),
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
                         ),
-                      ),
+                        if (promptState.generatedContent.isNotEmpty || _summaryController.text.isNotEmpty) ...[
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () {
+                                // 根据摘要生成场景
+                                final layoutManager = Provider.of<EditorLayoutManager>(context, listen: false);
+                                widget.onClose();
+                                layoutManager.toggleAISceneGenerationPanel();
+                              },
+                              icon: const Icon(Icons.create, size: 16),
+                              label: const Text('根据摘要生成场景'),
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                                foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
@@ -484,10 +532,37 @@ class _AISummaryPanelState extends State<AISummaryPanel> {
 
   // 获取当前活动场景
   dynamic _getActiveScene(EditorLoaded state) {
-    if (state.activeSceneId != null) {
-      // 简化实现，直接返回场景 ID
-      return state.activeSceneId;
+    if (state.activeSceneId != null && state.activeActId != null && state.activeChapterId != null) {
+      // 获取完整的场景对象而不仅仅是ID
+      final scene = state.novel.getScene(state.activeActId!, state.activeChapterId!, sceneId: state.activeSceneId);
+      if (scene != null) {
+        // 返回场景对象
+        return scene;
+      }
     }
     return null;
+  }
+
+  String _getSceneLocationString(EditorLoaded state, Scene scene) {
+    if (state.activeActId != null && state.activeChapterId != null) {
+      // 尝试获取Act和Chapter的名称
+      String actName = "未知幕";
+      String chapterName = "未知章节";
+      
+      // 获取Act名称
+      final act = state.novel.getAct(state.activeActId!);
+      if (act != null) {
+        actName = act.title;
+        
+        // 获取Chapter名称
+        final chapter = act.getChapter(state.activeChapterId!);
+        if (chapter != null) {
+          chapterName = chapter.title;
+        }
+      }
+      
+      return '$actName > $chapterName';
+    }
+    return '未知场景位置';
   }
 }

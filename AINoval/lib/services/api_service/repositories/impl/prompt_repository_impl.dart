@@ -126,7 +126,7 @@ class PromptRepositoryImpl implements PromptRepository {
     required String sceneId,
   }) async {
     try {
-      final url = '/api/novels/$novelId/scenes/$sceneId/summary';
+      final url = '/scenes/$sceneId/summarize';
       final result = await _apiClient.post(url);
 
       if (result is Map && result.containsKey('summary')) {

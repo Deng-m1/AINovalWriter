@@ -11,7 +11,6 @@ import 'package:ainoval/screens/editor/managers/editor_dialog_manager.dart';
 import 'package:ainoval/screens/editor/managers/editor_layout_manager.dart';
 import 'package:ainoval/screens/editor/managers/editor_state_manager.dart';
 import 'package:ainoval/screens/editor/widgets/ai_generation_panel.dart';
-import 'package:ainoval/screens/editor/widgets/ai_stream_generation_display.dart';
 import 'package:ainoval/screens/editor/widgets/ai_summary_panel.dart';
 import 'package:ainoval/screens/editor/widgets/novel_settings_view.dart';
 import 'package:ainoval/screens/settings/settings_panel.dart';
@@ -73,9 +72,9 @@ class EditorLayout extends StatelessWidget {
             if (state.isStreamingGeneration && 
                 state.aiSceneGenerationStatus == editor_bloc.AIGenerationStatus.generating) {
               final layoutManager = Provider.of<EditorLayoutManager>(context, listen: false);
-              if (!layoutManager.isAIStreamGenerationDisplayVisible) {
-                AppLogger.i('EditorLayout', '检测到流式生成状态，自动打开显示面板');
-                layoutManager.showAIStreamGenerationDisplay();
+              if (!layoutManager.isAISceneGenerationPanelVisible) {
+                AppLogger.i('EditorLayout', '检测到流式生成状态，自动打开AI生成面板');
+                layoutManager.toggleAISceneGenerationPanel();
               }
             }
           }
@@ -291,55 +290,6 @@ class EditorLayout extends StatelessWidget {
                             ),
                       ),
                     ),
-                  ),
-                ],
-                
-                // 右侧流式生成显示面板
-                if (layoutState.isAIStreamGenerationDisplayVisible) ...[
-                  DraggableDivider(
-                    onDragUpdate: (delta) {
-                      layoutState.updateChatSidebarWidth(delta.delta.dx);
-                    },
-                    onDragEnd: (_) {
-                      layoutState.saveChatSidebarWidth();
-                    },
-                  ),
-                  AIStreamGenerationDisplay(
-                    onClose: layoutState.hideAIStreamGenerationDisplay,
-                    onOpenInEditor: (content) {
-                      // 创建新场景并使用生成内容
-                      if (state.activeActId != null && state.activeChapterId != null) {
-                        // 生成随机ID
-                        final sceneId = 'scene_${DateTime.now().millisecondsSinceEpoch}';
-                        
-                        // 添加新场景
-                        controllerState.editorBloc.add(editor_bloc.AddNewScene(
-                          novelId: controllerState.novel.id,
-                          actId: state.activeActId!,
-                          chapterId: state.activeChapterId!,
-                          sceneId: sceneId,
-                        ));
-                        
-                        // 等待短暂时间，确保场景已添加
-                        Future.delayed(const Duration(milliseconds: 500), () {
-                          // 设置场景内容
-                          controllerState.editorBloc.add(editor_bloc.UpdateSceneContent(
-                            novelId: controllerState.novel.id,
-                            actId: state.activeActId!,
-                            chapterId: state.activeChapterId!,
-                            sceneId: sceneId,
-                            content: content,
-                          ));
-                          
-                          // 设置为活动场景
-                          controllerState.editorBloc.add(editor_bloc.SetActiveScene(
-                            actId: state.activeActId!,
-                            chapterId: state.activeChapterId!,
-                            sceneId: sceneId,
-                          ));
-                        });
-                      }
-                    },
                   ),
                 ],
                 

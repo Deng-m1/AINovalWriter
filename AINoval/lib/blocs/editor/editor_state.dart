@@ -45,6 +45,7 @@ class EditorLoaded extends EditorState {
     this.generatedSceneContent,
     this.aiGenerationError,
     this.isStreamingGeneration = false,
+    this.pendingSummary,
   });
   final novel_models.Novel novel;
   final Map<String, dynamic> settings;
@@ -75,6 +76,9 @@ class EditorLoaded extends EditorState {
   /// 是否正在使用流式生成
   final bool isStreamingGeneration;
   
+  /// 待处理的摘要内容，用于在打开AI生成面板时预填充
+  final String? pendingSummary;
+  
   @override
   List<Object?> get props => [
     novel,
@@ -93,6 +97,7 @@ class EditorLoaded extends EditorState {
     generatedSceneContent,
     aiGenerationError,
     isStreamingGeneration,
+    pendingSummary,
   ];
   
   EditorLoaded copyWith({
@@ -112,6 +117,7 @@ class EditorLoaded extends EditorState {
     String? generatedSceneContent,
     String? aiGenerationError,
     bool? isStreamingGeneration,
+    String? pendingSummary,
   }) {
     return EditorLoaded(
       novel: novel ?? this.novel,
@@ -130,6 +136,7 @@ class EditorLoaded extends EditorState {
       generatedSceneContent: generatedSceneContent ?? this.generatedSceneContent,
       aiGenerationError: aiGenerationError,
       isStreamingGeneration: isStreamingGeneration ?? this.isStreamingGeneration,
+      pendingSummary: pendingSummary,
     );
   }
 }

@@ -109,6 +109,27 @@ class SseClient {
           // Determine event name (treat null/empty as 'message')
           final currentEventName = (event.event == null || event.event!.isEmpty) ? 'message' : event.event;
 
+          // 处理complete事件 - 这是流式生成结束的标志
+          if (currentEventName == 'complete') {
+            AppLogger.i(_tag, '[SSE] 收到complete事件，表示流式生成已完成');
+            // 检查是否包含[DONE]标记，如果有，发送空字符串标记完成
+            try {
+              final json = jsonDecode(event.data ?? '{}');
+              if (json is Map<String, dynamic> && json.containsKey('data') && json['data'] == '[DONE]') {
+                AppLogger.i(_tag, '[SSE] 收到[DONE]标记，通知流式处理完成');
+                // 发送一个特殊的空字符串，这会被下游逻辑过滤掉
+                // 但会触发onDone回调，标记流式生成结束
+                if (!controller.isClosed) {
+                  controller.close();
+                }
+                return;
+              }
+            } catch (e) {
+              AppLogger.e(_tag, '[SSE] 解析complete事件数据失败', e);
+            }
+            return; // 无论如何都跳过complete事件的后续处理
+          }
+
           // Filter by expected event name
           if (eventName != null && currentEventName != eventName) {
             AppLogger.v(_tag, '[SSE] Skipping event name: $currentEventName (Expected: $eventName)');

@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.ainovel.server.config.ProxyConfig;
 import com.ainovel.server.domain.model.AIRequest;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
@@ -35,8 +36,9 @@ public class OpenAILangChain4jModelProvider extends LangChain4jModelProvider {
      * @param apiKey API密钥
      * @param apiEndpoint API端点
      */
-    public OpenAILangChain4jModelProvider(String modelName, String apiKey, String apiEndpoint) {
-        super("openai", modelName, apiKey, apiEndpoint);
+    public OpenAILangChain4jModelProvider(String modelName, String apiKey, String apiEndpoint,
+                                          ProxyConfig proxyConfig) {
+        super("openai", modelName, apiKey, apiEndpoint,proxyConfig);
     }
 
     @Override
