@@ -5,6 +5,7 @@ import 'package:ainoval/screens/editor/components/draggable_divider.dart';
 import 'package:ainoval/screens/editor/components/editor_app_bar.dart';
 import 'package:ainoval/screens/editor/components/editor_main_area.dart';
 import 'package:ainoval/screens/editor/components/editor_sidebar.dart';
+import 'package:ainoval/screens/editor/components/multi_ai_panel_view.dart';
 import 'package:ainoval/screens/editor/components/plan_view.dart';
 import 'package:ainoval/screens/editor/controllers/editor_screen_controller.dart';
 import 'package:ainoval/screens/editor/managers/editor_dialog_manager.dart';
@@ -22,6 +23,7 @@ import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
+import 'package:ainoval/models/editor_settings.dart';
 
 /// 编辑器布局组件
 /// 负责组织编辑器的整体布局
@@ -157,6 +159,8 @@ class EditorLayout extends StatelessWidget {
   Widget _buildMainLayout(BuildContext context, editor_bloc.EditorLoaded state) {
     return Consumer2<EditorLayoutManager, EditorScreenController>(
       builder: (context, layoutState, controllerState, child) {
+        final hasVisibleAIPanels = layoutState.visiblePanels.isNotEmpty;
+        
         return Stack(
           children: [
             Row(
@@ -251,84 +255,35 @@ class EditorLayout extends StatelessWidget {
                                         ),
                                       ),
                                 ),
+                                
+                                // 右侧多AI面板组件
+                                if (hasVisibleAIPanels) ...[
+                                  DraggableDivider(
+                                    onDragUpdate: (delta) {
+                                      // 更新最左侧面板的宽度，这里影响主编辑区域和面板的边界
+                                      final firstPanelId = layoutState.visiblePanels.first;
+                                      layoutState.updatePanelWidth(firstPanelId, delta.delta.dx);
+                                    },
+                                    onDragEnd: (_) {
+                                      layoutState.savePanelWidths();
+                                    },
+                                  ),
+                                  // 使用多面板组件
+                                  RepositoryProvider<PromptRepository>(
+                                    create: (context) => controllerState.promptRepository,
+                                    child: MultiAIPanelView(
+                                      novelId: controllerState.novel.id,
+                                      chapterId: state.activeChapterId,
+                                      layoutManager: layoutState,
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                       ),
                     ],
                   ),
                 ),
-                // 右侧AI生成面板
-                if (layoutState.isAISceneGenerationPanelVisible || layoutState.isAISummaryPanelVisible) ...[
-                  DraggableDivider(
-                    onDragUpdate: (delta) {
-                      layoutState.updateChatSidebarWidth(delta.delta.dx);
-                    },
-                    onDragEnd: (_) {
-                      layoutState.saveChatSidebarWidth();
-                    },
-                  ),
-                  SizedBox(
-                    width: layoutState.chatSidebarWidth,
-                    child: MultiRepositoryProvider(
-                      providers: [
-                        RepositoryProvider<PromptRepository>(
-                          create: (context) => controllerState.promptRepository,
-                        ),
-                      ],
-                      child: BlocProvider<PromptBloc>(
-                        create: (context) => PromptBloc(
-                          promptRepository: RepositoryProvider.of<PromptRepository>(context),
-                        ),
-                        child: layoutState.isAISceneGenerationPanelVisible
-                          ? AIGenerationPanel(
-                              novelId: controllerState.novel.id,
-                              onClose: layoutState.toggleAISceneGenerationPanel,
-                            )
-                          : AISummaryPanel(
-                              novelId: controllerState.novel.id,
-                              onClose: layoutState.toggleAISummaryPanel,
-                            ),
-                      ),
-                    ),
-                  ),
-                ],
-                
-                // 右侧AI聊天面板
-                if (layoutState.isAIChatSidebarVisible) ...[
-                  DraggableDivider(
-                    onDragUpdate: (delta) {
-                      layoutState.updateChatSidebarWidth(delta.delta.dx);
-                    },
-                    onDragEnd: (_) {
-                      layoutState.saveChatSidebarWidth();
-                    },
-                  ),
-                  SizedBox(
-                    width: layoutState.chatSidebarWidth,
-                    child: BlocBuilder<editor_bloc.EditorBloc, editor_bloc.EditorState>(
-                      buildWhen: (previous, current) {
-                        // 只在状态类型变化或chapterId变化时重建
-                        if (previous.runtimeType != current.runtimeType) {
-                          return true;
-                        }
-                        if (previous is editor_bloc.EditorLoaded && current is editor_bloc.EditorLoaded) {
-                          return previous.activeChapterId != current.activeChapterId;
-                        }
-                        return true;
-                      },
-                      builder: (context, state) {
-                        if (state is editor_bloc.EditorLoaded) {
-                          return AIChatSidebar(
-                            novelId: controllerState.novel.id,
-                            chapterId: state.activeChapterId,
-                            onClose: layoutState.toggleAIChatSidebar,
-                          );
-                        }
-                        return const Center(child: CircularProgressIndicator());
-                      },
-                    ),
-                  )
-                ],
               ],
             ),
             // 侧边栏切换按钮
@@ -383,13 +338,18 @@ class EditorLayout extends StatelessWidget {
                             : SettingsPanel(
                                 userId: controllerState.currentUserId!,
                                 onClose: layoutState.toggleSettingsPanel,
+                                editorSettings: EditorSettings.fromMap(state.settings),
+                                onEditorSettingsChanged: (settings) {
+                                  context.read<editor_bloc.EditorBloc>().add(
+                                      editor_bloc.UpdateEditorSettings(settings: settings.toMap()));
+                                },
                               ),
                       ),
                     ),
                   ),
                 ),
               ),
-            // 浮动按钮
+            // 浮动按钮 - 当没有AI聊天面板时显示
             if (!layoutState.isAIChatSidebarVisible && !state.isSaving)
               Positioned(
                 right: 16,

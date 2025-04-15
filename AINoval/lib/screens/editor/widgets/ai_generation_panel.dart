@@ -18,10 +18,12 @@ class AIGenerationPanel extends StatefulWidget {
     Key? key,
     required this.novelId,
     required this.onClose,
+    this.isCardMode = false,
   }) : super(key: key);
 
   final String novelId;
   final VoidCallback onClose;
+  final bool isCardMode; // 是否以卡片模式显示
 
   @override
   State<AIGenerationPanel> createState() => _AIGenerationPanelState();
@@ -34,6 +36,8 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> {
   final ScrollController _scrollController = ScrollController();
   bool _userScrolled = false;
   bool _contentEdited = false;
+  bool _isGenerating = false;
+  String _generatedText = '';
 
   @override
   void initState() {
@@ -109,6 +113,446 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> {
     });
   }
 
+  /// 构建章节下拉菜单选项
+  List<DropdownMenuItem<String>> _buildChapterDropdownItems(Novel novel) {
+    final items = <DropdownMenuItem<String>>[];
+
+    for (final act in novel.acts) {
+      // 添加Act分组标题
+      items.add(
+        DropdownMenuItem<String>(
+          enabled: false,
+          child: Container(
+            margin: const EdgeInsets.only(top: 8, bottom: 4),
+            child: Text(
+              act.title,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // 添加Act下的Chapter
+      for (final chapter in act.chapters) {
+        items.add(
+          DropdownMenuItem<String>(
+            value: chapter.id,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  const SizedBox(width: 12), // 缩进
+                  const Icon(Icons.menu_book_outlined, size: 16, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      chapter.title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    return items;
+  }
+
+  /// 显示提示词模板选择对话框
+  void _showPromptTemplateSelectionDialog(PromptType type) {
+    final searchController = TextEditingController();
+    String searchQuery = '';
+
+    showDialog(
+      context: context,
+      builder: (context) => BlocBuilder<PromptBloc, PromptState>(
+        builder: (context, state) {
+          // 获取对应类型的模板
+          final templates = type == PromptType.summary 
+              ? state.summaryPrompts 
+              : state.stylePrompts;
+          
+          // 应用搜索过滤
+          final filteredTemplates = templates.where((template) {
+            if (searchQuery.isEmpty) return true;
+            return template.title.toLowerCase().contains(searchQuery.toLowerCase()) ||
+                  template.content.toLowerCase().contains(searchQuery.toLowerCase());
+          }).toList();
+          
+          final title = type == PromptType.summary 
+              ? '选择摘要模板' 
+              : '选择风格模板';
+          
+          final controllerToUpdate = type == PromptType.summary 
+              ? _summaryController 
+              : _styleController;
+          
+          return AlertDialog(
+            title: Text(title),
+            contentPadding: const EdgeInsets.only(top: 20, left: 24, right: 24),
+            content: SizedBox(
+              width: 550,
+              height: 450,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 搜索框
+                  TextField(
+                    controller: searchController,
+                    decoration: InputDecoration(
+                      hintText: '搜索模板...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: Theme.of(context).colorScheme.outline,
+                          width: 1,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 16,
+                      ),
+                    ),
+                    onChanged: (value) {
+                      searchQuery = value;
+                      (context as Element).markNeedsBuild();
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // 模板列表
+                  Expanded(
+                    child: filteredTemplates.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.note_alt_outlined,
+                                  size: 48,
+                                  color: Colors.grey.withOpacity(0.5),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  searchQuery.isEmpty 
+                                      ? '暂无模板，请先添加模板' 
+                                      : '没有找到匹配的模板',
+                                  style: const TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: filteredTemplates.length,
+                            separatorBuilder: (context, index) => const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final template = filteredTemplates[index];
+                              return Card(
+                                elevation: 0,
+                                margin: const EdgeInsets.symmetric(vertical: 4),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  side: BorderSide(
+                                    color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: ListTile(
+                                  title: Text(
+                                    template.title,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  subtitle: Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      template.content,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        height: 1.4,
+                                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                                      ),
+                                    ),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16, 
+                                    vertical: 8,
+                                  ),
+                                  onTap: () {
+                                    // 更新对应的编辑器内容
+                                    controllerToUpdate.text = template.content;
+                                    Navigator.of(context).pop();
+                                  },
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.edit_outlined, 
+                                          size: 18,
+                                          color: Theme.of(context).colorScheme.primary,
+                                        ),
+                                        tooltip: '编辑模板',
+                                        style: IconButton.styleFrom(
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                        ),
+                                        onPressed: () {
+                                          Navigator.of(context).pop();
+                                          // 延迟执行，避免对话框关闭后立即打开另一个对话框
+                                          Future.delayed(const Duration(milliseconds: 100), () {
+                                            _showEditPromptTemplateDialog(template);
+                                          });
+                                        },
+                                      ),
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.delete_outline, 
+                                          size: 18,
+                                          color: Theme.of(context).colorScheme.error,
+                                        ),
+                                        tooltip: '删除模板',
+                                        style: IconButton.styleFrom(
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                        ),
+                                        onPressed: () {
+                                          // 删除确认对话框
+                                          showDialog(
+                                            context: context,
+                                            builder: (context) => AlertDialog(
+                                              title: const Text('确认删除'),
+                                              content: Text('确定要删除模板 "${template.title}" 吗？'),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () => Navigator.of(context).pop(),
+                                                  child: const Text('取消'),
+                                                ),
+                                                FilledButton(
+                                                  onPressed: () {
+                                                    // 删除模板
+                                                    context.read<PromptBloc>().add(
+                                                      DeletePromptTemplateRequested(template.id),
+                                                    );
+                                                    Navigator.of(context).pop();
+                                                  },
+                                                  style: FilledButton.styleFrom(
+                                                    backgroundColor: Theme.of(context).colorScheme.error,
+                                                    foregroundColor: Theme.of(context).colorScheme.onError,
+                                                  ),
+                                                  child: const Text('删除'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton.icon(
+                icon: const Icon(Icons.add),
+                label: const Text('添加模板'),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  // 延迟执行，避免对话框关闭后立即打开另一个对话框
+                  Future.delayed(const Duration(milliseconds: 100), () {
+                    _showAddPromptTemplateDialog(type);
+                  });
+                },
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('关闭'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+  
+  /// 显示编辑提示词模板对话框
+  void _showEditPromptTemplateDialog(PromptItem template) {
+    final titleController = TextEditingController(text: template.title);
+    final contentController = TextEditingController(text: template.content);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              Icons.edit_note,
+              color: Theme.of(context).colorScheme.primary,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            const Text('编辑提示词模板'),
+          ],
+        ),
+        content: SizedBox(
+          width: 600,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 模板类型标识
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: template.type == PromptType.summary
+                        ? Colors.blue.withOpacity(0.1)
+                        : Colors.teal.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        template.type == PromptType.summary
+                            ? Icons.description_outlined
+                            : Icons.style,
+                        size: 16,
+                        color: template.type == PromptType.summary
+                            ? Colors.blue
+                            : Colors.teal,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        template.type == PromptType.summary ? '摘要模板' : '风格模板',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: template.type == PromptType.summary
+                              ? Colors.blue
+                              : Colors.teal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                
+                // 标题输入
+                TextField(
+                  controller: titleController,
+                  decoration: InputDecoration(
+                    labelText: '模板名称',
+                    hintText: '输入一个简短的名称',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    prefixIcon: const Icon(Icons.title),
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                  ),
+                  maxLength: 20,
+                ),
+                const SizedBox(height: 20),
+                
+                // 内容输入
+                TextField(
+                  controller: contentController,
+                  decoration: InputDecoration(
+                    labelText: '模板内容',
+                    alignLabelWithHint: true,
+                    hintText: template.type == PromptType.summary 
+                        ? '输入摘要提示词内容' 
+                        : '输入风格提示词内容',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                  ),
+                  maxLines: 8,
+                  minLines: 5,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            child: const Text('取消'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.save),
+            label: const Text('保存'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            onPressed: () {
+              if (titleController.text.isNotEmpty && contentController.text.isNotEmpty) {
+                // 删除旧模板
+                context.read<PromptBloc>().add(
+                  DeletePromptTemplateRequested(template.id),
+                );
+                
+                // 添加新模板（更新后的）
+                context.read<PromptBloc>().add(
+                  AddPromptTemplateRequested(
+                    title: titleController.text,
+                    content: contentController.text,
+                    type: template.type,
+                  ),
+                );
+                
+                Navigator.of(context).pop();
+                
+                // 显示更新成功提示
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('模板已更新'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 显示添加提示词模板对话框
   void _showAddPromptTemplateDialog(PromptType type) {
     final titleController = TextEditingController();
@@ -117,39 +561,151 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(type == PromptType.summary ? '添加摘要提示词模板' : '添加风格提示词模板'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleController,
-                decoration: const InputDecoration(
-                  labelText: '模板名称',
-                  hintText: '输入一个简短的名称',
+        title: Row(
+          children: [
+            Icon(
+              Icons.add_circle_outline,
+              color: Theme.of(context).colorScheme.primary,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            Text(type == PromptType.summary ? '添加摘要提示词模板' : '添加风格提示词模板'),
+          ],
+        ),
+        content: SizedBox(
+          width: 600,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 模板类型标识
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: type == PromptType.summary
+                        ? Colors.blue.withOpacity(0.1)
+                        : Colors.teal.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        type == PromptType.summary
+                            ? Icons.description_outlined
+                            : Icons.style,
+                        size: 16,
+                        color: type == PromptType.summary
+                            ? Colors.blue
+                            : Colors.teal,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        type == PromptType.summary ? '摘要模板' : '风格模板',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: type == PromptType.summary
+                              ? Colors.blue
+                              : Colors.teal,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                maxLength: 20,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: contentController,
-                decoration: InputDecoration(
-                  labelText: '模板内容',
-                  hintText: type == PromptType.summary 
-                      ? '输入摘要提示词内容' 
-                      : '输入风格提示词内容',
+                const SizedBox(height: 20),
+                
+                // 标题输入
+                TextField(
+                  controller: titleController,
+                  decoration: InputDecoration(
+                    labelText: '模板名称',
+                    hintText: '输入一个简短的名称',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    prefixIcon: const Icon(Icons.title),
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                  ),
+                  maxLength: 20,
                 ),
-                maxLines: 3,
-              ),
-            ],
+                const SizedBox(height: 20),
+                
+                // 内容输入
+                TextField(
+                  controller: contentController,
+                  decoration: InputDecoration(
+                    labelText: '模板内容',
+                    alignLabelWithHint: true,
+                    hintText: type == PromptType.summary 
+                        ? '输入摘要提示词内容' 
+                        : '输入风格提示词内容',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                  ),
+                  maxLines: 8,
+                  minLines: 5,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    height: 1.5,
+                  ),
+                ),
+                
+                const SizedBox(height: 12),
+                // 提示信息
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          type == PromptType.summary
+                              ? '创建一个好的摘要模板可以帮助AI更准确地理解场景内容，生成更贴切的摘要。'
+                              : '风格模板将影响AI生成内容的文风和表达方式，可以根据需要自定义不同风格。',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.of(context).pop(),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
             child: const Text('取消'),
           ),
-          FilledButton(
+          FilledButton.icon(
+            icon: const Icon(Icons.save),
+            label: const Text('保存'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
             onPressed: () {
               if (titleController.text.isNotEmpty && contentController.text.isNotEmpty) {
                 // 添加提示词模板
@@ -161,15 +717,247 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> {
                   ),
                 );
                 Navigator.of(context).pop();
+                
+                // 显示添加成功提示
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('已添加新模板'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
               }
             },
-            child: const Text('保存'),
           ),
         ],
       ),
     );
   }
-  
+
+  /// 显示编辑默认提示词对话框
+  void _showEditDefaultPromptsDialog(BuildContext context) {
+    // 创建提示词控制器
+    final sceneToSummaryController = TextEditingController();
+    final summaryToSceneController = TextEditingController();
+    
+    // 从Bloc中获取当前提示词
+    final promptState = context.read<PromptBloc>().state;
+    
+    // 填充提示词控制器
+    if (promptState.prompts.containsKey(AIFeatureType.sceneToSummary)) {
+      sceneToSummaryController.text = promptState.prompts[AIFeatureType.sceneToSummary]!.activePrompt;
+    }
+    
+    if (promptState.prompts.containsKey(AIFeatureType.summaryToScene)) {
+      summaryToSceneController.text = promptState.prompts[AIFeatureType.summaryToScene]!.activePrompt;
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              Icons.settings_suggest,
+              color: Theme.of(context).colorScheme.primary,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            const Text('编辑默认提示词'),
+          ],
+        ),
+        content: SizedBox(
+          width: 600,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 场景生成摘要提示词
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.summarize,
+                        size: 16,
+                        color: Colors.blue,
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        '场景生成摘要',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: sceneToSummaryController,
+                  decoration: InputDecoration(
+                    labelText: '场景生成摘要提示词',
+                    alignLabelWithHint: true,
+                    hintText: '输入用于生成摘要的提示词',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                  ),
+                  maxLines: 8,
+                  minLines: 5,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    height: 1.5,
+                  ),
+                ),
+                
+                const SizedBox(height: 24),
+                
+                // 摘要生成场景提示词
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.description_outlined,
+                        size: 16,
+                        color: Colors.teal,
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        '摘要生成场景',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.teal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: summaryToSceneController,
+                  decoration: InputDecoration(
+                    labelText: '摘要生成场景提示词',
+                    alignLabelWithHint: true,
+                    hintText: '输入用于生成场景的提示词',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                  ),
+                  maxLines: 8,
+                  minLines: 5,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    height: 1.5,
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // 提示信息
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '默认提示词会影响所有未使用特定模板的AI生成。编辑这些提示词可以全局控制AI生成的方向和质量。',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            child: const Text('取消'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.save),
+            label: const Text('保存'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            onPressed: () {
+              // 保存场景生成摘要提示词
+              if (sceneToSummaryController.text.isNotEmpty) {
+                context.read<PromptBloc>().add(
+                  SavePromptRequested(
+                    AIFeatureType.sceneToSummary,
+                    sceneToSummaryController.text,
+                  ),
+                );
+              }
+              
+              // 保存摘要生成场景提示词
+              if (summaryToSceneController.text.isNotEmpty) {
+                context.read<PromptBloc>().add(
+                  SavePromptRequested(
+                    AIFeatureType.summaryToScene,
+                    summaryToSceneController.text,
+                  ),
+                );
+              }
+              
+              // 显示保存成功提示
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('提示词已保存'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+              
+              Navigator.of(context).pop();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 重新初始化生成状态
   void _resetGenerationState() {
     _userScrolled = false;
@@ -289,6 +1077,25 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> {
                   ),
                   Row(
                     children: [
+                      // 添加编辑提示词按钮
+                      BlocBuilder<PromptBloc, PromptState>(
+                        builder: (context, promptState) {
+                          return Tooltip(
+                            message: '编辑默认提示词',
+                            child: TextButton.icon(
+                              icon: const Icon(Icons.edit_note, size: 18),
+                              label: const Text('编辑提示词'),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                textStyle: const TextStyle(fontSize: 13),
+                              ),
+                              onPressed: () {
+                                _showEditDefaultPromptsDialog(context);
+                              },
+                            ),
+                          );
+                        },
+                      ),
                       // 添加帮助按钮
                       Tooltip(
                         message: '使用说明',
@@ -389,70 +1196,20 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> {
               BlocBuilder<PromptBloc, PromptState>(
                 builder: (context, promptState) {
                   if (promptState is PromptLoaded && promptState.summaryPrompts.isNotEmpty) {
-                    return PopupMenuButton<String>(
-                      tooltip: '选择提示词',
+                    return TextButton.icon(
                       icon: Icon(
                         Icons.auto_awesome,
                         size: 18,
                         color: Theme.of(context).colorScheme.primary,
                       ),
-                      itemBuilder: (context) => [
-                        const PopupMenuItem<String>(
-                          enabled: false,
-                          child: Text(
-                            '选择摘要提示词模板',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ),
-                        ...promptState.summaryPrompts.map((prompt) => PopupMenuItem<String>(
-                          value: prompt.content,
-                          child: Text(
-                            prompt.title,
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        )),
-                        const PopupMenuItem<String>(
-                          enabled: false,
-                          height: 1,
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Divider(height: 1),
-                        ),
-                        PopupMenuItem<String>(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.add_circle_outline,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                '创建摘要模板',
-                                style: TextStyle(fontSize: 14),
-                              ),
-                            ],
-                          ),
-                          onTap: () {
-                            // 延迟执行，避免菜单关闭后立即打开对话框
-                            Future.delayed(const Duration(milliseconds: 100), () {
-                              _showAddPromptTemplateDialog(PromptType.summary);
-                            });
-                          },
-                        ),
-                      ],
-                      onSelected: (promptContent) {
-                        // 将选中的提示词添加到当前文本
-                        final currentText = _summaryController.text;
-                        if (currentText.isNotEmpty && !currentText.endsWith('\n')) {
-                          _summaryController.text = '$currentText\n$promptContent';
-                        } else {
-                          _summaryController.text = '$currentText$promptContent';
-                        }
+                      label: const Text('选择模板'),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        textStyle: const TextStyle(fontSize: 13),
+                      ),
+                      onPressed: () {
+                        // 弹出模板选择对话框
+                        _showPromptTemplateSelectionDialog(PromptType.summary);
                       },
                     );
                   }
@@ -536,69 +1293,20 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> {
               BlocBuilder<PromptBloc, PromptState>(
                 builder: (context, promptState) {
                   if (promptState is PromptLoaded && promptState.stylePrompts.isNotEmpty) {
-                    return PopupMenuButton<String>(
-                      tooltip: '选择风格提示词',
+                    return TextButton.icon(
                       icon: Icon(
                         Icons.style,
                         size: 18,
                         color: Theme.of(context).colorScheme.primary,
                       ),
-                      itemBuilder: (context) => [
-                        const PopupMenuItem<String>(
-                          enabled: false,
-                          child: Text(
-                            '选择风格提示词模板',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ),
-                        ...promptState.stylePrompts.map((prompt) => PopupMenuItem<String>(
-                          value: prompt.content,
-                          child: Text(
-                            prompt.title,
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        )),
-                        const PopupMenuItem<String>(
-                          enabled: false,
-                          height: 1,
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Divider(height: 1),
-                        ),
-                        PopupMenuItem<String>(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.add_circle_outline,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                '创建风格模板',
-                                style: TextStyle(fontSize: 14),
-                              ),
-                            ],
-                          ),
-                          onTap: () {
-                            // 延迟执行，避免菜单关闭后立即打开对话框
-                            Future.delayed(const Duration(milliseconds: 100), () {
-                              _showAddPromptTemplateDialog(PromptType.style);
-                            });
-                          },
-                        ),
-                      ],
-                      onSelected: (promptContent) {
-                        final currentText = _styleController.text;
-                        if (currentText.isNotEmpty && !currentText.endsWith('，') && !currentText.endsWith('、')) {
-                          _styleController.text = '$currentText、$promptContent';
-                        } else {
-                          _styleController.text = '$currentText$promptContent';
-                        }
+                      label: const Text('选择风格'),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        textStyle: const TextStyle(fontSize: 13),
+                      ),
+                      onPressed: () {
+                        // 弹出风格模板选择对话框
+                        _showPromptTemplateSelectionDialog(PromptType.style);
                       },
                     );
                   }
@@ -1257,39 +1965,14 @@ class _AIGenerationPanelState extends State<AIGenerationPanel> {
     );
   }
 
-  /// 构建章节下拉菜单选项
-  List<DropdownMenuItem<String>> _buildChapterDropdownItems(Novel novel) {
-    final items = <DropdownMenuItem<String>>[];
+  Future<void> _generate() async {
+    if (_isGenerating) return;
 
-    for (final act in novel.acts) {
-      // 添加Act分组标题
-      items.add(
-        DropdownMenuItem<String>(
-          enabled: false,
-          child: Text(
-            act.title,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
-            ),
-          ),
-        ),
-      );
-
-      // 添加Act下的Chapter
-      for (final chapter in act.chapters) {
-        items.add(
-          DropdownMenuItem<String>(
-            value: chapter.id,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 16.0),
-              child: Text(chapter.title),
-            ),
-          ),
-        );
-      }
-    }
-
-    return items;
+    _resetGenerationState();
+    
+    setState(() {
+      _isGenerating = true;
+      _generatedText = '';
+    });
   }
 }

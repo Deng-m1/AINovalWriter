@@ -127,14 +127,14 @@ class PromptBloc extends Bloc<PromptEvent, PromptState> {
   }
 
   /// 处理选择功能类型事件
-  void _onSelectFeatureRequested(
+  Future<void> _onSelectFeatureRequested(
     SelectFeatureRequested event,
     Emitter<PromptState> emit,
-  ) {
+  ) async {
     final featureType = event.featureType;
     if (!state.prompts.containsKey(featureType)) {
       // 如果当前没有这个类型的提示词，尝试获取
-      _loadPromptForFeature(featureType, emit);
+      await _loadPromptForFeature(featureType, emit);
     } else {
       // 否则直接更新选中的功能类型
       emit(state.copyWith(selectedFeatureType: featureType));

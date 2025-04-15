@@ -114,7 +114,14 @@ class UserPromptTemplateDto {
         type = AIFeatureType.summaryToScene;
         break;
       default:
-        throw ArgumentError('未知的功能类型: $featureTypeStr');
+        // 尝试直接匹配枚举的名称
+        try {
+          type = AIFeatureType.values.firstWhere(
+            (t) => t.toString().split('.').last.toUpperCase() == featureTypeStr.toUpperCase()
+          );
+        } catch (e) {
+          throw ArgumentError('未知的功能类型: $featureTypeStr');
+        }
     }
     
     return UserPromptTemplateDto(
