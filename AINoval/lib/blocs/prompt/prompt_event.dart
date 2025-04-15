@@ -14,6 +14,11 @@ class LoadAllPromptsRequested extends PromptEvent {
   const LoadAllPromptsRequested();
 }
 
+/// 请求加载提示词模板事件
+class LoadPromptTemplatesRequested extends PromptEvent {
+  const LoadPromptTemplatesRequested();
+}
+
 /// 请求选择功能类型事件
 class SelectFeatureRequested extends PromptEvent {
   const SelectFeatureRequested(this.featureType);
@@ -33,6 +38,32 @@ class SavePromptRequested extends PromptEvent {
 
   @override
   List<Object?> get props => [featureType, promptText];
+}
+
+/// 请求添加提示词模板事件
+class AddPromptTemplateRequested extends PromptEvent {
+  const AddPromptTemplateRequested({
+    required this.title,
+    required this.content,
+    required this.type,
+  });
+
+  final String title;
+  final String content;
+  final PromptType type;
+
+  @override
+  List<Object?> get props => [title, content, type];
+}
+
+/// 请求删除提示词模板事件
+class DeletePromptTemplateRequested extends PromptEvent {
+  const DeletePromptTemplateRequested(this.promptId);
+
+  final String promptId;
+
+  @override
+  List<Object?> get props => [promptId];
 }
 
 /// 请求重置提示词事件
