@@ -1,6 +1,10 @@
 package com.ainovel.server.web.controller;
 
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -19,6 +23,8 @@ import com.ainovel.server.web.dto.GenerateSceneFromSummaryRequest;
 import com.ainovel.server.web.dto.GenerateSceneFromSummaryResponse;
 import com.ainovel.server.web.dto.SummarizeSceneRequest;
 import com.ainovel.server.web.dto.SummarizeSceneResponse;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
@@ -26,21 +32,22 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * AI生成控制器
- * 提供场景摘要互转相关API
+ * AI生成控制器 提供场景摘要互转相关API
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1")
 public class AIGenerationController extends ReactiveBaseController {
-    
+
     private final NovelAIService novelAIService;
-    
+    private final ObjectMapper objectMapper;
+
     @Autowired
-    public AIGenerationController(NovelAIService novelAIService) {
+    public AIGenerationController(NovelAIService novelAIService, ObjectMapper objectMapper) {
         this.novelAIService = novelAIService;
+        this.objectMapper = objectMapper;
     }
-    
+
     /**
      * 为指定场景生成摘要
      *
@@ -54,17 +61,17 @@ public class AIGenerationController extends ReactiveBaseController {
             @AuthenticationPrincipal CurrentUser currentUser,
             @PathVariable String sceneId,
             @RequestBody(required = false) SummarizeSceneRequest request) {
-        
+
         log.info("场景生成摘要请求, userId: {}, sceneId: {}", currentUser.getId(), sceneId);
-        
+
         // 如果请求为null，创建一个空请求
         if (request == null) {
             request = new SummarizeSceneRequest();
         }
-        
+
         return novelAIService.summarizeScene(currentUser.getId(), sceneId, request);
     }
-    
+
     /**
      * 根据摘要生成场景内容（流式）
      *
@@ -81,36 +88,143 @@ public class AIGenerationController extends ReactiveBaseController {
             @AuthenticationPrincipal CurrentUser currentUser,
             @PathVariable String novelId,
             @Valid @RequestBody Mono<GenerateSceneFromSummaryRequest> requestMono) {
-        
+
         log.info("摘要生成场景内容请求(流式), userId: {}, novelId: {}", currentUser.getId(), novelId);
-        
-        return requestMono.flatMapMany(request ->
-                novelAIService.generateSceneFromSummaryStream(currentUser.getId(), novelId, request)
-                        .map(contentChunk -> ServerSentEvent.<String>builder()
-                                .event("message")
-                                .data(contentChunk)
-                                .build())
-                        // 添加心跳事件防止连接超时
-                        .mergeWith(Flux.interval(Duration.ofSeconds(15))
-                                .map(i -> ServerSentEvent.<String>builder()
-                                        .comment("keepalive")
-                                        .build()))
-                        .onErrorResume(e -> {
-                            // 处理流中的错误，发送错误事件
-                            log.error("生成场景内容流时出错", e);
-                            return Flux.just(ServerSentEvent.<String>builder()
-                                    .event("error")
-                                    .data("{\"error\": \"" + e.getMessage() + "\"}")
-                                    .build());
-                        })
-                        // 发送完成事件
-                        .concatWith(Flux.just(ServerSentEvent.<String>builder()
-                                .event("complete")
-                                .data("")
-                                .build()))
-        );
+
+        final long startTime = System.currentTimeMillis();
+
+        return requestMono
+                .doOnNext(request -> {
+                    log.info("摘要长度: {}, 样式说明长度: {}, 章节ID: {}, userId: {}, novelId: {}",
+                            request.getSummary().length(),
+                            request.getStyleInstructions() != null ? request.getStyleInstructions().length() : 0,
+                            request.getChapterId(),
+                            currentUser.getId(),
+                            novelId);
+                })
+                .flatMapMany(request -> {
+                    final AtomicBoolean hasReceivedContent = new AtomicBoolean(false);
+                    final AtomicBoolean isStreamCompleted = new AtomicBoolean(false);
+                    final AtomicLong firstContentTime = new AtomicLong(0);
+
+                    // 主内容流
+                    Flux<ServerSentEvent<String>> contentStream = novelAIService.generateSceneFromSummaryStream(currentUser.getId(), novelId, request)
+                            .filter(contentChunk -> {
+                                // 过滤heartbeat消息 - NovelAIServiceImpl 现在应该已经过滤了，但双重保险
+                                return !"heartbeat".equals(contentChunk);
+                            })
+                            .map(contentChunk -> {
+                                try {
+                                    if (!hasReceivedContent.get() && !"[DONE]".equals(contentChunk)) {
+                                        hasReceivedContent.set(true);
+                                        firstContentTime.set(System.currentTimeMillis());
+                                        log.info("收到首个内容块，耗时: {}ms", firstContentTime.get() - startTime);
+                                    }
+
+                                    if ("[DONE]".equals(contentChunk)) {
+                                        log.info("生成完成，发送完成事件，总耗时: {}ms", System.currentTimeMillis() - startTime);
+                                        isStreamCompleted.set(true);
+                                        return ServerSentEvent.<String>builder()
+                                                .event("complete")
+                                                .data("{\"data\":\"[DONE]\"}")
+                                                .build();
+                                    }
+
+                                    Map<String, String> dataMap = new HashMap<>();
+                                    dataMap.put("data", contentChunk);
+                                    String jsonData = objectMapper.writeValueAsString(dataMap);
+
+                                    return ServerSentEvent.<String>builder()
+                                            .event("message")
+                                            .data(jsonData)
+                                            .build();
+                                } catch (JsonProcessingException e) {
+                                    log.error("序列化内容块失败", e);
+                                    return ServerSentEvent.<String>builder() // 返回错误事件，而不是 null
+                                            .event("error")
+                                            .data("{\"error\":\"内容序列化失败\"}")
+                                            .build();
+                                }
+                            });
+
+                    // 添加监听器以跟踪流的完成状态 (这部分保留)
+                    contentStream = contentStream.doOnNext(event -> {
+                        if (event != null && event.event() != null && event.event().equals("complete")) {
+                            isStreamCompleted.set(true);
+                            log.debug("内容流已完成，将停止发送控制器心跳");
+                        }
+                    });
+
+                    // **移除 gracePeriodStream **
+                    // 创建简化的控制器级别心跳事件流 (仅用于保持连接)
+                    Flux<ServerSentEvent<String>> keepaliveStream = Flux.interval(Duration.ofSeconds(15)) // 每15秒发送一次
+                            .map(i -> {
+                                log.debug("发送SSE keepalive 注释 #{}", i);
+                                return ServerSentEvent.<String>builder()
+                                        .comment("keepalive") // 使用 SSE 注释进行 keepalive
+                                        .build();
+                            })
+                            // 只要主内容流没有完成，就继续发送 keepalive
+                            .takeWhile(event -> !isStreamCompleted.get());
+
+                    // **只合并内容流和控制器 keepalive 流**
+                    return Flux.merge(contentStream, keepaliveStream)
+                            .onErrorResume(e -> { // 保留现有的错误处理
+                                log.error("生成场景内容流时出错: {}", e.getMessage(), e);
+                                try {
+                                    isStreamCompleted.set(true); // 出错时也标记为完成
+                                    Map<String, String> errorMap = new HashMap<>();
+                                    errorMap.put("error", e.getMessage());
+                                    String jsonError = objectMapper.writeValueAsString(errorMap);
+                                    return Flux.just(
+                                            ServerSentEvent.<String>builder()
+                                                    .event("error")
+                                                    .data(jsonError)
+                                                    .build(),
+                                            ServerSentEvent.<String>builder()
+                                                    .event("complete")
+                                                    .data("{\"data\":\"[DONE]\"}")
+                                                    .build()
+                                    );
+                                } catch (JsonProcessingException jsonError) {
+                                    return Flux.just(
+                                            ServerSentEvent.<String>builder()
+                                                    .event("error")
+                                                    .data("{\"error\":\"序列化错误信息失败\"}")
+                                                    .build(),
+                                            ServerSentEvent.<String>builder()
+                                                    .event("complete")
+                                                    .data("{\"data\":\"[DONE]\"}")
+                                                    .build()
+                                    );
+                                }
+                            })
+                            .timeout(Duration.ofMinutes(5)) // 保留全局超时
+                            .switchIfEmpty(Mono.just( // 保留空流处理
+                                    ServerSentEvent.<String>builder()
+                                            .event("complete")
+                                            .data("{\"data\":\"[DONE]\"}")
+                                            .build()))
+                            .concatWith(Mono.defer(() -> { // 保留备用完成事件
+                                if (!isStreamCompleted.get()) {
+                                    log.info("添加备用完成事件，确保流正确关闭");
+                                    return Mono.just(ServerSentEvent.<String>builder()
+                                            .event("complete")
+                                            .data("{\"data\":\"[DONE]\"}")
+                                            .build());
+                                }
+                                return Mono.empty();
+                            }));
+                })
+                .doOnCancel(() -> {
+                    log.info("客户端取消了SSE连接，总耗时: {}ms", System.currentTimeMillis() - startTime);
+                    // 注意：这里的取消是客户端发起的，与之前的10秒超时不同
+                })
+                .doOnError(e -> {
+                    log.error("处理SSE流时发生顶层错误: {}", e.getMessage(), e);
+                });
     }
-    
+
     /**
      * 根据摘要生成场景内容（非流式）
      *
@@ -124,9 +238,9 @@ public class AIGenerationController extends ReactiveBaseController {
             @AuthenticationPrincipal CurrentUser currentUser,
             @PathVariable String novelId,
             @Valid @RequestBody GenerateSceneFromSummaryRequest request) {
-        
+
         log.info("摘要生成场景内容请求(非流式), userId: {}, novelId: {}", currentUser.getId(), novelId);
-        
+
         return novelAIService.generateSceneFromSummary(currentUser.getId(), novelId, request);
     }
-} 
+}

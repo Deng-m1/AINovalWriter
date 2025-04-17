@@ -456,6 +456,9 @@ class Scene {
     required this.wordCount,
     required this.summary,
     required this.lastEdited,
+    this.title = '',
+    this.actId = '',
+    this.chapterId = '',
     this.version = 1,
     this.history = const [],
   });
@@ -468,6 +471,9 @@ class Scene {
       wordCount: json['wordCount'] ?? 0,
       summary: Summary.fromJson(json['summary'] as Map<String, dynamic>),
       lastEdited: DateTime.parse(json['lastEdited'] as String),
+      title: json['title'] ?? '',
+      actId: json['actId'] ?? '',
+      chapterId: json['chapterId'] ?? '',
       version: json['version'] ?? 1,
       history: [],
     );
@@ -477,6 +483,9 @@ class Scene {
   final int wordCount;
   final Summary summary;
   final DateTime lastEdited;
+  final String title;
+  final String actId;
+  final String chapterId;
   final int version;
   final List<HistoryEntry> history;
 
@@ -488,6 +497,9 @@ class Scene {
       'wordCount': wordCount,
       'summary': summary.toJson(),
       'lastEdited': lastEdited.toIso8601String(),
+      'title': title,
+      'actId': actId,
+      'chapterId': chapterId,
       'version': version,
       'history': history.map((entry) => entry.toJson()).toList(),
     };
@@ -500,6 +512,9 @@ class Scene {
     int? wordCount,
     Summary? summary,
     DateTime? lastEdited,
+    String? title,
+    String? actId,
+    String? chapterId,
     int? version,
     List<HistoryEntry>? history,
   }) {
@@ -509,6 +524,9 @@ class Scene {
       wordCount: wordCount ?? this.wordCount,
       summary: summary ?? this.summary,
       lastEdited: lastEdited ?? this.lastEdited,
+      title: title ?? this.title,
+      actId: actId ?? this.actId,
+      chapterId: chapterId ?? this.chapterId,
       version: version ?? this.version,
       history: history ?? this.history,
     );
@@ -527,6 +545,9 @@ class Scene {
         content: '',
       ),
       lastEdited: now,
+      title: '',
+      actId: '',
+      chapterId: '',
       version: 1,
       history: [],
     );
@@ -545,6 +566,9 @@ class Scene {
         content: '',
       ),
       lastEdited: now,
+      title: '新场景',
+      actId: '',
+      chapterId: '',
       version: 1,
       history: [],
     );

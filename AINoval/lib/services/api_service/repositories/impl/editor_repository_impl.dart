@@ -1567,12 +1567,44 @@ class EditorRepositoryImpl implements EditorRepository {
         styleInstructions: styleInstructions,
       );
       
+      AppLogger.i(_tag, '开始流式生成场景内容，小说ID: $novelId, 摘要长度: ${summary.length}');
+      
       return SseClient().streamEvents<String>(
         path: '/novels/$novelId/scenes/generate-from-summary',
         method: SSERequestType.POST,
         body: request.toJson(),
-        parser: (json) => json['data'] as String? ?? '',
-      );
+        parser: (json) {
+          // 增强解析器的错误处理
+          if (json.containsKey('error')) {
+            AppLogger.e(_tag, '服务器返回错误: ${json['error']}');
+            throw ApiException(-1, '服务器返回错误: ${json['error']}');
+          }
+          
+          if (!json.containsKey('data')) {
+            AppLogger.w(_tag, '服务器响应中缺少data字段: $json');
+            return ''; // 返回空字符串而不是抛出异常
+          }
+          
+          final data = json['data'];
+          if (data == null) {
+            AppLogger.w(_tag, '服务器响应中data字段为null');
+            return '';
+          }
+          
+          if (data is! String) {
+            AppLogger.w(_tag, '服务器响应中data字段不是字符串类型: $data');
+            return data.toString();
+          }
+          
+          if (data == '[DONE]') {
+            AppLogger.i(_tag, '收到流式生成完成标记: [DONE]');
+            return '';
+          }
+          
+          return data;
+        },
+        connectionId: 'scene_gen_${DateTime.now().millisecondsSinceEpoch}',
+      ).where((chunk) => chunk.isNotEmpty); // 过滤掉空字符串
     } catch (e) {
       AppLogger.e(_tag, '流式生成场景内容失败，小说ID: $novelId', e);
       return Stream.error(Exception('流式生成场景内容失败: ${e.toString()}'));

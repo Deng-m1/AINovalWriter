@@ -16,25 +16,44 @@ class EditorLayoutManager extends ChangeNotifier {
   bool isNovelSettingsVisible = false;
   bool isAISummaryPanelVisible = false;
   bool isAISceneGenerationPanelVisible = false;
+  
+  // 多面板显示时的顺序和位置
+  final List<String> visiblePanels = [];
+  static const String aiChatPanel = 'aiChat';
+  static const String aiSummaryPanel = 'aiSummary';
+  static const String aiScenePanel = 'aiScene';
 
   // 侧边栏宽度
   double editorSidebarWidth = 280;
   double chatSidebarWidth = 380;
+  
+  // 多面板模式下的单个面板宽度
+  Map<String, double> panelWidths = {
+    aiChatPanel: 350,
+    aiSummaryPanel: 350,
+    aiScenePanel: 350,
+  };
 
   // 侧边栏宽度限制
   static const double minEditorSidebarWidth = 220;
   static const double maxEditorSidebarWidth = 400;
   static const double minChatSidebarWidth = 280;
   static const double maxChatSidebarWidth = 500;
+  static const double minPanelWidth = 280;
+  static const double maxPanelWidth = 400;
 
   // 持久化键
   static const String editorSidebarWidthPrefKey = 'editor_sidebar_width';
   static const String chatSidebarWidthPrefKey = 'chat_sidebar_width';
+  static const String panelWidthsPrefKey = 'multi_panel_widths';
+  static const String visiblePanelsPrefKey = 'visible_panels';
 
   // 加载保存的尺寸
   Future<void> _loadSavedDimensions() async {
     await _loadSavedEditorSidebarWidth();
     await _loadSavedChatSidebarWidth();
+    await _loadSavedPanelWidths();
+    await _loadSavedVisiblePanels();
   }
 
   // 加载保存的编辑器侧边栏宽度
@@ -78,6 +97,43 @@ class EditorLayoutManager extends ChangeNotifier {
       AppLogger.e('EditorLayoutManager', '加载侧边栏宽度失败', e);
     }
   }
+  
+  // 加载保存的面板宽度
+  Future<void> _loadSavedPanelWidths() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedWidthsString = prefs.getString(panelWidthsPrefKey);
+      if (savedWidthsString != null) {
+        final savedWidthsList = savedWidthsString.split(',');
+        if (savedWidthsList.length >= 3) {
+          panelWidths[aiChatPanel] = double.parse(savedWidthsList[0]).clamp(minPanelWidth, maxPanelWidth);
+          panelWidths[aiSummaryPanel] = double.parse(savedWidthsList[1]).clamp(minPanelWidth, maxPanelWidth);
+          panelWidths[aiScenePanel] = double.parse(savedWidthsList[2]).clamp(minPanelWidth, maxPanelWidth);
+        }
+      }
+    } catch (e) {
+      AppLogger.e('EditorLayoutManager', '加载面板宽度失败', e);
+    }
+  }
+  
+  // 加载保存的可见面板
+  Future<void> _loadSavedVisiblePanels() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedPanels = prefs.getStringList(visiblePanelsPrefKey);
+      if (savedPanels != null) {
+        visiblePanels.clear();
+        visiblePanels.addAll(savedPanels);
+        
+        // 更新各面板的可见性状态
+        isAIChatSidebarVisible = visiblePanels.contains(aiChatPanel);
+        isAISummaryPanelVisible = visiblePanels.contains(aiSummaryPanel);
+        isAISceneGenerationPanelVisible = visiblePanels.contains(aiScenePanel);
+      }
+    } catch (e) {
+      AppLogger.e('EditorLayoutManager', '加载可见面板失败', e);
+    }
+  }
 
   // 保存聊天侧边栏宽度
   Future<void> saveChatSidebarWidth() async {
@@ -86,6 +142,27 @@ class EditorLayoutManager extends ChangeNotifier {
       await prefs.setDouble(chatSidebarWidthPrefKey, chatSidebarWidth);
     } catch (e) {
       AppLogger.e('EditorLayoutManager', '保存侧边栏宽度失败', e);
+    }
+  }
+  
+  // 保存面板宽度
+  Future<void> savePanelWidths() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final widthsString = '${panelWidths[aiChatPanel]},${panelWidths[aiSummaryPanel]},${panelWidths[aiScenePanel]}';
+      await prefs.setString(panelWidthsPrefKey, widthsString);
+    } catch (e) {
+      AppLogger.e('EditorLayoutManager', '保存面板宽度失败', e);
+    }
+  }
+  
+  // 保存可见面板
+  Future<void> saveVisiblePanels() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(visiblePanelsPrefKey, visiblePanels);
+    } catch (e) {
+      AppLogger.e('EditorLayoutManager', '保存可见面板失败', e);
     }
   }
 
@@ -104,6 +181,17 @@ class EditorLayoutManager extends ChangeNotifier {
       maxChatSidebarWidth,
     );
   }
+  
+  // 更新指定面板宽度
+  void updatePanelWidth(String panelId, double delta) {
+    if (panelWidths.containsKey(panelId)) {
+      panelWidths[panelId] = (panelWidths[panelId]! - delta).clamp(
+        minPanelWidth,
+        maxPanelWidth,
+      );
+      notifyListeners();
+    }
+  }
 
   // 切换编辑器侧边栏可见性
   void toggleEditorSidebar() {
@@ -113,37 +201,49 @@ class EditorLayoutManager extends ChangeNotifier {
 
   // 切换AI聊天侧边栏可见性
   void toggleAIChatSidebar() {
-    isAIChatSidebarVisible = !isAIChatSidebarVisible;
-    if (isAIChatSidebarVisible) {
-      isSettingsPanelVisible = false;
-      isNovelSettingsVisible = false;
-      isAISceneGenerationPanelVisible = false;
-      isAISummaryPanelVisible = false;
+    // 在多面板模式下
+    if (visiblePanels.contains(aiChatPanel)) {
+      // 如果已经可见，则移除
+      visiblePanels.remove(aiChatPanel);
+      isAIChatSidebarVisible = false;
+    } else {
+      // 如果不可见，则添加
+      visiblePanels.add(aiChatPanel);
+      isAIChatSidebarVisible = true;
     }
+    saveVisiblePanels();
     notifyListeners();
   }
 
   // 切换AI场景生成面板可见性
   void toggleAISceneGenerationPanel() {
-    isAISceneGenerationPanelVisible = !isAISceneGenerationPanelVisible;
-    if (isAISceneGenerationPanelVisible) {
-      isAIChatSidebarVisible = false;
-      isSettingsPanelVisible = false;
-      isNovelSettingsVisible = false;
-      isAISummaryPanelVisible = false;
+    // 在多面板模式下
+    if (visiblePanels.contains(aiScenePanel)) {
+      // 如果已经可见，则移除
+      visiblePanels.remove(aiScenePanel);
+      isAISceneGenerationPanelVisible = false;
+    } else {
+      // 如果不可见，则添加
+      visiblePanels.add(aiScenePanel);
+      isAISceneGenerationPanelVisible = true;
     }
+    saveVisiblePanels();
     notifyListeners();
   }
 
   // 切换AI摘要面板可见性
   void toggleAISummaryPanel() {
-    isAISummaryPanelVisible = !isAISummaryPanelVisible;
-    if (isAISummaryPanelVisible) {
-      isAIChatSidebarVisible = false;
-      isSettingsPanelVisible = false;
-      isNovelSettingsVisible = false;
-      isAISceneGenerationPanelVisible = false;
+    // 在多面板模式下
+    if (visiblePanels.contains(aiSummaryPanel)) {
+      // 如果已经可见，则移除
+      visiblePanels.remove(aiSummaryPanel);
+      isAISummaryPanelVisible = false;
+    } else {
+      // 如果不可见，则添加
+      visiblePanels.add(aiSummaryPanel);
+      isAISummaryPanelVisible = true;
     }
+    saveVisiblePanels();
     notifyListeners();
   }
 
@@ -151,10 +251,7 @@ class EditorLayoutManager extends ChangeNotifier {
   void toggleSettingsPanel() {
     isSettingsPanelVisible = !isSettingsPanelVisible;
     if (isSettingsPanelVisible) {
-      isAIChatSidebarVisible = false;
-      isNovelSettingsVisible = false;
-      isAISceneGenerationPanelVisible = false;
-      isAISummaryPanelVisible = false;
+      // 设置面板是全屏遮罩，不影响其他面板的显示
     }
     notifyListeners();
   }
@@ -163,11 +260,24 @@ class EditorLayoutManager extends ChangeNotifier {
   void toggleNovelSettings() {
     isNovelSettingsVisible = !isNovelSettingsVisible;
     if (isNovelSettingsVisible) {
-      isAIChatSidebarVisible = false;
-      isSettingsPanelVisible = false;
-      isAISceneGenerationPanelVisible = false;
-      isAISummaryPanelVisible = false;
+      // 小说设置视图会替换主编辑区域，不影响侧边面板
     }
+    notifyListeners();
+  }
+  
+  // 获取面板是否为最后一个
+  bool isLastPanel(String panelId) {
+    return visiblePanels.length == 1 && visiblePanels.contains(panelId);
+  }
+  
+  // 重新排序面板
+  void reorderPanels(int oldIndex, int newIndex) {
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final item = visiblePanels.removeAt(oldIndex);
+    visiblePanels.insert(newIndex, item);
+    saveVisiblePanels();
     notifyListeners();
   }
 }

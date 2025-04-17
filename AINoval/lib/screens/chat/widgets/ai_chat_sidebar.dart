@@ -18,11 +18,13 @@ class AIChatSidebar extends StatefulWidget {
     required this.novelId,
     this.chapterId,
     this.onClose,
+    this.isCardMode = false,
   }) : super(key: key);
 
   final String novelId;
   final String? chapterId;
   final VoidCallback? onClose;
+  final bool isCardMode; // 是否以卡片模式显示
 
   @override
   State<AIChatSidebar> createState() => _AIChatSidebarState();

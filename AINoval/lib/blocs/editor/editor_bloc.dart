@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
@@ -44,6 +45,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     on<SceneSummaryGenerationFailed>(_onSceneSummaryGenerationFailed);
     on<StopSceneGeneration>(_onStopSceneGeneration);
     on<RefreshEditor>(_onRefreshEditor);
+    on<SetPendingSummary>(_onSetPendingSummary);
   }
   final EditorRepositoryImpl repository;
   final String novelId;
@@ -1647,9 +1649,17 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
             },
             onDone: () {
               // 流式生成完成
+              AppLogger.i('EditorBloc', '流式生成完成，onDone被触发');
               if (state is EditorLoaded) {
                 final current = state as EditorLoaded;
-                add(SceneGenerationCompleted(current.generatedSceneContent ?? ''));
+                AppLogger.i('EditorBloc', '当前生成状态: ${current.aiSceneGenerationStatus.name}, 流式生成标记: ${current.isStreamingGeneration}');
+                
+                if (current.aiSceneGenerationStatus == AIGenerationStatus.generating) {
+                  AppLogger.i('EditorBloc', '流式生成完成，更新状态为完成');
+                  add(SceneGenerationCompleted(current.generatedSceneContent ?? ''));
+                } else {
+                  AppLogger.i('EditorBloc', '流式生成已经完成或被取消，不更新状态');
+                }
               }
             },
           );
@@ -1782,6 +1792,19 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       // 只是简单地重新发送当前状态，触发UI刷新
       AppLogger.i('EditorBloc', '刷新编辑器状态');
       emit(currentState);
+    }
+  }
+
+  // 处理设置待处理摘要事件
+  Future<void> _onSetPendingSummary(SetPendingSummary event, Emitter<EditorState> emit) async {
+    if (state is EditorLoaded) {
+      final currentState = state as EditorLoaded;
+      
+      emit(currentState.copyWith(
+        pendingSummary: event.summary,
+      ));
+      
+      AppLogger.i('EditorBloc', '设置待处理摘要: ${event.summary.substring(0, math.min(30, event.summary.length))}...');
     }
   }
 

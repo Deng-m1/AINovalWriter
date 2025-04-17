@@ -53,6 +53,9 @@ public class AIServiceImpl implements AIService {
                 "gpt-3.5-turbo",
                 "gpt-4",
                 "gpt-4-turbo",
+                "google/gemini-2.5-pro-exp-03-25:free",
+                "deepseek/deepseek-v3-base:free",
+                "x-ai/grok-3-beta",
                 "gpt-4o"
         ));
 
@@ -239,7 +242,7 @@ public class AIServiceImpl implements AIService {
             if (useLangChain4j) {
                 return switch (lowerCaseProvider) {
                     case "openai" ->
-                        new OpenAILangChain4jModelProvider(modelName, apiKey, apiEndpoint);
+                        new OpenAILangChain4jModelProvider(modelName, apiKey, apiEndpoint,proxyConfig);
                     case "anthropic" ->
                         new AnthropicLangChain4jModelProvider(modelName, apiKey, apiEndpoint);
                     case "gemini" ->
