@@ -1,7 +1,5 @@
 package com.ainovel.server.web.dto;
 
-import com.ainovel.server.domain.model.User.AIModelConfig;
-
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -13,6 +11,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AIModelConfigDto {
+
     private String userId;
-    private AIModelConfig config;
+    private Object config;
 }

@@ -8,6 +8,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/utils/word_count_analyzer.dart';
+import 'package:provider/provider.dart';
+import 'package:ainoval/screens/editor/managers/editor_layout_manager.dart';
 
 /// 场景编辑器组件，用于编辑小说中的单个场景
 ///
@@ -90,6 +92,9 @@ class _SceneEditorState extends State<SceneEditor> {
 
     // 添加文本选择变化监听
     widget.controller.addListener(_handleSelectionChange);
+    
+    // 监听EditorBloc状态变化，确保摘要控制器内容与模型保持同步
+    _setupBlocListener();
   }
 
   void _onEditorFocusChange() {
@@ -552,13 +557,14 @@ class _SceneEditorState extends State<SceneEditor> {
                     widget.actId != null &&
                     widget.chapterId != null &&
                     widget.sceneId != null) {
+                  AppLogger.i('SceneEditor', '通过onChange保存摘要: ${widget.sceneId}');
                   widget.editorBloc.add(editor_bloc.UpdateSummary(
                     novelId: widget.editorBloc.novelId,
                     actId: widget.actId!,
                     chapterId: widget.chapterId!,
                     sceneId: widget.sceneId!,
                     summary: value,
-                    shouldRebuild: false,
+                    shouldRebuild: true, // 改为true，确保UI更新和完整保存
                   ));
                 }
               });
@@ -584,13 +590,14 @@ class _SceneEditorState extends State<SceneEditor> {
                 widget.actId != null &&
                 widget.chapterId != null &&
                 widget.sceneId != null) {
+              AppLogger.i('SceneEditor', '通过刷新按钮保存摘要: ${widget.sceneId}');
               widget.editorBloc.add(editor_bloc.UpdateSummary(
                 novelId: widget.editorBloc.novelId,
                 actId: widget.actId!,
                 chapterId: widget.chapterId!,
                 sceneId: widget.sceneId!,
                 summary: widget.summaryController.text,
-                shouldRebuild: false,
+                shouldRebuild: true, // 修改为true，确保完整保存到后端
               ));
             }
           },
@@ -636,7 +643,7 @@ class _SceneEditorState extends State<SceneEditor> {
                       chapterId: widget.chapterId!,
                       sceneId: widget.sceneId!,
                       summary: state.generatedSummary!,
-                      shouldRebuild: false,
+                      shouldRebuild: true, // 修改为true，确保完整保存到后端
                     ));
                     
                     // 取消监听
@@ -693,15 +700,21 @@ class _SceneEditorState extends State<SceneEditor> {
               if (widget.actId != null && 
                   widget.chapterId != null && 
                   widget.sceneId != null) {
-                // 触发场景生成事件
+                // 获取布局管理器并打开AI生成面板
+                final layoutManager = Provider.of<EditorLayoutManager>(context, listen: false);
+                
+                // 保存当前摘要到EditorBloc中，以便AI生成面板可以获取到
                 widget.editorBloc.add(
-                  editor_bloc.GenerateSceneFromSummaryRequested(
-                    novelId: widget.editorBloc.novelId,
+                  editor_bloc.SetPendingSummary(
                     summary: widget.summaryController.text,
-                    chapterId: widget.chapterId,
-                    useStreamingMode: true,
                   ),
                 );
+                
+                // 显示AI生成面板
+                layoutManager.toggleAISceneGenerationPanel();
+                
+                // 不再在这里立即触发生成，让用户在面板中确认后再生成
+                // 面板将会自动填充之前设置的摘要内容
               }
             },
           ),
@@ -780,6 +793,69 @@ class _SceneEditorState extends State<SceneEditor> {
       return Border.all(color: theme.primaryColor.withOpacity(0.5), width: 1.5);
     }
     return Border.all(color: Colors.grey.shade200, width: 1.0);
+  }
+
+  // 添加EditorBloc状态监听，确保摘要控制器内容与模型保持同步
+  void _setupBlocListener() {
+    widget.editorBloc.stream.listen((state) {
+      if (!mounted) return;
+      
+      if (state is editor_bloc.EditorLoaded && 
+          widget.sceneId != null && 
+          widget.actId != null && 
+          widget.chapterId != null) {
+        try {
+          // 从状态中查找当前场景
+          final act = state.novel.acts.firstWhere((a) => a.id == widget.actId);
+          final chapter = act.chapters.firstWhere((c) => c.id == widget.chapterId);
+          final scene = chapter.scenes.firstWhere((s) => s.id == widget.sceneId);
+          
+          // 当前控制器中的文本
+          final currentControllerText = widget.summaryController.text;
+          
+          // 模型中的摘要内容
+          final modelSummaryContent = scene.summary.content ?? '';
+          
+          // 仅当摘要控制器内容与模型不同时更新
+          if (currentControllerText != modelSummaryContent) {
+            // 判断变更方向
+            if (currentControllerText.isNotEmpty && modelSummaryContent.isEmpty) {
+              // 如果控制器有内容但模型为空，说明是用户刚输入了内容但可能未保存成功
+              // 重新触发保存操作确保内容被保存
+              AppLogger.i('SceneEditor', '检测到摘要未同步到模型，重新保存: ${widget.sceneId}');
+              
+              // 将更新放在下一帧执行，避免在build过程中修改
+              Future.microtask(() {
+                if (mounted) {
+                  // 触发摘要保存并强制重建UI以确保更新成功
+                  widget.editorBloc.add(editor_bloc.UpdateSummary(
+                    novelId: widget.editorBloc.novelId,
+                    actId: widget.actId!,
+                    chapterId: widget.chapterId!,
+                    sceneId: widget.sceneId!,
+                    summary: currentControllerText,
+                    shouldRebuild: true, // 强制重建UI
+                  ));
+                }
+              });
+            } else {
+              // 模型中有内容但控制器为空，或两者不同，更新控制器
+              AppLogger.i('SceneEditor', '摘要内容从模型同步到控制器: ${widget.sceneId}');
+              
+              // 将更新放在下一帧执行，避免在build过程中修改
+              Future.microtask(() {
+                if (mounted) {
+                  widget.summaryController.text = modelSummaryContent;
+                }
+              });
+            }
+          }
+        } catch (e, stackTrace) {
+          // 记录详细错误信息
+          AppLogger.v('SceneEditor', '同步摘要控制器失败: ${e.toString()}', e, stackTrace);
+        }
+      }
+    });
   }
 }
 

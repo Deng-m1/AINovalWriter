@@ -29,7 +29,7 @@ import reactor.core.publisher.Mono;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/users/me/prompts")
+@RequestMapping("/api/v1/api/users/me/prompts")
 public class UserPromptController extends ReactiveBaseController {
 
     private final UserPromptService userPromptService;
@@ -63,11 +63,31 @@ public class UserPromptController extends ReactiveBaseController {
     @GetMapping("/{featureType}")
     public Mono<UserPromptTemplateDto> getPromptTemplate(
             @AuthenticationPrincipal CurrentUser currentUser,
-            @PathVariable AIFeatureType featureType) {
+            @PathVariable String featureType) {
         log.info("获取用户提示词模板, userId: {}, featureType: {}", currentUser.getId(), featureType);
 
-        return userPromptService.getPromptTemplate(currentUser.getId(), featureType)
-                .map(promptText -> new UserPromptTemplateDto(featureType, promptText));
+        // 将字符串转换为枚举类型
+        AIFeatureType type;
+        try {
+            // 客户端传入的是枚举的后缀名，需要转换为UPPER_CASE格式
+            switch (featureType) {
+                case "sceneToSummary":
+                    type = AIFeatureType.SCENE_TO_SUMMARY;
+                    break;
+                case "summaryToScene":
+                    type = AIFeatureType.SUMMARY_TO_SCENE;
+                    break;
+                default:
+                    // 如果是已经大写的格式
+                    type = AIFeatureType.valueOf(featureType);
+            }
+        } catch (Exception e) {
+            log.error("无效的功能类型: {}", featureType, e);
+            return Mono.error(new IllegalArgumentException("无效的功能类型: " + featureType));
+        }
+
+        return userPromptService.getPromptTemplate(currentUser.getId(), type)
+                .map(promptText -> new UserPromptTemplateDto(type, promptText));
     }
 
     /**
@@ -81,14 +101,34 @@ public class UserPromptController extends ReactiveBaseController {
     @PutMapping("/{featureType}")
     public Mono<UserPromptTemplateDto> saveOrUpdatePrompt(
             @AuthenticationPrincipal CurrentUser currentUser,
-            @PathVariable AIFeatureType featureType,
+            @PathVariable String featureType,
             @Valid @RequestBody Mono<UpdatePromptRequest> request) {
 
         return request.flatMap(req -> {
             log.info("保存或更新用户提示词, userId: {}, featureType: {}", currentUser.getId(), featureType);
 
+            // 将字符串转换为枚举类型
+            AIFeatureType type;
+            try {
+                // 客户端传入的是枚举的后缀名，需要转换为UPPER_CASE格式
+                switch (featureType) {
+                    case "sceneToSummary":
+                        type = AIFeatureType.SCENE_TO_SUMMARY;
+                        break;
+                    case "summaryToScene":
+                        type = AIFeatureType.SUMMARY_TO_SCENE;
+                        break;
+                    default:
+                        // 如果是已经大写的格式
+                        type = AIFeatureType.valueOf(featureType);
+                }
+            } catch (Exception e) {
+                log.error("无效的功能类型: {}", featureType, e);
+                return Mono.error(new IllegalArgumentException("无效的功能类型: " + featureType));
+            }
+
             return userPromptService.saveOrUpdateUserPrompt(
-                    currentUser.getId(), featureType, req.getPromptText())
+                    currentUser.getId(), type, req.getPromptText())
                     .map(UserPromptTemplateDto::fromEntity);
         });
     }
@@ -104,9 +144,29 @@ public class UserPromptController extends ReactiveBaseController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> deletePrompt(
             @AuthenticationPrincipal CurrentUser currentUser,
-            @PathVariable AIFeatureType featureType) {
+            @PathVariable String featureType) {
         log.info("删除用户提示词, userId: {}, featureType: {}", currentUser.getId(), featureType);
 
-        return userPromptService.deleteUserPrompt(currentUser.getId(), featureType);
+        // 将字符串转换为枚举类型
+        AIFeatureType type;
+        try {
+            // 客户端传入的是枚举的后缀名，需要转换为UPPER_CASE格式
+            switch (featureType) {
+                case "sceneToSummary":
+                    type = AIFeatureType.SCENE_TO_SUMMARY;
+                    break;
+                case "summaryToScene":
+                    type = AIFeatureType.SUMMARY_TO_SCENE;
+                    break;
+                default:
+                    // 如果是已经大写的格式
+                    type = AIFeatureType.valueOf(featureType);
+            }
+        } catch (Exception e) {
+            log.error("无效的功能类型: {}", featureType, e);
+            return Mono.error(new IllegalArgumentException("无效的功能类型: " + featureType));
+        }
+
+        return userPromptService.deleteUserPrompt(currentUser.getId(), type);
     }
 }

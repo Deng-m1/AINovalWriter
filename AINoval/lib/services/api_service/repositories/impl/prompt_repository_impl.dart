@@ -39,14 +39,30 @@ class PromptRepositoryImpl implements PromptRepository {
       }
     } catch (e) {
       AppLogger.e(_tag, '获取所有提示词失败', e);
-      throw Exception('获取提示词列表失败: ${e.toString()}');
+      // 如果API调用失败，返回默认提示词
+      final Map<AIFeatureType, PromptData> defaultPrompts = {};
+      try {
+        // 为每种特性类型生成默认提示词
+        for (final featureType in AIFeatureType.values) {
+          final defaultPrompt = await _getDefaultPrompt(featureType);
+          defaultPrompts[featureType] = PromptData(
+            userPrompt: defaultPrompt,
+            defaultPrompt: defaultPrompt,
+            isCustomized: false,
+          );
+        }
+        return defaultPrompts;
+      } catch (e2) {
+        // 如果连默认提示词也获取失败，则抛出原始异常
+        throw Exception('获取提示词列表失败: ${e.toString()}');
+      }
     }
   }
 
   @override
   Future<PromptData> getPrompt(AIFeatureType featureType) async {
     try {
-      final url = '$_baseUrl/${featureType.toString().split('.').last}';
+      final url = '$_baseUrl/${_convertFeatureTypeToPath(featureType)}';
       final result = await _apiClient.get(url);
       final dto = UserPromptTemplateDto.fromJson(result);
 
@@ -77,7 +93,7 @@ class PromptRepositoryImpl implements PromptRepository {
   @override
   Future<PromptData> savePrompt(AIFeatureType featureType, String promptText) async {
     try {
-      final url = '$_baseUrl/${featureType.toString().split('.').last}';
+      final url = '$_baseUrl/${_convertFeatureTypeToPath(featureType)}';
       final request = UpdatePromptRequest(promptText: promptText);
       final result = await _apiClient.put(url, data: request.toJson());
       final dto = UserPromptTemplateDto.fromJson(result);
@@ -99,12 +115,18 @@ class PromptRepositoryImpl implements PromptRepository {
   @override
   Future<void> deletePrompt(AIFeatureType featureType) async {
     try {
-      final url = '$_baseUrl/${featureType.toString().split('.').last}';
+      final url = '$_baseUrl/${_convertFeatureTypeToPath(featureType)}';
       await _apiClient.delete(url);
     } catch (e) {
       AppLogger.e(_tag, '删除提示词失败: $featureType', e);
       throw Exception('删除提示词失败: ${e.toString()}');
     }
+  }
+
+  /// 将枚举类型转换为API路径
+  String _convertFeatureTypeToPath(AIFeatureType featureType) {
+    // 直接使用枚举的名称，不包含类名前缀
+    return featureType.toString().split('.').last;
   }
 
   /// 获取默认提示词
@@ -126,7 +148,7 @@ class PromptRepositoryImpl implements PromptRepository {
     required String sceneId,
   }) async {
     try {
-      final url = '/api/novels/$novelId/scenes/$sceneId/summary';
+      final url = '/scenes/$sceneId/summarize';
       final result = await _apiClient.post(url);
 
       if (result is Map && result.containsKey('summary')) {

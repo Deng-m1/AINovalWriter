@@ -1,6 +1,7 @@
 package com.ainovel.server.service.ai.langchain4j;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.ainovel.server.config.ProxyConfig;
 import com.ainovel.server.domain.model.AIRequest;
@@ -8,6 +9,7 @@ import com.ainovel.server.domain.model.AIRequest;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.googleai.GoogleAiGeminiStreamingChatModel;
 import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -104,5 +106,34 @@ public class GeminiLangChain4jModelProvider extends LangChain4jModelProvider {
         double costInCNY = costInUSD * 7.2;
 
         return Mono.just(costInCNY);
+    }
+
+    @Override
+    public Flux<String> generateContentStream(AIRequest request) {
+        log.info("开始Gemini流式生成，模型: {}", modelName);
+
+        // 标记是否已经收到了任何内容
+        final AtomicBoolean hasReceivedContent = new AtomicBoolean(false);
+
+        return super.generateContentStream(request)
+                .doOnSubscribe(sub -> log.info("Gemini流式生成已订阅"))
+                .doOnNext(content -> {
+                    if (!"heartbeat".equals(content) && !content.startsWith("错误：")) {
+                        // 标记已收到有效内容
+                        hasReceivedContent.set(true);
+                        log.debug("Gemini生成内容: {}", content);
+                    }
+                })
+                .doOnComplete(() -> log.info("Gemini流式生成完成"))
+                .doOnError(e -> log.error("Gemini流式生成出错", e))
+                .doOnCancel(() -> {
+                    if (hasReceivedContent.get()) {
+                        // 如果已收到内容但客户端取消了，记录不同的日志但允许模型继续生成
+                        log.info("Gemini流式生成客户端取消了连接，但已收到内容，保持模型连接以完成生成");
+                    } else {
+                        // 如果没有收到任何内容且客户端取消了，记录取消日志
+                        log.info("Gemini流式生成被取消，未收到任何内容");
+                    }
+                });
     }
 }

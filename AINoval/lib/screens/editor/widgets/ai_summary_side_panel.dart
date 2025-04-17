@@ -25,6 +25,8 @@ class AISummarySidePanel extends StatefulWidget {
 class _AISummarySidePanelState extends State<AISummarySidePanel> {
   /// 编辑器控制器
   final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  bool _userScrolled = false;
   
   @override
   void initState() {
@@ -35,12 +37,33 @@ class _AISummarySidePanelState extends State<AISummarySidePanel> {
     if (state is EditorLoaded && state.generatedSummary != null) {
       _controller.text = state.generatedSummary!;
     }
+    
+    // 监听滚动事件，检测用户是否主动滚动
+    _scrollController.addListener(_handleUserScroll);
   }
   
   @override
   void dispose() {
     _controller.dispose();
+    _scrollController.removeListener(_handleUserScroll);
+    _scrollController.dispose();
     super.dispose();
+  }
+  
+  void _handleUserScroll() {
+    if (_scrollController.hasClients) {
+      // 如果用户向上滚动（滚动位置不在底部），标记为用户滚动
+      if (_scrollController.position.pixels < 
+          _scrollController.position.maxScrollExtent - 50) {
+        _userScrolled = true;
+      }
+      
+      // 如果用户滚动到底部，重置标记
+      if (_scrollController.position.pixels >= 
+          _scrollController.position.maxScrollExtent - 10) {
+        _userScrolled = false;
+      }
+    }
   }
   
   /// 复制内容到剪贴板
@@ -59,6 +82,19 @@ class _AISummarySidePanelState extends State<AISummarySidePanel> {
         if (state is EditorLoaded && state.generatedSummary != null) {
           // 更新编辑器内容
           _controller.text = state.generatedSummary!;
+          
+          // 只有用户未滚动时才自动滚动到底部
+          if (!_userScrolled) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (_scrollController.hasClients) {
+                _scrollController.animateTo(
+                  0, // 滚动到顶部
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                );
+              }
+            });
+          }
         }
       },
       builder: (context, state) {
@@ -74,7 +110,7 @@ class _AISummarySidePanelState extends State<AISummarySidePanel> {
         return Container(
           width: 350, // 固定宽度
           decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
+            color: Theme.of(context).colorScheme.surface,
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.1),
@@ -90,10 +126,10 @@ class _AISummarySidePanelState extends State<AISummarySidePanel> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor.withOpacity(0.1),
+                  color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.7),
                   border: Border(
                     bottom: BorderSide(
-                      color: Theme.of(context).dividerColor,
+                      color: Theme.of(context).colorScheme.outlineVariant,
                       width: 0.5,
                     ),
                   ),
@@ -102,7 +138,9 @@ class _AISummarySidePanelState extends State<AISummarySidePanel> {
                   children: [
                     Text(
                       'AI 生成的摘要',
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const Spacer(),
                     // 状态显示
@@ -110,32 +148,69 @@ class _AISummarySidePanelState extends State<AISummarySidePanel> {
                       Row(
                         children: [
                           SizedBox(
-                            width: 16,
-                            height: 16,
+                            width: 14,
+                            height: 14,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               valueColor: AlwaysStoppedAnimation<Color>(
-                                Theme.of(context).primaryColor,
+                                Theme.of(context).colorScheme.primary,
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const Text(
+                          Text(
                             '正在生成...',
-                            style: TextStyle(fontSize: 12),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                           ),
                         ],
                       )
                     else if (isCompleted)
-                      const Text(
-                        '已完成',
-                        style: TextStyle(fontSize: 12, color: Colors.green),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.check_circle,
+                            size: 14,
+                            color: Colors.green.shade600,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '生成完成',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green.shade600,
+                            ),
+                          ),
+                        ],
                       )
                     else if (isFailed)
-                      const Text(
-                        '生成失败',
-                        style: TextStyle(fontSize: 12, color: Colors.red),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.error,
+                            size: 14,
+                            color: Colors.red.shade600,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '生成失败',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.red.shade600,
+                            ),
+                          ),
+                        ],
                       ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      padding: const EdgeInsets.all(4),
+                      onPressed: widget.onClose,
+                      tooltip: '关闭',
+                    ),
                   ],
                 ),
               ),
@@ -151,16 +226,63 @@ class _AISummarySidePanelState extends State<AISummarySidePanel> {
                         controller: _controller,
                         maxLines: null,
                         expands: true,
-                        decoration: const InputDecoration(
+                        scrollController: _scrollController,
+                        decoration: InputDecoration(
                           border: InputBorder.none,
                           hintText: '生成的摘要将显示在这里...',
+                          hintStyle: TextStyle(
+                            color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+                          ),
                         ),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          height: 1.5,
+                        style: TextStyle(
+                          fontSize: 15,
+                          height: 1.8,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                     ),
+                    
+                    // 正在生成中的指示器
+                    if (isGenerating)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        left: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Theme.of(context).colorScheme.surface.withOpacity(0),
+                                Theme.of(context).colorScheme.surface,
+                              ],
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '正在生成中...',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     
                     // 错误信息
                     if (isFailed && editorState.aiGenerationError != null)
@@ -179,7 +301,7 @@ class _AISummarySidePanelState extends State<AISummarySidePanel> {
                             '错误: ${editorState.aiGenerationError}',
                             style: TextStyle(
                               color: Colors.red.shade800,
-                              fontSize: 12,
+                              fontSize: 13,
                             ),
                           ),
                         ),
@@ -190,54 +312,65 @@ class _AISummarySidePanelState extends State<AISummarySidePanel> {
               
               // 操作栏
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor,
+                  color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
                   border: Border(
                     top: BorderSide(
-                      color: Theme.of(context).dividerColor,
+                      color: Theme.of(context).colorScheme.outlineVariant,
                       width: 0.5,
                     ),
                   ),
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // 重新生成按钮
                     if (!isGenerating && editorState.activeSceneId != null)
                       TextButton.icon(
-                        icon: const Icon(Icons.refresh),
+                        icon: const Icon(Icons.refresh, size: 16),
                         label: const Text('重新生成'),
+                        style: TextButton.styleFrom(
+                          textStyle: const TextStyle(fontSize: 13),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
                         onPressed: () {
                           context.read<EditorBloc>().add(
                             GenerateSceneSummaryRequested(
                               sceneId: editorState.activeSceneId!,
                             ),
                           );
+                          // 重置用户滚动标记
+                          _userScrolled = false;
                         },
                       ),
                     const Spacer(),
-                    // 复制按钮
-                    IconButton(
-                      icon: const Icon(Icons.copy),
-                      tooltip: '复制摘要',
-                      onPressed: _controller.text.isNotEmpty
-                          ? _copyToClipboard
-                          : null,
-                    ),
-                    // 应用按钮
-                    IconButton(
-                      icon: const Icon(Icons.check_circle_outline),
-                      tooltip: '应用到场景',
-                      onPressed: (isCompleted || !isGenerating) && _controller.text.isNotEmpty
-                          ? () => widget.onApply(_controller.text)
-                          : null,
-                    ),
-                    // 关闭按钮
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      tooltip: '关闭',
-                      onPressed: widget.onClose,
+                    // 操作按钮组
+                    Row(
+                      children: [
+                        // 复制按钮
+                        IconButton(
+                          icon: const Icon(Icons.copy, size: 18),
+                          tooltip: '复制摘要',
+                          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                          padding: const EdgeInsets.all(8),
+                          onPressed: _controller.text.isNotEmpty
+                              ? _copyToClipboard
+                              : null,
+                        ),
+                        // 应用按钮
+                        FilledButton.icon(
+                          icon: const Icon(Icons.check, size: 16),
+                          label: const Text('应用到场景'),
+                          style: FilledButton.styleFrom(
+                            textStyle: const TextStyle(fontSize: 13),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          onPressed: (isCompleted || !isGenerating) && _controller.text.isNotEmpty
+                              ? () => widget.onApply(_controller.text)
+                              : null,
+                        ),
+                      ],
                     ),
                   ],
                 ),

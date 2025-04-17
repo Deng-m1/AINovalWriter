@@ -1,13 +1,17 @@
 package com.ainovel.server.service.impl;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
-import com.ainovel.server.domain.model.UserAIModelConfig;
+import org.jasypt.encryption.StringEncryptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.access.AccessDeniedException;
@@ -16,7 +20,7 @@ import org.springframework.stereotype.Service;
 import com.ainovel.server.domain.model.AIFeatureType;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
-import com.ainovel.server.domain.model.User.AIModelConfig;
+import com.ainovel.server.domain.model.UserAIModelConfig;
 import com.ainovel.server.service.AIService;
 import com.ainovel.server.service.KnowledgeService;
 import com.ainovel.server.service.NovelAIService;
@@ -56,6 +60,7 @@ public class NovelAIServiceImpl implements NovelAIService {
     private final PromptService promptService;
     private final UserService userService;
     private final SceneService sceneService;
+    private final StringEncryptor encryptor;
 
     // 缓存用户的AI模型提供商
     private final Map<String, Map<String, AIModelProvider>> userProviders = new ConcurrentHashMap<>();
@@ -82,13 +87,15 @@ public class NovelAIServiceImpl implements NovelAIService {
             NovelService novelService,
             PromptService promptService,
             UserService userService,
-            SceneService sceneService) {
+            SceneService sceneService,
+            StringEncryptor encryptor) {
         this.aiService = aiService;
         this.knowledgeService = knowledgeService;
         this.novelService = novelService;
         this.promptService = promptService;
         this.userService = userService;
         this.sceneService = sceneService;
+        this.encryptor = encryptor;
     }
 
     @Override
@@ -642,23 +649,34 @@ public class NovelAIServiceImpl implements NovelAIService {
      */
     @Override
     public Mono<AIModelProvider> getAIModelProvider(String userId, String modelName) {
+        log.info("获取用户 {} 的AI模型提供商，请求的模型: {}", userId, modelName == null ? "默认" : modelName);
         // 如果没有指定模型名称，则使用用户的默认模型
         if (modelName == null || modelName.isEmpty()) {
             return userAIModelConfigService.getValidatedDefaultConfiguration(userId)
+                    .doOnNext(config -> log.info("找到用户 {} 的默认配置: Provider={}, Model={}", userId, config.getProvider(), config.getModelName()))
                     .flatMap(config -> {
                         if (config == null) {
+                            log.warn("用户 {} 没有配置有效的默认AI模型", userId);
                             return Mono.error(new IllegalArgumentException("用户没有配置默认AI模型"));
                         }
                         return getOrCreateAIModelProvider(userId, config);
-                    });
+                    })
+                    .switchIfEmpty(Mono.defer(() -> { // 使用 defer 避免 switchIfEmpty 预先执行
+                        log.warn("无法找到用户 {} 的默认AI模型配置", userId);
+                        return Mono.error(new IllegalArgumentException("用户没有配置默认AI模型或默认配置无效"));
+                    }));
         }
 
         // 如果指定了模型名称，则查找对应的配置
         return userAIModelConfigService.listConfigurations(userId)
                 .filter(config -> modelName.equals(config.getModelName()))
-                .next()
+                .next() // 获取第一个匹配的配置
+                .doOnNext(config -> log.info("找到用户 {} 指定的模型配置: Provider={}, Model={}", userId, config.getProvider(), config.getModelName()))
                 .flatMap(config -> getOrCreateAIModelProvider(userId, config))
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("找不到指定的AI模型配置: " + modelName)));
+                .switchIfEmpty(Mono.defer(() -> { // 使用 defer 避免 switchIfEmpty 预先执行
+                    log.warn("找不到用户 {} 指定的AI模型配置: {}", userId, modelName);
+                    return Mono.error(new IllegalArgumentException("找不到指定的AI模型配置: " + modelName));
+                }));
     }
 
     /**
@@ -669,29 +687,69 @@ public class NovelAIServiceImpl implements NovelAIService {
      * @return AI模型提供商
      */
     private Mono<AIModelProvider> getOrCreateAIModelProvider(String userId, UserAIModelConfig config) {
+        // 检查配置是否有效
+        if (config == null || config.getProvider() == null || config.getModelName() == null) {
+            log.error("尝试为用户 {} 创建提供商时遇到无效配置: {}", userId, config);
+            return Mono.error(new IllegalArgumentException("无效的AI模型配置"));
+        }
+        // 检查API Key是否存在
+        String encryptedApiKey = config.getApiKey();
+        if (encryptedApiKey == null || encryptedApiKey.isBlank()) {
+            log.error("用户 {} 的模型配置 Provider={}, Model={} 缺少 API Key", userId, config.getProvider(), config.getModelName());
+            // 注意：根据你的业务逻辑，这里可能应该抛出错误或者返回一个表示配置错误的特定状态
+            // return Mono.error(new IllegalArgumentException("模型配置缺少 API Key")); // 取消注释以强制要求API Key
+        }
+
         // 检查缓存中是否已存在
         Map<String, AIModelProvider> userProviderMap = userProviders.computeIfAbsent(userId, k -> new HashMap<>());
         String key = config.getProvider() + ":" + config.getModelName();
 
         AIModelProvider provider = userProviderMap.get(key);
         if (provider != null) {
+            log.info("从缓存获取用户 {} 的AI模型提供商: {}", userId, key);
             return Mono.just(provider);
+        }
+
+        log.info("缓存未命中，为用户 {} 创建新的AI模型提供商: Provider={}, Model={}, Endpoint={}",
+                userId, config.getProvider(), config.getModelName(), config.getApiEndpoint());
+
+        // 解密 API Key
+        String decryptedApiKey = null;
+        if (encryptedApiKey != null && !encryptedApiKey.isBlank()) {
+            try {
+                decryptedApiKey = encryptor.decrypt(encryptedApiKey);
+                log.debug("用户 {} 的模型 Provider={}, Model={} API Key 解密成功", userId, config.getProvider(), config.getModelName());
+            } catch (Exception e) {
+                log.error("为用户 {} 的模型 Provider={}, Model={} 解密 API Key 时失败", userId, config.getProvider(), config.getModelName(), e);
+                return Mono.error(new RuntimeException("创建AI模型提供商失败，无法解密API Key", e));
+            }
+        } else {
+            log.warn("用户 {} 的模型 Provider={}, Model={} API Key 为空，继续尝试创建提供商（可能适用于本地或无需Key的模型）", userId, config.getProvider(), config.getModelName());
         }
 
         // 使用AIService创建新的提供商
-        provider = aiService.createAIModelProvider(
-                config.getProvider(),
-                config.getModelName(),
-                config.getApiKey(),
-                config.getApiEndpoint()
-        );
+        try {
+            // 传递解密后的 API Key
+            final String finalDecryptedApiKey = decryptedApiKey; // Effectively final for lambda
+            AIModelProvider newProvider = aiService.createAIModelProvider(
+                    config.getProvider(),
+                    config.getModelName(),
+                    finalDecryptedApiKey, // 使用解密后的 Key
+                    config.getApiEndpoint()
+            );
 
-        if (provider != null) {
-            userProviderMap.put(key, provider);
-            return Mono.just(provider);
+            if (newProvider != null) {
+                userProviderMap.put(key, newProvider);
+                log.info("成功创建并缓存了用户 {} 的AI模型提供商: {}", userId, key);
+                return Mono.just(newProvider);
+            } else {
+                log.error("AIService未能为用户 {} 创建提供商: Provider={}, Model={}", userId, config.getProvider(), config.getModelName());
+                return Mono.error(new IllegalArgumentException("无法创建AI模型提供商: " + config.getProvider()));
+            }
+        } catch (Exception e) {
+            log.error("为用户 {} 创建AI模型提供商时出错: Provider={}, Model={}", userId, config.getProvider(), config.getModelName(), e);
+            return Mono.error(new RuntimeException("创建AI模型提供商失败", e));
         }
-
-        return Mono.error(new IllegalArgumentException("不支持的AI模型提供商: " + config.getProvider()));
     }
 
     /**
@@ -878,7 +936,88 @@ public class NovelAIServiceImpl implements NovelAIService {
 
                                 // 获取AI模型提供商并调用流式生成
                                 return getAIModelProvider(userId, aiConfig.getModelName())
-                                        .flatMapMany(provider -> provider.generateContentStream(aiRequest));
+                                        .flatMapMany(provider -> {
+                                            // 创建一个原子计数器跟踪最后活动时间戳
+                                            final AtomicLong lastActivityTimestamp = new AtomicLong(System.currentTimeMillis());
+
+                                            // 创建初始启动延迟，给模型足够时间建立连接
+                                            // 用于避免在刚开始时被静默检测器误判为超时
+                                            final long initialStartupTime = System.currentTimeMillis();
+                                            final int startupGracePeriodSeconds = 60; // 增加到60秒启动宽限期
+
+                                            // 创建静默检测流，每10秒检查一次是否有新活动
+                                            // 但要延迟启动，等模型有足够时间建立连接
+                                            Flux<String> silenceDetector = Flux.interval(Duration.ofSeconds(10))
+                                                    .mapNotNull(tick -> {
+                                                        long now = System.currentTimeMillis();
+
+                                                        // 在启动宽限期内不执行静默检测
+                                                        if (now - initialStartupTime < startupGracePeriodSeconds * 1000) {
+                                                            log.debug("模型建立连接中，处于宽限期内 ({}/{}秒)，userId: {}, novelId: {}",
+                                                                    (now - initialStartupTime) / 1000,
+                                                                    startupGracePeriodSeconds,
+                                                                    userId,
+                                                                    novelId);
+                                                            return null;
+                                                        }
+
+                                                        long lastActivity = lastActivityTimestamp.get();
+                                                        // 如果超过60秒没有活动，且已经过了启动宽限期
+                                                        if (now - lastActivity > 60000) {
+                                                            log.info("检测到生成静默超过60秒，自动结束流, userId: {}, novelId: {}", userId, novelId);
+                                                            return "[DONE]";
+                                                        }
+                                                        // 否则返回null，会被过滤掉
+                                                        return null;
+                                                    })
+                                                    .filter(Objects::nonNull)
+                                                    // 只取第一个[DONE]信号
+                                                    .take(1);
+
+                                            // 标记是否已完成生成
+                                            final AtomicBoolean isStreamCompleted = new AtomicBoolean(false);
+
+                                            // 主内容流，更新活动时间戳
+                                            Flux<String> contentFlux = provider.generateContentStream(aiRequest)
+                                                    .doOnSubscribe(sub -> {
+                                                        log.info("模型流已订阅，启动宽限期 {} 秒, userId: {}, novelId: {}",
+                                                                startupGracePeriodSeconds, userId, novelId);
+                                                    })
+                                                    .doOnNext(content -> {
+                                                        if (!"heartbeat".equals(content)) {
+                                                            log.debug("收到模型生成内容，更新活动时间戳, userId: {}, novelId: {}", userId, novelId);
+                                                            lastActivityTimestamp.set(System.currentTimeMillis());
+                                                        }
+                                                    })
+                                                    .concatWithValues("[DONE]");
+
+                                            // 合并主流和静默检测流，取先发送的[DONE]
+                                            return Flux.merge(contentFlux, silenceDetector)
+                                                    // 过滤重复的[DONE]标记和heartbeat消息
+                                                    .filter(content -> {
+                                                        if (content.equals("[DONE]")) {
+                                                            // 如果已经有[DONE]标记，则过滤掉
+                                                            if (isStreamCompleted.get()) {
+                                                                return false;
+                                                            }
+                                                            isStreamCompleted.set(true);
+                                                            return true;
+                                                        }
+                                                        return !"heartbeat".equals(content);  // 过滤掉heartbeat消息
+                                                    })
+                                                    // 添加超时保护
+                                                    .timeout(Duration.ofSeconds(300))
+                                                    .onErrorResume(timeoutError -> {
+                                                        log.warn("生成场景内容超时，userId: {}, novelId: {}", userId, novelId);
+                                                        return Flux.just(
+                                                                "AI模型响应超时，生成已中断。",
+                                                                "[DONE]"
+                                                        );
+                                                    })
+                                                    .doOnCancel(() -> {
+                                                        log.info("流被取消，但允许模型后台继续生成，userId: {}, novelId: {}", userId, novelId);
+                                                    });
+                                        });
                             });
                 })
                 .onErrorResume(e -> {
@@ -886,7 +1025,7 @@ public class NovelAIServiceImpl implements NovelAIService {
                     if (e instanceof AccessDeniedException) {
                         return Flux.error(e);
                     }
-                    return Flux.error(new RuntimeException("生成场景内容时出错: " + e.getMessage()));
+                    return Flux.just("生成场景内容时出错: " + e.getMessage(), "[DONE]");
                 });
     }
 

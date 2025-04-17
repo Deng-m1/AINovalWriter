@@ -1,5 +1,7 @@
 {
     "java.debug.settings.onBuildFailureProceed": true,
     "java.compile.nullAnalysis.mode": "automatic",
+    "editor.lineHeight": 15,
+    "editor.stickyScroll.enabled": true,
     "jdk.advanced.disable.nbjavac": false
 }

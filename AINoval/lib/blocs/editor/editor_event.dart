@@ -334,3 +334,15 @@ class RefreshEditor extends EditorEvent {
   @override
   List<Object?> get props => [];
 }
+
+// 设置待处理的摘要内容事件
+class SetPendingSummary extends EditorEvent {
+  final String summary;
+
+  const SetPendingSummary({
+    required this.summary,
+  });
+
+  @override
+  List<Object?> get props => [summary];
+}

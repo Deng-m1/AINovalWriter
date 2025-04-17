@@ -66,7 +66,7 @@ class EditorScreenController extends ChangeNotifier {
     promptRepository = PromptRepositoryImpl(apiClient);
     localStorageService = LocalStorageService();
 
-    tabController = TabController(length: 3, vsync: vsync);
+    tabController = TabController(length: 4, vsync: vsync);
 
     // 初始化EditorBloc
     editorBloc = editor_bloc.EditorBloc(

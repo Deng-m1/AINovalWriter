@@ -1,5 +1,6 @@
 import 'package:ainoval/blocs/ai_config/ai_config_bloc.dart';
 import 'package:ainoval/models/user_ai_model_config_model.dart';
+import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/screens/ai_config/widgets/ai_config_list_item.dart';
 // Import the new form widget
 import 'package:ainoval/screens/settings/widgets/ai_config_form.dart';
@@ -16,9 +17,13 @@ class SettingsPanel extends StatefulWidget {
     super.key,
     required this.onClose,
     required this.userId,
+    this.editorSettings,
+    this.onEditorSettingsChanged,
   });
   final VoidCallback onClose;
   final String userId;
+  final EditorSettings? editorSettings;
+  final Function(EditorSettings)? onEditorSettingsChanged;
 
   @override
   State<SettingsPanel> createState() => _SettingsPanelState();
@@ -30,6 +35,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
       _configToEdit; // Track config being edited, null for add mode
   bool _showAddEditForm = false; // Flag to show the add/edit form view
   String _selectedSetting = '';
+  late EditorSettings _editorSettings;
 
   // Define category titles and icons (adjust as needed)
   final List<Map<String, dynamic>> _categories = [
@@ -39,11 +45,19 @@ class _SettingsPanelState extends State<SettingsPanel> {
     // {'title': 'MCP 服务器', 'icon': Icons.dns},
     {'title': '常规设置', 'icon': Icons.settings_outlined},
     {'title': '显示设置', 'icon': Icons.display_settings},
+    {'title': '编辑器设置', 'icon': Icons.edit_note},
+    {'title': '提示词管理', 'icon': Icons.chat},
     // {'title': '快捷方式', 'icon': Icons.shortcut},
     // {'title': '快捷助手', 'icon': Icons.assistant_photo},
     // {'title': '数据设置', 'icon': Icons.data_usage},
     // {'title': '关于我们\', 'icon': Icons.info_outline},
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _editorSettings = widget.editorSettings ?? const EditorSettings();
+  }
 
   void _showAddForm() {
     // <<< Explicitly trigger provider loading every time we enter add mode >>>
@@ -94,8 +108,8 @@ class _SettingsPanelState extends State<SettingsPanel> {
       borderRadius: BorderRadius.circular(12.0),
       color: Colors.transparent, // Make Material transparent
       child: Container(
-        width: 800, // Adjust width as needed
-        height: 600, // Adjust height as needed
+        width: 960, // 增加宽度从800到960
+        height: 700, // 增加高度从600到700
         decoration: BoxDecoration(
           color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(12.0),
@@ -260,6 +274,8 @@ class _SettingsPanelState extends State<SettingsPanel> {
         return _buildAiConfigList(key: key, bloc: bloc);
       case '提示词管理':
         return const PromptManagementPanel();
+      case '编辑器设置':
+        return _buildEditorSettingsPanel(key: key);
       default:
         return Center(
             key: key,
@@ -416,6 +432,336 @@ class _SettingsPanelState extends State<SettingsPanel> {
           ),
         ],
       ),
+    );
+  }
+
+  // 新增编辑器设置面板构建方法
+  Widget _buildEditorSettingsPanel({required Key key}) {
+    final cardShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12.0),
+    );
+    const cardElevation = 2.0;
+
+    return ListView(
+      key: key,
+      padding: const EdgeInsets.all(16),
+      children: [
+        // 字体大小设置
+        Card(
+          shape: cardShape,
+          elevation: cardElevation,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '字体大小',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Text('小'),
+                    Expanded(
+                      child: Slider(
+                        value: _editorSettings.fontSize,
+                        min: 12,
+                        max: 24,
+                        divisions: 12,
+                        label: _editorSettings.fontSize.toStringAsFixed(1),
+                        onChanged: (value) {
+                          setState(() {
+                            _editorSettings = _editorSettings.copyWith(fontSize: value);
+                          });
+                          widget.onEditorSettingsChanged?.call(_editorSettings);
+                        },
+                      ),
+                    ),
+                    const Text('大'),
+                  ],
+                ),
+                Center(
+                  child: Text(
+                    '示例文本',
+                    style: TextStyle(
+                      fontSize: _editorSettings.fontSize,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // 行间距设置
+        Card(
+          shape: cardShape,
+          elevation: cardElevation,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '行间距',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Text('紧凑'),
+                    Expanded(
+                      child: Slider(
+                        value: _editorSettings.lineSpacing,
+                        min: 1.0,
+                        max: 2.0,
+                        divisions: 10,
+                        label: _editorSettings.lineSpacing.toStringAsFixed(1),
+                        onChanged: (value) {
+                          setState(() {
+                            _editorSettings = _editorSettings.copyWith(lineSpacing: value);
+                          });
+                          widget.onEditorSettingsChanged?.call(_editorSettings);
+                        },
+                      ),
+                    ),
+                    const Text('宽松'),
+                  ],
+                ),
+                Center(
+                  child: Column(
+                    children: [
+                      Text(
+                        '示例文本行1',
+                        style: TextStyle(
+                          height: _editorSettings.lineSpacing,
+                        ),
+                      ),
+                      Text(
+                        '示例文本行2',
+                        style: TextStyle(
+                          height: _editorSettings.lineSpacing,
+                        ),
+                      ),
+                      Text(
+                        '示例文本行3',
+                        style: TextStyle(
+                          height: _editorSettings.lineSpacing,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // 字体选择
+        Card(
+          shape: cardShape,
+          elevation: cardElevation,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '字体',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: _editorSettings.fontFamily,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'Roboto',
+                      child: Text('Roboto'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'serif',
+                      child: Text('宋体'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'monospace',
+                      child: Text('等宽字体'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _editorSettings = _editorSettings.copyWith(fontFamily: value);
+                      });
+                      widget.onEditorSettingsChanged?.call(_editorSettings);
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+                Center(
+                  child: Text(
+                    '示例文本',
+                    style: TextStyle(
+                      fontFamily: _editorSettings.fontFamily,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // 自动保存设置
+        Card(
+          shape: cardShape,
+          elevation: cardElevation,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '自动保存',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  title: const Text('启用自动保存'),
+                  value: _editorSettings.autoSaveEnabled,
+                  onChanged: (value) {
+                    setState(() {
+                      _editorSettings = _editorSettings.copyWith(autoSaveEnabled: value);
+                    });
+                    widget.onEditorSettingsChanged?.call(_editorSettings);
+                  },
+                ),
+                if (_editorSettings.autoSaveEnabled) ...[
+                  const SizedBox(height: 8),
+                  const Text('自动保存间隔'),
+                  const SizedBox(height: 8),
+                  Slider(
+                    value: _editorSettings.autoSaveIntervalMinutes.toDouble(),
+                    min: 2,
+                    max: 10,
+                    divisions: 8,
+                    label: '${_editorSettings.autoSaveIntervalMinutes}分钟',
+                    onChanged: (value) {
+                      // 保证值是整数
+                      final roundedValue = value.round().toDouble();
+                      setState(() {
+                        _editorSettings = _editorSettings.copyWith(
+                          autoSaveIntervalMinutes: roundedValue.toInt(),
+                        );
+                      });
+                      widget.onEditorSettingsChanged?.call(_editorSettings);
+                    },
+                  ),
+                  Center(
+                    child: Text(
+                      '每${_editorSettings.autoSaveIntervalMinutes}分钟自动保存一次',
+                      style: const TextStyle(
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // 拼写检查
+        Card(
+          shape: cardShape,
+          elevation: cardElevation,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '拼写检查',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  title: const Text('启用拼写检查'),
+                  value: _editorSettings.spellCheckEnabled,
+                  onChanged: (value) {
+                    setState(() {
+                      _editorSettings = _editorSettings.copyWith(spellCheckEnabled: value);
+                    });
+                    widget.onEditorSettingsChanged?.call(_editorSettings);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // 主题模式
+        Card(
+          shape: cardShape,
+          elevation: cardElevation,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '主题',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  title: const Text('深色模式'),
+                  value: _editorSettings.darkModeEnabled,
+                  onChanged: (value) {
+                    setState(() {
+                      _editorSettings = _editorSettings.copyWith(darkModeEnabled: value);
+                    });
+                    widget.onEditorSettingsChanged?.call(_editorSettings);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

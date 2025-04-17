@@ -11,6 +11,8 @@ class PromptState extends Equatable {
     this.isGenerating = false,
     this.generatedContent = '',
     this.generationError,
+    this.summaryPrompts = const [],
+    this.stylePrompts = const [],
   });
 
   final Map<AIFeatureType, PromptData> prompts;
@@ -20,6 +22,8 @@ class PromptState extends Equatable {
   final bool isGenerating;
   final String generatedContent;
   final String? generationError;
+  final List<PromptItem> summaryPrompts; // 摘要提示词列表
+  final List<PromptItem> stylePrompts;   // 风格提示词列表
 
   /// 获取当前选中功能类型的提示词，如果未选择则返回null
   PromptData? get selectedPrompt =>
@@ -34,6 +38,8 @@ class PromptState extends Equatable {
     bool? isGenerating,
     String? generatedContent,
     String? generationError,
+    List<PromptItem>? summaryPrompts,
+    List<PromptItem>? stylePrompts,
   }) {
     return PromptState(
       prompts: prompts ?? this.prompts,
@@ -43,11 +49,23 @@ class PromptState extends Equatable {
       isGenerating: isGenerating ?? this.isGenerating,
       generatedContent: generatedContent ?? this.generatedContent,
       generationError: generationError,
+      summaryPrompts: summaryPrompts ?? this.summaryPrompts,
+      stylePrompts: stylePrompts ?? this.stylePrompts,
     );
   }
 
   @override
-  List<Object?> get props => [prompts, selectedFeatureType, isLoading, errorMessage, isGenerating, generatedContent, generationError];
+  List<Object?> get props => [
+    prompts, 
+    selectedFeatureType, 
+    isLoading, 
+    errorMessage, 
+    isGenerating, 
+    generatedContent, 
+    generationError,
+    summaryPrompts,
+    stylePrompts
+  ];
 }
 
 /// 初始提示词状态
@@ -60,10 +78,14 @@ class PromptLoading extends PromptState {
   const PromptLoading({
     required Map<AIFeatureType, PromptData> prompts,
     AIFeatureType? selectedFeatureType,
+    List<PromptItem> summaryPrompts = const [],
+    List<PromptItem> stylePrompts = const [],
   }) : super(
           prompts: prompts,
           selectedFeatureType: selectedFeatureType,
           isLoading: true,
+          summaryPrompts: summaryPrompts,
+          stylePrompts: stylePrompts,
         );
 }
 
@@ -72,10 +94,14 @@ class PromptLoaded extends PromptState {
   const PromptLoaded({
     required Map<AIFeatureType, PromptData> prompts,
     AIFeatureType? selectedFeatureType,
+    List<PromptItem> summaryPrompts = const [],
+    List<PromptItem> stylePrompts = const [],
   }) : super(
           prompts: prompts,
           selectedFeatureType: selectedFeatureType,
           isLoading: false,
+          summaryPrompts: summaryPrompts,
+          stylePrompts: stylePrompts,
         );
 }
 
@@ -85,10 +111,14 @@ class PromptError extends PromptState {
     required String errorMessage,
     required Map<AIFeatureType, PromptData> prompts,
     AIFeatureType? selectedFeatureType,
+    List<PromptItem> summaryPrompts = const [],
+    List<PromptItem> stylePrompts = const [],
   }) : super(
           prompts: prompts,
           selectedFeatureType: selectedFeatureType,
           isLoading: false,
           errorMessage: errorMessage,
+          summaryPrompts: summaryPrompts,
+          stylePrompts: stylePrompts,
         );
 }
