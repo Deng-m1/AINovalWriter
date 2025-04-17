@@ -1,5 +1,7 @@
 {
     "java.debug.settings.onBuildFailureProceed": true,
     "java.compile.nullAnalysis.mode": "automatic",
-    "jdk.advanced.disable.nbjavac": false
+    "jdk.advanced.disable.nbjavac": false,
+    "IDX.aI.enableInlineCompletion": true,
+    "IDX.aI.enableCodebaseIndexing": true
 }
