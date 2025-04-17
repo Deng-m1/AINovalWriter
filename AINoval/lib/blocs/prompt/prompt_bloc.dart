@@ -1,9 +1,11 @@
 import 'package:ainoval/blocs/prompt/prompt_event.dart';
 import 'package:ainoval/blocs/prompt/prompt_state.dart';
+import 'package:ainoval/blocs/prompt/prompt_template_events.dart';
 import 'package:ainoval/models/prompt_models.dart';
 import 'package:ainoval/services/api_service/repositories/prompt_repository.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:ainoval/config/app_config.dart';
 
 /// 提示词管理Bloc
 class PromptBloc extends Bloc<PromptEvent, PromptState> {
@@ -19,6 +21,15 @@ class PromptBloc extends Bloc<PromptEvent, PromptState> {
     on<GenerateSceneFromSummary>(_onGenerateSceneFromSummary);
     on<AddPromptTemplateRequested>(_onAddPromptTemplateRequested);
     on<DeletePromptTemplateRequested>(_onDeletePromptTemplateRequested);
+    
+    // 注册模板事件处理函数
+    on<CopyPublicTemplateRequested>(_onCopyPublicTemplateRequested);
+    on<ToggleTemplateFavoriteRequested>(_onToggleTemplateFavoriteRequested);
+    on<CreatePromptTemplateRequested>(_onCreatePromptTemplateRequested);
+    on<UpdatePromptTemplateRequested>(_onUpdatePromptTemplateRequested);
+    on<DeleteTemplateRequested>(_onDeleteTemplateRequested);
+    on<OptimizePromptStreamRequested>(_onOptimizePromptStreamRequested);
+    on<CancelOptimizationRequested>(_onCancelOptimizationRequested);
   }
 
   final PromptRepository _promptRepository;
@@ -391,5 +402,296 @@ class PromptBloc extends Bloc<PromptEvent, PromptState> {
         stylePrompts: state.stylePrompts,
       ));
     }
+  }
+
+  /// 处理复制公共模板事件
+  Future<void> _onCopyPublicTemplateRequested(
+    CopyPublicTemplateRequested event,
+    Emitter<PromptState> emit,
+  ) async {
+    try {
+      AppLogger.i(_tag, '复制公共模板: ${event.templateId}');
+      
+      // 查找对应的公共模板
+      final publicTemplate = state.promptTemplates.firstWhere(
+        (template) => template.id == event.templateId && template.isPublic,
+        orElse: () => throw Exception('公共模板不存在'),
+      );
+      
+      // 调用存储库复制模板
+      final newTemplate = await _promptRepository.copyPublicTemplate(publicTemplate);
+      
+      // 更新状态
+      final updatedTemplates = List<PromptTemplate>.from(state.promptTemplates)..add(newTemplate);
+      emit(state.copyWith(promptTemplates: updatedTemplates));
+      
+      AppLogger.i(_tag, '成功复制公共模板: ${newTemplate.id}');
+    } catch (e) {
+      AppLogger.e(_tag, '复制公共模板失败', e);
+      emit(PromptError(
+        errorMessage: '复制公共模板失败: ${e.toString()}',
+        prompts: state.prompts,
+        selectedFeatureType: state.selectedFeatureType,
+        promptTemplates: state.promptTemplates,
+      ));
+    }
+  }
+  
+  /// 处理切换模板收藏状态事件
+  Future<void> _onToggleTemplateFavoriteRequested(
+    ToggleTemplateFavoriteRequested event,
+    Emitter<PromptState> emit,
+  ) async {
+    try {
+      AppLogger.i(_tag, '切换模板收藏状态: ${event.templateId}');
+      
+      // 查找对应的模板
+      final templateIndex = state.promptTemplates.indexWhere(
+        (template) => template.id == event.templateId,
+      );
+      
+      if (templateIndex < 0) {
+        throw Exception('模板不存在');
+      }
+      
+      final template = state.promptTemplates[templateIndex];
+      
+      // 仅允许切换私有模板的收藏状态
+      if (template.isPublic) {
+        throw Exception('公共模板不能收藏');
+      }
+      
+      // 切换收藏状态
+      final updatedTemplate = await _promptRepository.toggleTemplateFavorite(template);
+      
+      // 更新状态
+      final updatedTemplates = List<PromptTemplate>.from(state.promptTemplates);
+      updatedTemplates[templateIndex] = updatedTemplate;
+      
+      emit(state.copyWith(promptTemplates: updatedTemplates));
+      
+      AppLogger.i(_tag, '成功切换模板收藏状态: ${updatedTemplate.isFavorite}');
+    } catch (e) {
+      AppLogger.e(_tag, '切换模板收藏状态失败', e);
+      emit(PromptError(
+        errorMessage: '切换模板收藏状态失败: ${e.toString()}',
+        prompts: state.prompts,
+        selectedFeatureType: state.selectedFeatureType,
+        promptTemplates: state.promptTemplates,
+      ));
+    }
+  }
+  
+  /// 处理创建提示词模板事件
+  Future<void> _onCreatePromptTemplateRequested(
+    CreatePromptTemplateRequested event,
+    Emitter<PromptState> emit,
+  ) async {
+    try {
+      AppLogger.i(_tag, '创建提示词模板: ${event.name}');
+      
+      // 检查用户ID是否存在
+      final String authorId = AppConfig.userId ?? 'anonymous';
+      
+      // 创建新模板
+      final newTemplate = await _promptRepository.createPromptTemplate(
+        name: event.name,
+        content: event.content,
+        featureType: event.featureType,
+        authorId: authorId, // 使用非空的用户ID
+      );
+      
+      // 更新状态
+      final updatedTemplates = List<PromptTemplate>.from(state.promptTemplates)..add(newTemplate);
+      emit(state.copyWith(promptTemplates: updatedTemplates));
+      
+      AppLogger.i(_tag, '成功创建提示词模板: ${newTemplate.id}');
+    } catch (e) {
+      AppLogger.e(_tag, '创建提示词模板失败', e);
+      emit(PromptError(
+        errorMessage: '创建提示词模板失败: ${e.toString()}',
+        prompts: state.prompts,
+        selectedFeatureType: state.selectedFeatureType,
+        promptTemplates: state.promptTemplates,
+      ));
+    }
+  }
+  
+  /// 处理更新提示词模板事件
+  Future<void> _onUpdatePromptTemplateRequested(
+    UpdatePromptTemplateRequested event,
+    Emitter<PromptState> emit,
+  ) async {
+    try {
+      AppLogger.i(_tag, '更新提示词模板: ${event.templateId}');
+      
+      // 查找对应的模板
+      final templateIndex = state.promptTemplates.indexWhere(
+        (template) => template.id == event.templateId,
+      );
+      
+      if (templateIndex < 0) {
+        throw Exception('模板不存在');
+      }
+      
+      final template = state.promptTemplates[templateIndex];
+      
+      // 仅允许更新私有模板
+      if (template.isPublic) {
+        throw Exception('公共模板不能更新');
+      }
+      
+      // 更新模板
+      final updatedTemplate = await _promptRepository.updatePromptTemplate(
+        templateId: event.templateId,
+        name: event.name,
+        content: event.content,
+      );
+      
+      // 更新状态
+      final updatedTemplates = List<PromptTemplate>.from(state.promptTemplates);
+      updatedTemplates[templateIndex] = updatedTemplate;
+      
+      emit(state.copyWith(promptTemplates: updatedTemplates));
+      
+      AppLogger.i(_tag, '成功更新提示词模板: ${updatedTemplate.id}');
+    } catch (e) {
+      AppLogger.e(_tag, '更新提示词模板失败', e);
+      emit(PromptError(
+        errorMessage: '更新提示词模板失败: ${e.toString()}',
+        prompts: state.prompts,
+        selectedFeatureType: state.selectedFeatureType,
+        promptTemplates: state.promptTemplates,
+      ));
+    }
+  }
+  
+  /// 处理删除模板事件
+  Future<void> _onDeleteTemplateRequested(
+    DeleteTemplateRequested event,
+    Emitter<PromptState> emit,
+  ) async {
+    try {
+      AppLogger.i(_tag, '删除模板: ${event.templateId}');
+      
+      // 查找对应的模板
+      final templateIndex = state.promptTemplates.indexWhere(
+        (template) => template.id == event.templateId,
+      );
+      
+      if (templateIndex < 0) {
+        throw Exception('模板不存在');
+      }
+      
+      final template = state.promptTemplates[templateIndex];
+      
+      // 仅允许删除私有模板
+      if (template.isPublic) {
+        throw Exception('公共模板不能删除');
+      }
+      
+      // 删除模板
+      await _promptRepository.deletePromptTemplate(event.templateId);
+      
+      // 更新状态
+      final updatedTemplates = List<PromptTemplate>.from(state.promptTemplates)..removeAt(templateIndex);
+      emit(state.copyWith(promptTemplates: updatedTemplates));
+      
+      AppLogger.i(_tag, '成功删除模板');
+    } catch (e) {
+      AppLogger.e(_tag, '删除模板失败', e);
+      emit(PromptError(
+        errorMessage: '删除模板失败: ${e.toString()}',
+        prompts: state.prompts,
+        selectedFeatureType: state.selectedFeatureType,
+        promptTemplates: state.promptTemplates,
+      ));
+    }
+  }
+  
+  /// 处理优化提示词事件
+  Future<void> _onOptimizePromptStreamRequested(
+    OptimizePromptStreamRequested event,
+    Emitter<PromptState> emit,
+  ) async {
+    try {
+      AppLogger.i(_tag, '流式优化提示词: ${event.templateId}');
+      
+      // 检查是否正在优化中
+      if (state.isOptimizing) {
+        throw Exception('正在优化中');
+      }
+      
+      // 设置为优化中状态
+      emit(state.copyWith(isOptimizing: true));
+      
+      // 进度回调
+      final onProgress = (double progress) {
+        if (event.onProgress != null) {
+          event.onProgress!(progress);
+        }
+      };
+      
+      // 结果回调
+      final onResult = (OptimizationResult result) {
+        if (event.onResult != null) {
+          event.onResult!(result);
+        }
+        
+        // 优化完成，更新状态
+        emit(state.copyWith(isOptimizing: false));
+      };
+      
+      // 错误回调
+      final onError = (String error) {
+        if (event.onError != null) {
+          event.onError!(error);
+        }
+        
+        // 优化失败，更新状态
+        emit(state.copyWith(
+          isOptimizing: false,
+          errorMessage: '优化提示词失败: $error',
+        ));
+      };
+      
+      // 调用存储库执行优化
+      _promptRepository.optimizePromptStream(
+        event.templateId,
+        event.request,
+        onProgress: onProgress,
+        onResult: onResult,
+        onError: onError,
+      );
+      
+    } catch (e) {
+      AppLogger.e(_tag, '开始优化提示词失败', e);
+      
+      if (event.onError != null) {
+        event.onError!(e.toString());
+      }
+      
+      emit(PromptError(
+        errorMessage: '开始优化提示词失败: ${e.toString()}',
+        prompts: state.prompts,
+        selectedFeatureType: state.selectedFeatureType,
+        promptTemplates: state.promptTemplates,
+        isOptimizing: false,
+      ));
+    }
+  }
+  
+  /// 处理取消优化事件
+  void _onCancelOptimizationRequested(
+    CancelOptimizationRequested event,
+    Emitter<PromptState> emit,
+  ) {
+    AppLogger.i(_tag, '取消优化提示词');
+    
+    // 取消优化
+    _promptRepository.cancelOptimization();
+    
+    // 更新状态
+    emit(state.copyWith(isOptimizing: false));
   }
 }

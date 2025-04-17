@@ -168,8 +168,16 @@ class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
   
   final NovelRepository repository;
   
+  // 防止重复加载标志  
+  bool _isLoading = false;
+  
   Future<void> _onLoadNovels(LoadNovels event, Emitter<NovelListState> emit) async {
+    // 如果已经在加载中，则不重复加载
+    if (_isLoading || state is NovelListLoading) return;
+    
+    _isLoading = true;
     emit(NovelListLoading());
+    
     try {
       final novels = await repository.fetchNovels();
       // 转换为NovelSummary列表
@@ -189,6 +197,8 @@ class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
       emit(NovelListLoaded(novels: novelSummaries));
     } catch (e) {
       emit(NovelListError(message: e.toString()));
+    } finally {
+      _isLoading = false;
     }
   }
   

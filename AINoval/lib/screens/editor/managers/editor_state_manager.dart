@@ -2,6 +2,7 @@ import 'package:ainoval/blocs/editor/editor_bloc.dart' as editor_bloc;
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 /// 编辑器状态管理器
 /// 负责管理编辑器的状态，如字数统计、控制器检查等
@@ -173,7 +174,10 @@ class EditorStateManager {
       // *** Check if loading just finished and content actually changed ***
       if (_lastEditorState!.isLoading && !state.isLoading && contentChanged) {
         justFinishedLoadingWithChanges = true;
-        AppLogger.i('EditorStateManager', '检测到加载完成且内容有变化，强制检查控制器。');
+        // 仅在调试模式下记录日志
+        if (kDebugMode) {
+          AppLogger.i('EditorStateManager', '检测到加载完成且内容有变化，强制检查控制器。');
+        }
       }
     }
 
@@ -181,16 +185,19 @@ class EditorStateManager {
     if (justFinishedLoadingWithChanges) {
        _lastControllerCheckTime = now;
        _lastEditorState = state; // Update state reference
-       AppLogger.i('EditorStateManager', '触发控制器检查 - 原因: 加载完成');
+       // 仅在调试模式下记录日志
+       if (kDebugMode) {
+         AppLogger.i('EditorStateManager', '触发控制器检查 - 原因: 加载完成');
+       }
        return true;
     }
 
-    // 极端节流：如果距离上次检查时间不足5秒，且不是刚加载完成，绝对不检查
+    // 极端节流：如果距离上次检查时间不足8秒，且不是刚加载完成，绝对不检查 (增加到8秒)
     if (_lastControllerCheckTime != null && 
-        now.difference(_lastControllerCheckTime!) < _controllerLongCheckInterval) {
-      // 记录日志：禁止频繁检查 (仅在状态变化时记录，避免日志刷屏)
-      if (stateChanged) {
-        AppLogger.d('EditorStateManager', '节流: 禁止${_controllerLongCheckInterval.inSeconds}秒内重复检查控制器');
+        now.difference(_lastControllerCheckTime!) < const Duration(seconds: 8)) {
+      // 记录日志：禁止频繁检查 (仅在状态变化且调试模式下记录，避免日志刷屏)
+      if (stateChanged && kDebugMode) {
+        AppLogger.d('EditorStateManager', '节流: 禁止8秒内重复检查控制器');
       }
       // 更新状态引用，即使被节流也要更新，以便下次比较
       _lastEditorState = state;
@@ -208,17 +215,17 @@ class EditorStateManager {
 
     // 如果上次检查时间为空，或者距离上次检查已经超过间隔时间，需要检查
     final bool timeIntervalExceeded = _lastControllerCheckTime == null || 
-        now.difference(_lastControllerCheckTime!) > _controllerLongCheckInterval;
+        now.difference(_lastControllerCheckTime!) > const Duration(seconds: 8);
     
     // 定义仅在必要时重构的条件:
     // 1. 首次加载（_lastControllerCheckTime为null）
-    // 2. 内容结构变化（添加/删除场景或章节）- 现在由 contentChanged 处理
+    // 2. 内容结构变化（添加/删除场景或章节）
     // 3. 活动元素变化
-    // 4. 时间间隔超时
+    // 4. 时间间隔超时 (增加到8秒)
     final bool needsCheck = _lastControllerCheckTime == null || 
                            contentChanged || 
                            activeElementsChanged ||
-                           timeIntervalExceeded; // Replace isLoading check with timeIntervalExceeded
+                           timeIntervalExceeded;
 
     // 更新状态引用，用于下次比较
     _lastEditorState = state;
@@ -227,18 +234,21 @@ class EditorStateManager {
     if (needsCheck) {
       _lastControllerCheckTime = now;
       
-      String reason;
-      if (contentChanged) {
-        reason = '内容结构变化';
-      } else if (activeElementsChanged) {
-        reason = '活动元素变化';
-      } else if (timeIntervalExceeded) {
-         reason = '时间间隔超过(${_controllerLongCheckInterval.inSeconds}秒)';
-      } else {
-        reason = '首次加载';
+      // 仅在调试模式下记录日志
+      if (kDebugMode) {
+        String reason;
+        if (contentChanged) {
+          reason = '内容结构变化';
+        } else if (activeElementsChanged) {
+          reason = '活动元素变化';
+        } else if (timeIntervalExceeded) {
+           reason = '时间间隔超过(8秒)';
+        } else {
+          reason = '首次加载';
+        }
+        
+        AppLogger.i('EditorStateManager', '触发控制器检查 - 原因: $reason');
       }
-      
-      AppLogger.i('EditorStateManager', '触发控制器检查 - 原因: $reason');
       return true;
     }
     

@@ -134,7 +134,7 @@ public class PromptServiceImpl implements PromptService {
                 Query.query(Criteria.where("type").is(promptType)),
                 PromptTemplate.class
         )
-                .map(PromptTemplate::getTemplate);
+                .map(template -> template.getContent());
     }
 
     @Override

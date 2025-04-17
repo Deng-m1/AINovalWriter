@@ -186,27 +186,77 @@ public abstract class LangChain4jModelProvider implements AIModelProvider {
     @Override
     public Mono<AIResponse> generateContent(AIRequest request) {
         if (isApiKeyEmpty()) {
-            return Mono.just(createErrorResponse("API密钥未配置", request));
+            return Mono.error(new RuntimeException("API密钥未配置"));
         }
 
         if (chatModel == null) {
-            return Mono.just(createErrorResponse("模型未初始化", request));
+            return Mono.error(new RuntimeException("模型未初始化"));
         }
 
-        try {
-            // 转换请求为LangChain4j格式
-            List<ChatMessage> messages = convertToLangChain4jMessages(request);
+        // 使用defer延迟执行
+        return Mono.defer(() -> {
+            // 创建一个临时对象作为锁
+            final Object syncLock = new Object();
+            final AIResponse[] responseHolder = new AIResponse[1];
+            final Throwable[] errorHolder = new Throwable[1];
+            
+            log.info("开始生成内容, 模型: {}, userId: {}", modelName, request.getUserId());
+            
+            // 记录开始时间
+            final long startTime = System.currentTimeMillis();
+            
+            try {
+                // 使用同步块保证完整执行
+                synchronized (syncLock) {
+                    // 转换请求为LangChain4j格式
+                    List<ChatMessage> messages = convertToLangChain4jMessages(request);
 
-            // 调用LangChain4j模型
-            ChatResponse response = chatModel.chat(messages);
-            AiMessage aiMessage = response.aiMessage();
-
-            // 转换响应
-            return Mono.just(convertToAIResponse(response, request));
-        } catch (Exception e) {
-            log.error("生成内容时出错", e);
-            return Mono.just(createErrorResponse("生成内容时出错: " + e.getMessage(), request));
-        }
+                    // 调用LangChain4j模型 - 这是阻塞调用
+                    ChatResponse response = chatModel.chat(messages);
+                    
+                    // 转换响应并保存到holder
+                    responseHolder[0] = convertToAIResponse(response, request);
+                }
+                
+                // 记录完成时间
+                log.info("内容生成完成, 耗时: {}ms, 模型: {}, userId: {}", 
+                        System.currentTimeMillis() - startTime, modelName, request.getUserId());
+                
+                // 返回结果
+                return Mono.justOrEmpty(responseHolder[0])
+                        .switchIfEmpty(Mono.error(new RuntimeException("生成的响应为空")));
+                
+            } catch (Exception e) {
+                log.error("生成内容时出错, 模型: {}, userId: {}, 错误: {}", 
+                        modelName, request.getUserId(), e.getMessage(), e);
+                // 保存错误
+                errorHolder[0] = e;
+                return Mono.error(new RuntimeException("生成内容时出错: " + e.getMessage(), e));
+            }
+        })
+        .doOnCancel(() -> {
+            // 请求被取消时的处理
+            log.warn("AI内容生成请求被取消, 模型: {}, userId: {}, 但模型可能仍在后台继续生成", 
+                    modelName, request.getUserId());
+        })
+        .timeout(Duration.ofSeconds(120)) // 添加2分钟超时
+        .retryWhen(Retry.backoff(2, Duration.ofSeconds(1))
+                .filter(throwable -> !(throwable instanceof RuntimeException && 
+                        throwable.getMessage() != null && 
+                        throwable.getMessage().contains("API密钥未配置"))))
+        .onErrorResume(e -> {
+            // 处理所有剩余错误，返回包含错误信息的响应
+            AIResponse errorResponse = new AIResponse();
+            errorResponse.setContent("生成内容时出错: " + e.getMessage());
+            // 通过反射设置status属性，因为AIResponse可能没有直接的setStatus方法
+            try {
+                errorResponse.getClass().getMethod("setStatus", String.class)
+                    .invoke(errorResponse, "error");
+            } catch (Exception ex) {
+                log.warn("无法设置AIResponse的status属性", ex);
+            }
+            return Mono.just(errorResponse);
+        });
     }
 
     @Override

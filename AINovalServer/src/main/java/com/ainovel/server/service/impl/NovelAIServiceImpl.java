@@ -105,9 +105,27 @@ public class NovelAIServiceImpl implements NovelAIService {
                     // 获取AI模型提供商并直接调用
                     return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
                             .flatMap(provider -> {
+                                // 添加请求日志
+                                log.info("开始向AI模型发送内容生成请求，用户ID: {}, 模型: {}", 
+                                        enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                
                                 // 直接使用业务请求调用提供商
-                                return provider.generateContent(enrichedRequest);
-                            });
+                                return provider.generateContent(enrichedRequest)
+                                        .doOnCancel(() -> {
+                                            log.info("客户端取消了连接，但AI生成会在后台继续完成, 用户: {}, 模型: {}", 
+                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                        })
+                                        .doOnSuccess(resp -> {
+                                            log.info("AI内容生成成功完成，用户ID: {}, 模型: {}", 
+                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                        })
+                                        .timeout(Duration.ofSeconds(600)) // 添加超时设置
+                                        .onErrorResume(e -> {
+                                            log.error("AI内容生成出错: {}", e.getMessage(), e);
+                                            return Mono.error(new RuntimeException("AI内容生成失败: " + e.getMessage(), e));
+                                        });
+                            })
+                            .retry(3); // 添加重试逻辑
                 });
     }
 
@@ -118,8 +136,40 @@ public class NovelAIServiceImpl implements NovelAIService {
                     // 获取AI模型提供商并直接调用
                     return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
                             .flatMapMany(provider -> {
+                                // 添加请求日志
+                                log.info("开始向AI模型发送流式内容生成请求，用户ID: {}, 模型: {}", 
+                                        enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                
+                                // 记录开始时间和最后活动时间
+                                final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
+                                final AtomicLong lastActivityTime = new AtomicLong(System.currentTimeMillis());
+                                
                                 // 直接使用业务请求调用提供商
-                                return provider.generateContentStream(enrichedRequest);
+                                return provider.generateContentStream(enrichedRequest)
+                                        .doOnSubscribe(sub -> {
+                                            log.info("流式生成已订阅，用户ID: {}, 模型: {}", 
+                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                        })
+                                        .doOnNext(chunk -> {
+                                            // 只为非心跳消息更新活动时间
+                                            if (!"heartbeat".equals(chunk)) {
+                                                lastActivityTime.set(System.currentTimeMillis());
+                                            }
+                                        })
+                                        .doOnComplete(() -> {
+                                            long duration = System.currentTimeMillis() - startTime.get();
+                                            log.info("流式内容生成成功完成，耗时: {}ms，用户ID: {}, 模型: {}", 
+                                                    duration, enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                        })
+                                        .doOnCancel(() -> {
+                                            log.info("流式生成被取消，但模型会在后台继续生成，用户ID: {}, 模型: {}", 
+                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                        })
+                                        .timeout(Duration.ofSeconds(600)) // 添加超时设置
+                                        .onErrorResume(e -> {
+                                            log.error("流式内容生成出错: {}", e.getMessage(), e);
+                                            return Flux.just("生成出错: " + e.getMessage());
+                                        });
                             });
                 });
     }
@@ -133,7 +183,8 @@ public class NovelAIServiceImpl implements NovelAIService {
                     return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
                             .flatMap(provider -> {
                                 // 直接使用业务请求调用提供商
-                                return provider.generateContent(enrichedRequest);
+                                return provider.generateContent(enrichedRequest)
+                                        .doOnError(e -> log.error("获取写作建议时出错: {}", e.getMessage(), e));
                             });
                 });
     }
@@ -161,7 +212,8 @@ public class NovelAIServiceImpl implements NovelAIService {
                     return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
                             .flatMap(provider -> {
                                 // 直接使用业务请求调用提供商
-                                return provider.generateContent(enrichedRequest);
+                                return provider.generateContent(enrichedRequest)
+                                        .doOnError(e -> log.error("修改内容时出错: {}", e.getMessage(), e));
                             });
                 });
     }
@@ -849,7 +901,27 @@ public class NovelAIServiceImpl implements NovelAIService {
 
                                 // 获取AI模型提供商
                                 return getAIModelProvider(userId, aiConfig.getModelName())
-                                        .flatMap(provider -> provider.generateContent(aiRequest));
+                                        .flatMap(provider -> {
+                                            // 添加请求日志
+                                            log.info("开始向AI模型发送摘要生成请求，用户ID: {}, 模型: {}", userId, aiConfig.getModelName());
+                                            
+                                            // 使用Mono.fromFuture或unsubscribeOn确保即使订阅被取消，任务也会继续执行
+                                            return provider.generateContent(aiRequest)
+                                                .doOnCancel(() -> {
+                                                    log.info("客户端取消了连接，但AI生成会在后台继续完成, 用户: {}, 模型: {}", 
+                                                            userId, aiConfig.getModelName());
+                                                })
+                                                .timeout(Duration.ofSeconds(600)) // 添加超时设置
+                                                .doOnSuccess(resp -> {
+                                                    log.info("AI摘要生成成功完成，用户ID: {}, 模型: {}", userId, aiConfig.getModelName());
+                                                })
+                                                .onErrorResume(e -> {
+                                                    log.error("AI内容生成出错: {}", e.getMessage(), e);
+                                                    return Mono.error(new RuntimeException("AI生成摘要失败: " + e.getMessage(), e));
+                                                });
+                                        })
+                                        // 添加重试逻辑处理临时性网络错误
+                                        .retry(3);
                             })
                             .map(response -> new SummarizeSceneResponse(response.getContent()));
                 })
@@ -866,9 +938,17 @@ public class NovelAIServiceImpl implements NovelAIService {
      * 构建最终提示词
      */
     private String buildFinalPrompt(String template, String context, String input) {
-        return template
-                .replace("{input}", input)
-                .replace("{context}", context);
+        // 使用PromptUtil工具类处理富文本和占位符替换
+        Map<String, String> variables = new HashMap<>();
+        variables.put("input", input);
+        variables.put("context", context);
+        
+        // 添加兼容性，支持旧的占位符格式
+        variables.put("content", input);
+        variables.put("description", input);
+        variables.put("instruction", input);
+        
+        return com.ainovel.server.common.util.PromptUtil.formatPromptTemplate(template, variables);
     }
 
     /**

@@ -10,6 +10,7 @@ import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/models/api/editor_dtos.dart';
 import 'package:ainoval/services/api_service/base/sse_client.dart';
 import 'package:flutter_client_sse/constants/sse_request_type_enum.dart';
+import 'dart:convert';
 
 /// 编辑器仓库实现
 class EditorRepositoryImpl implements EditorRepository {
@@ -579,15 +580,37 @@ class EditorRepositoryImpl implements EditorRepository {
   /// 将前端Scene模型转换为后端API所需的JSON格式 (用于upsert)
   Map<String, dynamic> _convertFrontendSceneToBackendJson(
       Scene scene, String novelId, String chapterId) {
+    // 确保content是字符串格式
+    String contentStr = scene.content;
+    
+    // 如果内容为空，提供默认的空内容
+    if (contentStr.isEmpty) {
+      contentStr = '{"ops":[{"insert":"\\n"}]}';
+    }
+    
+    // 确保content是有效的JSON，如果已经是字符串则不需要操作
+    // 如果是对象，则转换为JSON字符串
+    try {
+      // 尝试解析以验证是JSON字符串
+      jsonDecode(contentStr);
+    } catch (e) {
+      // 如果不是JSON字符串（可能是对象被错误存储），记录并纠正
+      AppLogger.e(
+          'Services/api_service/repositories/impl/editor_repository_impl',
+          '场景内容不是有效JSON字符串，尝试修正',
+          e);
+      contentStr = '{"ops":[{"insert":"\\n"}]}';
+    }
+    
     return {
       'id': scene.id,
       'novelId': novelId,
       'chapterId': chapterId,
-      'content': scene.content,
+      'content': contentStr,
       'summary': scene.summary.content,
       'updatedAt': scene.lastEdited.toIso8601String(),
       'version': scene.version,
-      'title': '',
+      'title': scene.title.isNotEmpty ? scene.title : '场景 ${scene.id}',
       'sequence': 0,
       'sceneType': 'NORMAL',
       'history': scene.history
@@ -1634,6 +1657,69 @@ class EditorRepositoryImpl implements EditorRepository {
     } catch (e) {
       AppLogger.e(_tag, '生成场景内容失败，小说ID: $novelId', e);
       throw Exception('生成场景内容失败: ${e.toString()}');
+    }
+  }
+
+  /// 从本地获取章节的所有场景（不触发网络请求）
+  Future<List<Scene>> getLocalScenesForChapter(
+    String novelId,
+    String actId,
+    String chapterId,
+  ) async {
+    try {
+      // 从本地存储获取小说数据
+      final novel = await _localStorageService.getNovel(novelId);
+      if (novel == null) {
+        AppLogger.w('EditorRepositoryImpl', '本地无小说数据，无法获取章节场景: $novelId');
+        return [];
+      }
+      
+      // 查找对应的章节
+      Chapter? targetChapter;
+      for (final act in novel.acts) {
+        if (act.id == actId) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == chapterId) {
+              targetChapter = chapter;
+              break;
+            }
+          }
+          break;
+        }
+      }
+      
+      // 如果找到章节但没有场景，尝试从本地存储中查找单独保存的场景
+      if (targetChapter != null) {
+        if (targetChapter.scenes.isNotEmpty) {
+          AppLogger.i('EditorRepositoryImpl', '从本地小说数据中获取到章节 $chapterId 的 ${targetChapter.scenes.length} 个场景');
+          return targetChapter.scenes;
+        } else {
+          // 尝试查找单独存储的场景
+          final List<Scene> scenes = [];
+          final sceneKeys = await _localStorageService.getSceneKeysForChapter(novelId, actId, chapterId);
+          
+          for (final sceneId in sceneKeys) {
+            final scene = await _localStorageService.getSceneContent(novelId, actId, chapterId, sceneId);
+            if (scene != null) {
+              scenes.add(scene);
+            }
+          }
+          
+          if (scenes.isNotEmpty) {
+            AppLogger.i('EditorRepositoryImpl', '从本地存储中获取到章节 $chapterId 的 ${scenes.length} 个单独存储的场景');
+          } else {
+            AppLogger.i('EditorRepositoryImpl', '本地无章节 $chapterId 的场景数据');
+          }
+          
+          return scenes;
+        }
+      }
+      
+      AppLogger.w('EditorRepositoryImpl', '本地小说数据中找不到章节: $chapterId');
+      return [];
+    } catch (e) {
+      AppLogger.e('EditorRepositoryImpl', '从本地获取章节场景失败', e);
+      return [];
     }
   }
 }

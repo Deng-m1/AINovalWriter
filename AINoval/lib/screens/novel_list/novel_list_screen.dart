@@ -62,27 +62,22 @@ class _NovelListScreenState extends State<NovelListScreen>
         child: Center(
           child: ScaleTransition(
             scale: _cardScaleAnimation,
-            child: BlocProvider(
-              create: (context) => NovelListBloc(
-                repository: context.read<NovelRepository>(),
-              ),
-              child: Builder(
-                builder: (context) {
-                  // 获取NovelListBloc实例，以便可以在导航时共享
-                  final novelListBloc = context.read<NovelListBloc>();
-                  return MainCard(
-                    maxWidth: maxContentWidth,
-                    maxHeight: maxContentHeight,
-                    isGridView: _isGridView,
-                    searchController: _searchController,
-                    onViewTypeChanged: (isGrid) {
-                      setState(() {
-                        _isGridView = isGrid;
-                      });
-                    },
-                  );
-                }
-              ),
+            child: Builder(
+              builder: (context) {
+                // 获取NovelListBloc实例，以便可以在导航时共享
+                final novelListBloc = context.read<NovelListBloc>();
+                return MainCard(
+                  maxWidth: maxContentWidth,
+                  maxHeight: maxContentHeight,
+                  isGridView: _isGridView,
+                  searchController: _searchController,
+                  onViewTypeChanged: (isGrid) {
+                    setState(() {
+                      _isGridView = isGrid;
+                    });
+                  },
+                );
+              }
             ),
           ),
         ),
@@ -321,7 +316,12 @@ class MainCard extends StatelessWidget {
                     child: BlocBuilder<NovelListBloc, NovelListState>(
                       builder: (context, state) {
                         if (state is NovelListInitial) {
-                          context.read<NovelListBloc>().add(LoadNovels());
+                          // 只在初始化状态时触发一次加载
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (context.read<NovelListBloc>().state is NovelListInitial) {
+                              context.read<NovelListBloc>().add(LoadNovels());
+                            }
+                          });
                           return const LoadingView();
                         } else if (state is NovelListLoading) {
                           return const LoadingView();
