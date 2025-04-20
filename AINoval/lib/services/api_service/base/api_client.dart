@@ -1165,7 +1165,7 @@ class ApiClient {
     }
   }
 
-  /// 列出用户所有的 AI 模型配置
+  /// 获取用户所有AI配置(普通接口，不含解密的API密钥)
   Future<List<UserAIModelConfigModel>> listAIConfigurations({
     required String userId,
     bool? validatedOnly,
@@ -1190,6 +1190,35 @@ class ApiClient {
       }
     } catch (e) {
       AppLogger.e('ApiClient', '列出 AI 配置失败 for user $userId', e);
+      rethrow;
+    }
+  }
+
+  /// 获取用户所有AI配置，包含解密后的API密钥
+  Future<List<UserAIModelConfigModel>> listAIConfigurationsWithDecryptedKeys({
+    required String userId,
+    bool? validatedOnly,
+  }) async {
+    final path = '$_userAIConfigBasePath/users/$userId/list-with-api-keys';
+    final body = <String, dynamic>{};
+    if (validatedOnly != null) {
+      body['validatedOnly'] = validatedOnly;
+    }
+    try {
+      // 如果 body 为空，data 应该传 null
+      final responseData = await post(path, data: body.isEmpty ? null : body);
+      if (responseData is List) {
+        final configs = responseData
+            .map((json) =>
+                UserAIModelConfigModel.fromJson(json as Map<String, dynamic>))
+            .toList();
+        return configs;
+      } else {
+        AppLogger.e('ApiClient', 'listAIConfigurationsWithDecryptedKeys 响应格式错误: $responseData');
+        throw ApiException(-1, '获取带解密API密钥的配置列表响应格式错误');
+      }
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取带解密API密钥的AI配置列表失败 for user $userId', e);
       rethrow;
     }
   }

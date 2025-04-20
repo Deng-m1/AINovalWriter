@@ -106,3 +106,18 @@ class GetProviderDefaultConfig extends AiConfigEvent {
   @override
   List<Object?> get props => [provider];
 }
+
+/// 加载指定配置的API密钥
+class LoadApiKeyForConfig extends AiConfigEvent {
+  const LoadApiKeyForConfig({
+    required this.userId,
+    required this.configId,
+    required this.onApiKeyLoaded,
+  });
+  final String userId;
+  final String configId;
+  final void Function(String apiKey) onApiKeyLoaded;
+
+  @override
+  List<Object?> get props => [userId, configId];
+}

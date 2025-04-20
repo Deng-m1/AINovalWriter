@@ -113,4 +113,13 @@ public interface UserAIModelConfigService {
      * @return 第一个找到的已验证配置，可能为空
      */
     Mono<UserAIModelConfig> getFirstValidatedConfiguration(String userId);
+
+    /**
+     * 获取用户配置的解密后API密钥
+     * 
+     * @param userId 用户ID
+     * @param configId 配置ID
+     * @return 解密后的API密钥
+     */
+    Mono<String> getDecryptedApiKey(String userId, String configId);
 }

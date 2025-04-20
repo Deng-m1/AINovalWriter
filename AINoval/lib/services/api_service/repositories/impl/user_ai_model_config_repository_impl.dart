@@ -82,18 +82,19 @@ class UserAIModelConfigRepositoryImpl implements UserAIModelConfigRepository {
     bool? validatedOnly,
   }) async {
     AppLogger.i('UserAIModelConfigRepoImpl',
-        '列出配置: userId=$userId, validatedOnly=$validatedOnly');
+        '列出配置(包含API密钥): userId=$userId, validatedOnly=$validatedOnly');
     try {
-      final configs = await apiClient.listAIConfigurations(
+      // 调用新的API端点，获取包含解密后API密钥的配置列表
+      final configs = await apiClient.listAIConfigurationsWithDecryptedKeys(
         userId: userId,
         validatedOnly: validatedOnly,
       );
       AppLogger.i('UserAIModelConfigRepoImpl',
-          '列出配置成功: userId=$userId, count=${configs.length}');
+          '列出配置(包含API密钥)成功: userId=$userId, count=${configs.length}');
       return configs;
     } catch (e, stackTrace) {
       AppLogger.e(
-          'UserAIModelConfigRepoImpl', '列出配置失败: userId=$userId', e, stackTrace);
+          'UserAIModelConfigRepoImpl', '列出配置(包含API密钥)失败: userId=$userId', e, stackTrace);
       // 直接重新抛出
       rethrow;
     }

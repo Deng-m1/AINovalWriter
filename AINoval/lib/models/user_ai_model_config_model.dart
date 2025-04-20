@@ -15,6 +15,7 @@ class UserAIModelConfigModel extends Equatable {
   final bool isDefault;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? apiKey; // 添加apiKey字段，存储解密后的API密钥
 
   const UserAIModelConfigModel({
     required this.id,
@@ -27,6 +28,7 @@ class UserAIModelConfigModel extends Equatable {
     required this.isDefault,
     required this.createdAt,
     required this.updatedAt,
+    this.apiKey, // 添加apiKey字段，可为空
   });
 
   // 空实例，用于默认值
@@ -42,6 +44,7 @@ class UserAIModelConfigModel extends Equatable {
       isDefault: false,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
+      apiKey: null, // 默认为null
     );
   }
 
@@ -68,6 +71,7 @@ class UserAIModelConfigModel extends Equatable {
       isDefault: safeBool('isDefault'),
       createdAt: parseBackendDateTime(json['createdAt']), // Use the parser
       updatedAt: parseBackendDateTime(json['updatedAt']), // Use the parser
+      apiKey: json['apiKey'] as String?, // 添加API密钥，可为空
     );
   }
 
@@ -84,6 +88,7 @@ class UserAIModelConfigModel extends Equatable {
       'isDefault': isDefault,
       'createdAt': createdAt.toIso8601String(), // Standard format for JSON
       'updatedAt': updatedAt.toIso8601String(), // Standard format for JSON
+      'apiKey': apiKey, // 包含API密钥
     };
   }
 
@@ -99,6 +104,7 @@ class UserAIModelConfigModel extends Equatable {
     bool? isDefault,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? apiKey, // 添加apiKey参数
   }) {
     return UserAIModelConfigModel(
       id: id ?? this.id,
@@ -111,6 +117,7 @@ class UserAIModelConfigModel extends Equatable {
       isDefault: isDefault ?? this.isDefault,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      apiKey: apiKey ?? this.apiKey, // 复制apiKey
     );
   }
 
@@ -130,6 +137,7 @@ class UserAIModelConfigModel extends Equatable {
         other.isValidated == isValidated &&
         other.isDefault == isDefault &&
         other.createdAt == createdAt &&
+        other.apiKey == apiKey && // 比较apiKey
         other.updatedAt == updatedAt;
   }
 
@@ -144,14 +152,15 @@ class UserAIModelConfigModel extends Equatable {
         isValidated.hashCode ^
         isDefault.hashCode ^
         createdAt.hashCode ^
+        apiKey.hashCode ^ // 计算apiKey的哈希值
         updatedAt.hashCode;
   }
 
   @override
   String toString() {
-    return 'UserAIModelConfigModel(id: $id, userId: $userId, provider: $provider, modelName: $modelName, alias: $alias, apiEndpoint: $apiEndpoint, isValidated: $isValidated, isDefault: $isDefault, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'UserAIModelConfigModel(id: $id, userId: $userId, provider: $provider, modelName: $modelName, alias: $alias, apiEndpoint: $apiEndpoint, isValidated: $isValidated, isDefault: $isDefault, createdAt: $createdAt, updatedAt: $updatedAt, apiKey: ${apiKey != null ? '******' : 'null'})'; // 不显示完整apiKey
   }
 
   @override
-  List<Object?> get props => [id, userId, provider, modelName, alias, apiEndpoint, isValidated, isDefault, createdAt, updatedAt];
+  List<Object?> get props => [id, userId, provider, modelName, alias, apiEndpoint, isValidated, isDefault, createdAt, updatedAt, apiKey]; // 添加apiKey到props
 }

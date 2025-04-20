@@ -24,6 +24,7 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
     on<SetDefaultAiConfig>(_onSetDefaultAiConfig);
     on<ClearProviderModels>(_onClearProviderModels);
     on<GetProviderDefaultConfig>(_onGetProviderDefaultConfig);
+    on<LoadApiKeyForConfig>(_onLoadApiKeyForConfig);
   }
   final UserAIModelConfigRepository _repository;
 
@@ -93,10 +94,12 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
   Future<void> _onLoadModelsForProvider(
       LoadModelsForProvider event, Emitter<AiConfigState> emit) async {
     // Emit state clearing old models and setting the selected provider
+    print('⚠️ 开始处理LoadModelsForProvider事件，provider=${event.provider}');
     emit(state.copyWith(
         modelsForProvider: [], selectedProviderForModels: event.provider));
     try {
       final models = await _repository.listModelsForProvider(event.provider);
+      print('⚠️ 成功获取模型列表，provider=${event.provider}，模型数量=${models.length}');
 
       // 创建模型分组
       final modelGroup = AIModelGroup.fromModelList(event.provider, models);
@@ -111,9 +114,14 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
         modelGroups: updatedModelGroups,
         errorMessage: () => null
       ));
+      
+      // 加载完模型后，触发加载该提供商的默认配置信息
+      print('⚠️ 模型加载完成，触发GetProviderDefaultConfig，provider=${event.provider}');
+      add(GetProviderDefaultConfig(provider: event.provider));
     } catch (e, stackTrace) {
       AppLogger.e(
           'AiConfigBloc', '加载模型失败 for ${event.provider}', e, stackTrace);
+      print('⚠️ 加载模型失败，provider=${event.provider}，错误：$e');
       // Emit state clearing models and setting an error message
       emit(state.copyWith(
           modelsForProvider: [],
@@ -284,18 +292,25 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
   Future<void> _onGetProviderDefaultConfig(
       GetProviderDefaultConfig event, Emitter<AiConfigState> emit) async {
     final provider = event.provider;
+    print('⚠️ 开始处理GetProviderDefaultConfig事件，provider=$provider');
     
-    // 如果之前已经加载过配置，尝试从中查找默认的provider配置
-    // 如果没有找到，则不做任何更改，保持现有状态
-    if (state.providerDefaultConfigs.containsKey(provider)) {
-      // 该提供商的配置已经存在，不需要做任何事情
-      return;
-    }
+    // 获取当前状态的providerDefaultConfigs副本
+    final providerDefaultConfigs = Map<String, UserAIModelConfigModel>.from(state.providerDefaultConfigs);
     
     // 从已加载的配置中查找
     final providerConfigs = state.configs.where((c) => c.provider == provider).toList();
+    print('⚠️ 查找provider=$provider的配置，找到${providerConfigs.length}个配置');
+    
     if (providerConfigs.isEmpty) {
-      // 没有找到该提供商的配置，不做任何更改
+      print('⚠️ 没有找到provider=$provider的配置');
+      // 没有找到该提供商的配置，从Map中移除这个提供商的配置（如果有）
+      if (providerDefaultConfigs.containsKey(provider)) {
+        providerDefaultConfigs.remove(provider);
+        emit(state.copyWith(
+          providerDefaultConfigs: providerDefaultConfigs,
+        ));
+        print('⚠️ 已从providerDefaultConfigs中移除provider=$provider的配置');
+      }
       return;
     }
     
@@ -308,11 +323,40 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
       ),
     );
     
-    final providerDefaultConfigs = Map<String, UserAIModelConfigModel>.from(state.providerDefaultConfigs);
+    print('⚠️ 找到provider=$provider的默认配置，id=${defaultConfig.id}，apiEndpoint=${defaultConfig.apiEndpoint}，hasApiKey=${defaultConfig.apiKey != null}');
+    
+    // 更新或添加该提供商的默认配置
     providerDefaultConfigs[provider] = defaultConfig;
     
+    // 更新状态
     emit(state.copyWith(
       providerDefaultConfigs: providerDefaultConfigs,
     ));
+    
+    print('⚠️ 已更新状态中的providerDefaultConfigs，当前包含的提供商：${providerDefaultConfigs.keys.join(", ")}');
+  }
+
+  // 处理加载API密钥的事件
+  Future<void> _onLoadApiKeyForConfig(
+      LoadApiKeyForConfig event, Emitter<AiConfigState> emit) async {
+    try {
+      // 从已加载的配置中查找
+      final config = state.configs.firstWhereOrNull(
+        (config) => config.id == event.configId
+      );
+      
+      if (config != null && config.apiKey != null) {
+        // 如果已加载的配置中有API密钥，直接使用
+        event.onApiKeyLoaded(config.apiKey!);
+        return;
+      }
+      
+      // 如果没有找到配置或者没有API密钥，提示用户手动输入
+      event.onApiKeyLoaded("请手动输入API密钥");
+    } catch (e, stackTrace) {
+      AppLogger.e('AiConfigBloc', '获取API密钥失败', e, stackTrace);
+      // 如果失败，返回一个错误提示
+      event.onApiKeyLoaded("获取失败，请手动输入");
+    }
   }
 }

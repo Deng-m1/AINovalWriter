@@ -6,6 +6,7 @@ import 'package:ainoval/screens/settings/widgets/provider_list.dart';
 import 'package:ainoval/screens/settings/widgets/searchable_model_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/foundation.dart';
 // Placeholder for localization, replace with your actual import
 // import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
@@ -189,14 +190,24 @@ class _AiConfigFormState extends State<AiConfigForm> {
 
   // 处理提供商选择
   void _handleProviderSelected(String provider) {
+    print('⚠️ 处理提供商选择，从${_selectedProvider}切换到$provider');
+    
     if (provider != _selectedProvider) {
       setState(() {
         _selectedProvider = provider;
         _selectedModel = null;
+        // 清空之前可能填充的API信息，以确保使用新提供商的信息
+        if (!_isEditMode) {
+          _apiEndpointController.text = '';
+          _apiKeyController.text = '';
+        }
       });
+      
+      // 加载新提供商的模型
       _loadModels(provider);
       
       // 自动填充该提供商的API信息
+      // 这里不直接填充，而是通过Bloc事件和BlocListener来处理
       _autoFillApiInfo(provider);
     }
   }
@@ -210,28 +221,10 @@ class _AiConfigFormState extends State<AiConfigForm> {
 
   // 自动填充API信息
   void _autoFillApiInfo(String provider) {
-    // 获取该提供商的默认配置
-    final defaultConfig = context.read<AiConfigBloc>().state.getProviderDefaultConfig(provider);
-    if (defaultConfig != null && defaultConfig.id.isNotEmpty) {
-      // 向后端获取实际的API密钥
-      final bloc = context.read<AiConfigBloc>();
-      
-      setState(() {
-        // 填充API Endpoint
-        if (!_isEditMode && _apiEndpointController.text.isEmpty && defaultConfig.apiEndpoint.isNotEmpty) {
-          _apiEndpointController.text = defaultConfig.apiEndpoint;
-        }
-        
-        // 这里我们需要向后端请求实际的API密钥
-        // 但由于API密钥是敏感信息，我们假设后端接口只返回了"API_KEY_FOR_PROVIDER"作为示例
-        // 在实际应用中，替换为实际的获取API密钥的调用
-        if (!_isEditMode && _apiKeyController.text.isEmpty) {
-          // 注意：在真实应用中这里会是实际的API密钥
-          _apiKeyController.text = "API_KEY_FOR_${provider.toUpperCase()}";
-          _showApiKey = true; // 让用户看到API密钥以便确认
-        }
-      });
-    }
+    // 发送获取该提供商默认配置的事件
+    // 实际的填充操作会在BlocListener中根据状态变化处理
+    print('⚠️ 调用_autoFillApiInfo，provider=$provider');
+    context.read<AiConfigBloc>().add(GetProviderDefaultConfig(provider: provider));
   }
 
   @override
@@ -272,6 +265,34 @@ class _AiConfigFormState extends State<AiConfigForm> {
         } else if (_isLoadingModels) {
           _isLoadingModels = false;
           needsSetState = true;
+        }
+        
+        // --- 检测默认配置变化并填充API信息 ---
+        if (_selectedProvider != null) {
+          print('⚠️ BlocListener检测配置，provider=$_selectedProvider, 是否有配置=${state.providerDefaultConfigs.containsKey(_selectedProvider!)}');
+          
+          if (state.providerDefaultConfigs.containsKey(_selectedProvider!)) {
+            final defaultConfig = state.providerDefaultConfigs[_selectedProvider!];
+            print('⚠️ 找到配置：${defaultConfig?.id}，apiEndpoint=${defaultConfig?.apiEndpoint}，hasApiKey=${defaultConfig?.apiKey != null}');
+            
+            if (defaultConfig != null && defaultConfig.id.isNotEmpty) {
+              // 仅在非编辑模式下自动填充
+              if (!_isEditMode) {
+                if (_apiEndpointController.text.isEmpty && defaultConfig.apiEndpoint.isNotEmpty) {
+                  print('⚠️ 填充API Endpoint: ${defaultConfig.apiEndpoint}');
+                  _apiEndpointController.text = defaultConfig.apiEndpoint;
+                  needsSetState = true;
+                }
+                
+                if (_apiKeyController.text.isEmpty && defaultConfig.apiKey != null) {
+                  print('⚠️ 填充API Key: ${defaultConfig.apiKey!.substring(0, 3)}...');
+                  _apiKeyController.text = defaultConfig.apiKey!;
+                  _showApiKey = true; // 让用户看到API密钥以便确认
+                  needsSetState = true;
+                }
+              }
+            }
+          }
         }
 
         // --- Saving State Update ---
@@ -730,6 +751,21 @@ class _AiConfigFormState extends State<AiConfigForm> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    // 调试按钮
+                    if (!kReleaseMode) // 只在调试模式显示
+                      TextButton(
+                        onPressed: () {
+                          final configs = context.read<AiConfigBloc>().state.providerDefaultConfigs;
+                          print('⚠️ 当前所有提供商默认配置:');
+                          configs.forEach((provider, config) {
+                            print('⚠️ 提供商=$provider, configId=${config.id}, hasApiKey=${config.apiKey != null}');
+                          });
+                        },
+                        child: const Text('打印配置', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      ),
+                      
+                    const Spacer(),
+                      
                     OutlinedButton(
                       onPressed: _isSaving ? null : widget.onCancel,
                       style: OutlinedButton.styleFrom(
