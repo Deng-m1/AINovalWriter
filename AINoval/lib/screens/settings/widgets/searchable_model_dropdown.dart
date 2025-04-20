@@ -98,20 +98,21 @@ class _SearchableModelDropdownState extends State<SearchableModelDropdown> {
           child: CompositedTransformFollower(
             link: _layerLink,
             showWhenUnlinked: false,
-            offset: Offset(0, size.height + 5),
+            offset: Offset(0, size.height + 4),
             child: Material(
-              elevation: 4,
-              borderRadius: BorderRadius.circular(12),
+              elevation: 3,
+              borderRadius: BorderRadius.circular(8),
               child: Container(
                 constraints: BoxConstraints(
-                  maxHeight: 300,
+                  maxHeight: 250,
                   minWidth: size.width,
                 ),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                    width: 0.5,
                   ),
                 ),
                 child: _buildDropdownList(),
@@ -130,21 +131,30 @@ class _SearchableModelDropdownState extends State<SearchableModelDropdown> {
 
     if (filteredModels.isEmpty) {
       return const Padding(
-        padding: EdgeInsets.all(16.0),
+        padding: EdgeInsets.all(12.0),
         child: Center(
-          child: Text('没有找到匹配的模型'),
+          child: Text(
+            '没有找到匹配的模型',
+            style: TextStyle(fontSize: 13),
+          ),
         ),
       );
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       shrinkWrap: true,
       itemCount: filteredModels.length,
       itemBuilder: (context, index) {
         final model = filteredModels[index];
         return ListTile(
-          title: Text(model),
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          title: Text(
+            model,
+            style: const TextStyle(fontSize: 13),
+            overflow: TextOverflow.ellipsis,
+          ),
           onTap: () {
             widget.onModelSelected(model);
             _searchController.clear();
@@ -163,23 +173,34 @@ class _SearchableModelDropdownState extends State<SearchableModelDropdown> {
       child: TextField(
         controller: _searchController,
         focusNode: _focusNode,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
         decoration: InputDecoration(
           hintText: widget.hintText,
-          prefixIcon: const Icon(Icons.search),
+          hintStyle: TextStyle(
+            fontSize: 13,
+            color: Theme.of(context).hintColor.withOpacity(0.7),
+          ),
+          prefixIcon: Icon(
+            Icons.search,
+            size: 18,
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+          ),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(
-              color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+              color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+              width: 1.0,
             ),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(
-              color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+              color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+              width: 1.0,
             ),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(
               color: Theme.of(context).colorScheme.primary,
               width: 1.5,
@@ -189,7 +210,8 @@ class _SearchableModelDropdownState extends State<SearchableModelDropdown> {
           fillColor: Theme.of(context).brightness == Brightness.dark
               ? Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3)
               : Theme.of(context).colorScheme.surfaceContainerLowest.withOpacity(0.7),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          isDense: true,
         ),
       ),
     );

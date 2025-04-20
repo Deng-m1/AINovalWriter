@@ -23,6 +23,7 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
     on<ValidateAiConfig>(_onValidateAiConfig);
     on<SetDefaultAiConfig>(_onSetDefaultAiConfig);
     on<ClearProviderModels>(_onClearProviderModels);
+    on<GetProviderDefaultConfig>(_onGetProviderDefaultConfig);
   }
   final UserAIModelConfigRepository _repository;
 
@@ -32,9 +33,37 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
     try {
       final configs =
           await _repository.listConfigurations(userId: event.userId);
+      
+      // 按提供商分组用户配置
+      final Map<String, UserAIModelConfigModel> providerDefaultConfigs = {};
+      
+      // 按提供商分组
+      final configsByProvider = <String, List<UserAIModelConfigModel>>{};
+      for (final config in configs) {
+        if (!configsByProvider.containsKey(config.provider)) {
+          configsByProvider[config.provider] = [];
+        }
+        configsByProvider[config.provider]!.add(config);
+      }
+      
+      // 为每个提供商选择一个默认配置
+      configsByProvider.forEach((provider, providerConfigs) {
+        // 优先选择默认配置，其次是已验证的配置，最后选择第一个配置
+        final defaultConfig = providerConfigs.firstWhere(
+          (c) => c.isDefault, 
+          orElse: () => providerConfigs.firstWhere(
+            (c) => c.isValidated,
+            orElse: () => providerConfigs.first,
+          ),
+        );
+        
+        providerDefaultConfigs[provider] = defaultConfig;
+      });
+      
       emit(state.copyWith(
         status: AiConfigStatus.loaded,
         configs: configs,
+        providerDefaultConfigs: providerDefaultConfigs,
         errorMessage: () => null, // Clear previous error
       ));
     } catch (e, stackTrace) {
@@ -248,6 +277,42 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
       clearModels: true,
       // 保留模型分组信息，因为它可能在其他地方被使用
       // 如果需要清除特定提供商的模型分组，可以在这里处理
+    ));
+  }
+
+  // 根据provider查找第一个可用的配置，用于显示该提供商的API密钥和URL
+  Future<void> _onGetProviderDefaultConfig(
+      GetProviderDefaultConfig event, Emitter<AiConfigState> emit) async {
+    final provider = event.provider;
+    
+    // 如果之前已经加载过配置，尝试从中查找默认的provider配置
+    // 如果没有找到，则不做任何更改，保持现有状态
+    if (state.providerDefaultConfigs.containsKey(provider)) {
+      // 该提供商的配置已经存在，不需要做任何事情
+      return;
+    }
+    
+    // 从已加载的配置中查找
+    final providerConfigs = state.configs.where((c) => c.provider == provider).toList();
+    if (providerConfigs.isEmpty) {
+      // 没有找到该提供商的配置，不做任何更改
+      return;
+    }
+    
+    // 首先寻找默认的
+    final defaultConfig = providerConfigs.firstWhere(
+      (c) => c.isDefault, 
+      orElse: () => providerConfigs.firstWhere(
+        (c) => c.isValidated,
+        orElse: () => providerConfigs.first,
+      ),
+    );
+    
+    final providerDefaultConfigs = Map<String, UserAIModelConfigModel>.from(state.providerDefaultConfigs);
+    providerDefaultConfigs[provider] = defaultConfig;
+    
+    emit(state.copyWith(
+      providerDefaultConfigs: providerDefaultConfigs,
     ));
   }
 }

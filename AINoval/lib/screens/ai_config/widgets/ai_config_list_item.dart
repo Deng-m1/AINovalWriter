@@ -172,16 +172,12 @@ class AiConfigListItem extends StatelessWidget {
               decoration: BoxDecoration(
                 color: config.isValidated
                   ? (isDark ? Colors.green.withAlpha(26) : Colors.green.withAlpha(13)) // 0.1/0.05 opacity
-                  : (config.validationError != null
-                      ? (isDark ? Colors.orange.withAlpha(26) : Colors.orange.withAlpha(13)) // 0.1/0.05 opacity
-                      : (isDark ? Colors.grey.withAlpha(26) : Colors.grey.withAlpha(13))), // 0.1/0.05 opacity
+                  : (isDark ? Colors.grey.withAlpha(26) : Colors.grey.withAlpha(13)), // 0.1/0.05 opacity
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: config.isValidated
                       ? Colors.green.withAlpha(77) // 0.3 opacity
-                      : (config.validationError != null
-                          ? Colors.orange.withAlpha(77) // 0.3 opacity
-                          : Colors.grey.withAlpha(77)), // 0.3 opacity
+                      : Colors.grey.withAlpha(77), // 0.3 opacity
                   width: 0.5,
                 ),
               ),
@@ -191,9 +187,7 @@ class AiConfigListItem extends StatelessWidget {
                     config.isValidated ? Icons.check_circle : Icons.error_outline,
                     color: config.isValidated
                         ? Colors.green
-                        : (config.validationError != null
-                            ? Colors.orange
-                            : Colors.grey),
+                        : Colors.grey,
                     size: 18,
                   ),
                   const SizedBox(width: 8),
@@ -201,13 +195,11 @@ class AiConfigListItem extends StatelessWidget {
                     child: Text(
                       config.isValidated
                           ? '已验证'
-                          : (config.validationError ?? '未验证'),
+                          : '未验证',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: config.isValidated
                             ? Colors.green
-                            : (config.validationError != null
-                                ? Colors.orange
-                                : Colors.grey),
+                            : Colors.grey,
                         fontStyle: config.isValidated
                             ? FontStyle.normal
                             : FontStyle.italic,
@@ -219,17 +211,6 @@ class AiConfigListItem extends StatelessWidget {
                 ],
               ),
             ),
-            if (!config.isValidated && config.validationError != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0, left: 8, right: 8),
-                child: Text(
-                  config.validationError!,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.orange, fontStyle: FontStyle.italic),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
             const SizedBox(height: 12),
             Row(
               children: [

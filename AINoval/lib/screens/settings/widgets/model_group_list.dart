@@ -32,22 +32,31 @@ class ModelGroupList extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return ExpansionTile(
-      title: Text(
-        group.prefix,
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: theme.colorScheme.primary,
-        ),
+    return Theme(
+      data: Theme.of(context).copyWith(
+        dividerColor: Colors.transparent, // 移除分割线
       ),
-      initiallyExpanded: true, // 默认展开
-      backgroundColor: Colors.transparent,
-      collapsedBackgroundColor: Colors.transparent,
-      childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
-      children: group.models.map((model) {
-        final isSelected = model == selectedModel;
-        return _buildModelItem(context, model, isSelected);
-      }).toList(),
+      child: ExpansionTile(
+        title: Text(
+          group.prefix,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        iconColor: theme.colorScheme.primary,
+        collapsedIconColor: theme.colorScheme.onSurface.withOpacity(0.7),
+        initiallyExpanded: true, // 默认展开
+        backgroundColor: Colors.transparent,
+        collapsedBackgroundColor: Colors.transparent,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        childrenPadding: const EdgeInsets.only(left: 12, right: 12, bottom: 4, top: 0),
+        children: group.models.map((model) {
+          final isSelected = model == selectedModel;
+          return _buildModelItem(context, model, isSelected);
+        }).toList(),
+      ),
     );
   }
 
@@ -62,29 +71,31 @@ class ModelGroupList extends StatelessWidget {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
         color: isSelected
             ? theme.colorScheme.primaryContainer.withOpacity(0.3)
             : isDark
-                ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.3)
-                : theme.colorScheme.surfaceContainerLowest.withOpacity(0.7),
-        borderRadius: BorderRadius.circular(12),
+                ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.2)
+                : theme.colorScheme.surfaceContainerLowest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isSelected
               ? theme.colorScheme.primary
-              : theme.colorScheme.outline.withOpacity(0.2),
-          width: isSelected ? 1.5 : 0.5,
+              : theme.colorScheme.outline.withOpacity(0.1),
+          width: isSelected ? 1.0 : 0.5,
         ),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         title: Row(
           children: [
             // 模型图标
             Container(
-              width: 32,
-              height: 32,
+              width: 24,
+              height: 24,
               decoration: BoxDecoration(
                 color: _getModelColor(model),
                 shape: BoxShape.circle,
@@ -94,25 +105,28 @@ class ModelGroupList extends StatelessWidget {
                   _getModelInitial(model),
                   style: const TextStyle(
                     color: Colors.white,
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             // 模型名称
             Expanded(
               child: Text(
                 displayName,
                 style: TextStyle(
+                  fontSize: 13,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             // 免费标签
             if (model.toLowerCase().contains('free'))
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: Colors.green.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(4),
@@ -121,7 +135,7 @@ class ModelGroupList extends StatelessWidget {
                   '免费',
                   style: TextStyle(
                     color: Colors.green,
-                    fontSize: 12,
+                    fontSize: 10,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -131,7 +145,7 @@ class ModelGroupList extends StatelessWidget {
         onTap: () => onModelSelected(model),
         selected: isSelected,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
         ),
       ),
     );

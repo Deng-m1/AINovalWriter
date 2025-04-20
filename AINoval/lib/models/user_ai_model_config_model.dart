@@ -1,22 +1,49 @@
 import 'package:meta/meta.dart'; // For @immutable
 import '../utils/date_time_parser.dart'; // Import the parser
+import 'package:equatable/equatable.dart'; // Import Equatable for Equatable mixin
 
 /// 用户 AI 模型配置模型 (对应后端的 UserAIModelConfigResponse)
 @immutable // Good practice for value objects
-class UserAIModelConfigModel {
+class UserAIModelConfigModel extends Equatable {
+  final String id;
+  final String userId;
+  final String provider;
+  final String modelName;
+  final String alias;
+  final String apiEndpoint;
+  final bool isValidated;
+  final bool isDefault;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
   const UserAIModelConfigModel({
     required this.id,
     required this.userId,
     required this.provider,
     required this.modelName,
     required this.alias,
-    this.apiEndpoint,
+    required this.apiEndpoint,
     required this.isValidated,
-    this.validationError,
     required this.isDefault,
     required this.createdAt,
     required this.updatedAt,
   });
+
+  // 空实例，用于默认值
+  factory UserAIModelConfigModel.empty() {
+    return UserAIModelConfigModel(
+      id: '',
+      userId: '',
+      provider: '',
+      modelName: '',
+      alias: '',
+      apiEndpoint: '',
+      isValidated: false,
+      isDefault: false,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+  }
 
   // 从JSON转换方法
   factory UserAIModelConfigModel.fromJson(Map<String, dynamic> json) {
@@ -36,25 +63,13 @@ class UserAIModelConfigModel {
       provider: safeString('provider'),
       modelName: safeString('modelName'),
       alias: safeString('alias'),
-      apiEndpoint: json['apiEndpoint'] as String?, // Allow null
+      apiEndpoint: json['apiEndpoint'] as String,
       isValidated: safeBool('isValidated'),
-      validationError: json['validationError'] as String?, // Allow null
       isDefault: safeBool('isDefault'),
       createdAt: parseBackendDateTime(json['createdAt']), // Use the parser
       updatedAt: parseBackendDateTime(json['updatedAt']), // Use the parser
     );
   }
-  final String id;
-  final String userId;
-  final String provider;
-  final String modelName;
-  final String alias;
-  final String? apiEndpoint; // nullable
-  final bool isValidated;
-  final String? validationError; // nullable
-  final bool isDefault;
-  final DateTime createdAt;
-  final DateTime updatedAt;
 
   // 转换为JSON方法
   Map<String, dynamic> toJson() {
@@ -66,7 +81,6 @@ class UserAIModelConfigModel {
       'alias': alias,
       'apiEndpoint': apiEndpoint,
       'isValidated': isValidated,
-      'validationError': validationError,
       'isDefault': isDefault,
       'createdAt': createdAt.toIso8601String(), // Standard format for JSON
       'updatedAt': updatedAt.toIso8601String(), // Standard format for JSON
@@ -82,7 +96,6 @@ class UserAIModelConfigModel {
     String? alias,
     String? apiEndpoint,
     bool? isValidated,
-    String? validationError,
     bool? isDefault,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -93,15 +106,8 @@ class UserAIModelConfigModel {
       provider: provider ?? this.provider,
       modelName: modelName ?? this.modelName,
       alias: alias ?? this.alias,
-      // For nullable fields, we need explicit handling if we want to allow setting them back to null
-      // Option 1: Simple override (cannot set back to null via copyWith)
-      // apiEndpoint: apiEndpoint ?? this.apiEndpoint,
-      // validationError: validationError ?? this.validationError,
-      // Option 2: More explicit (allows setting back to null, but more verbose)
-      // Requires careful thought on desired behavior. Let's stick to simple override for now.
       apiEndpoint: apiEndpoint ?? this.apiEndpoint,
       isValidated: isValidated ?? this.isValidated,
-      validationError: validationError ?? this.validationError,
       isDefault: isDefault ?? this.isDefault,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -122,7 +128,6 @@ class UserAIModelConfigModel {
         other.alias == alias &&
         other.apiEndpoint == apiEndpoint &&
         other.isValidated == isValidated &&
-        other.validationError == validationError &&
         other.isDefault == isDefault &&
         other.createdAt == createdAt &&
         other.updatedAt == updatedAt;
@@ -137,7 +142,6 @@ class UserAIModelConfigModel {
         alias.hashCode ^
         apiEndpoint.hashCode ^
         isValidated.hashCode ^
-        validationError.hashCode ^
         isDefault.hashCode ^
         createdAt.hashCode ^
         updatedAt.hashCode;
@@ -145,6 +149,9 @@ class UserAIModelConfigModel {
 
   @override
   String toString() {
-    return 'UserAIModelConfigModel(id: $id, userId: $userId, provider: $provider, modelName: $modelName, alias: $alias, apiEndpoint: $apiEndpoint, isValidated: $isValidated, validationError: $validationError, isDefault: $isDefault, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'UserAIModelConfigModel(id: $id, userId: $userId, provider: $provider, modelName: $modelName, alias: $alias, apiEndpoint: $apiEndpoint, isValidated: $isValidated, isDefault: $isDefault, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
+
+  @override
+  List<Object?> get props => [id, userId, provider, modelName, alias, apiEndpoint, isValidated, isDefault, createdAt, updatedAt];
 }

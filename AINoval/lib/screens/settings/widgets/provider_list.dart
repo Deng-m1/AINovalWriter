@@ -25,7 +25,7 @@ class ProviderList extends StatelessWidget {
         color: isDark
             ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.2)
             : theme.colorScheme.surfaceContainerLowest.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: theme.colorScheme.outline.withOpacity(0.1),
           width: 0.5,
@@ -35,47 +35,62 @@ class ProviderList extends StatelessWidget {
         children: [
           // 搜索框
           Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: '搜索模型平台...',
-                prefixIcon: const Icon(Icons.search, size: 20),
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withOpacity(0.5),
+            padding: const EdgeInsets.all(8.0),
+            child: SizedBox(
+              height: 34,
+              child: TextField(
+                style: Theme.of(context).textTheme.bodyMedium,
+                decoration: InputDecoration(
+                  hintText: '搜索模型平台...',
+                  hintStyle: TextStyle(
+                    fontSize: 13,
+                    color: theme.hintColor.withOpacity(0.7),
                   ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withOpacity(0.5),
+                  prefixIcon: Icon(
+                    Icons.search, 
+                    size: 18,
+                    color: theme.colorScheme.onSurface.withOpacity(0.5),
                   ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.primary,
-                    width: 1.5,
+                  contentPadding: EdgeInsets.zero,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: theme.colorScheme.outline.withOpacity(0.3),
+                      width: 1.0,
+                    ),
                   ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: theme.colorScheme.outline.withOpacity(0.3),
+                      width: 1.0,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: theme.colorScheme.primary,
+                      width: 1.5,
+                    ),
+                  ),
+                  filled: true,
+                  fillColor: isDark
+                      ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.3)
+                      : theme.colorScheme.surfaceContainerLowest.withOpacity(0.7),
+                  isDense: true,
                 ),
-                filled: true,
-                fillColor: isDark
-                    ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.3)
-                    : theme.colorScheme.surfaceContainerLowest.withOpacity(0.7),
+                onChanged: (value) {
+                  // 实现搜索功能
+                  // 这里可以添加搜索逻辑
+                },
               ),
-              onChanged: (value) {
-                // 实现搜索功能
-                // 这里可以添加搜索逻辑
-              },
             ),
           ),
           
           // 提供商列表
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(vertical: 4),
               itemCount: providers.length,
               itemBuilder: (context, index) {
                 final provider = providers[index];
@@ -88,22 +103,24 @@ class ProviderList extends StatelessWidget {
           
           // 底部添加按钮
           Padding(
-            padding: const EdgeInsets.all(12.0),
+            padding: const EdgeInsets.all(8.0),
             child: SizedBox(
               width: double.infinity,
+              height: 32,
               child: OutlinedButton.icon(
                 onPressed: () {
                   // 添加新提供商的逻辑
                 },
-                icon: const Icon(Icons.add),
-                label: const Text('添加'),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('添加', style: TextStyle(fontSize: 12)),
                 style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 0),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   side: BorderSide(
-                    color: theme.colorScheme.outline.withOpacity(0.5),
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                    width: 0.5,
                   ),
                 ),
               ),
@@ -121,38 +138,52 @@ class ProviderList extends StatelessWidget {
     // 获取提供商图标
     Widget providerIcon = _getProviderIcon(provider);
     
-    return ListTile(
-      leading: providerIcon,
-      title: Text(
-        _getProviderDisplayName(provider),
-        style: TextStyle(
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? theme.colorScheme.primaryContainer.withOpacity(0.3)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        minLeadingWidth: 24,
+        minVerticalPadding: 0,
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        leading: providerIcon,
+        title: Text(
+          _getProviderDisplayName(provider),
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
         ),
-      ),
-      selected: isSelected,
-      selectedTileColor: theme.colorScheme.primaryContainer.withOpacity(0.3),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      onTap: () => onProviderSelected(provider),
-      // 如果是OpenRouter，添加一个标签
-      trailing: provider.toLowerCase() == 'openrouter'
-          ? Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Text(
-                'ON',
-                style: TextStyle(
-                  color: Colors.green,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+        selected: isSelected,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        onTap: () => onProviderSelected(provider),
+        // 如果是OpenRouter，添加一个标签
+        trailing: provider.toLowerCase() == 'openrouter'
+            ? Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
                 ),
-              ),
-            )
-          : null,
+                child: const Text(
+                  'ON',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              )
+            : null,
+      ),
     );
   }
 
@@ -188,8 +219,8 @@ class ProviderList extends StatelessWidget {
     }
     
     return Container(
-      width: 32,
-      height: 32,
+      width: 24,
+      height: 24,
       decoration: BoxDecoration(
         color: iconColor.withOpacity(0.2),
         shape: BoxShape.circle,
@@ -197,7 +228,7 @@ class ProviderList extends StatelessWidget {
       child: Icon(
         iconData,
         color: iconColor,
-        size: 18,
+        size: 14,
       ),
     );
   }
