@@ -10,6 +10,8 @@ import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/utils/word_count_analyzer.dart';
 import 'package:provider/provider.dart';
 import 'package:ainoval/screens/editor/managers/editor_layout_manager.dart';
+import 'package:ainoval/screens/editor/widgets/custom_dropdown.dart';
+import 'package:ainoval/screens/editor/widgets/menu_builder.dart';
 
 /// 场景编辑器组件，用于编辑小说中的单个场景
 ///
@@ -792,59 +794,15 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
         const SizedBox(width: 8),
         
         // 更多操作按钮
-        PopupMenuButton<String>(
-          onSelected: (String result) {
-            // TODO: 处理菜单项点击
-            switch (result) {
-              case 'delete':
-                // 触发删除事件
-                if (widget.actId != null &&
-                    widget.chapterId != null &&
-                    widget.sceneId != null) {
-                  widget.editorBloc.add(editor_bloc.DeleteScene(
-                      novelId: widget.editorBloc.novelId,
-                      actId: widget.actId!,
-                      chapterId: widget.chapterId!,
-                      sceneId: widget.sceneId!));
-                }
-                break;
-              case 'duplicate':
-                // TODO: 处理复制场景
-                break;
-              // 添加其他操作...
-            }
-          },
-          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-            const PopupMenuItem<String>(
-              value: 'duplicate',
-              child: ListTile(
-                  leading: Icon(Icons.copy_outlined, size: 18),
-                  title: Text('复制场景', style: TextStyle(fontSize: 14))),
-            ),
-            const PopupMenuItem<String>(
-              value: 'split',
-              child: ListTile(
-                  leading: Icon(Icons.splitscreen_outlined, size: 18),
-                  title: Text('拆分场景', style: TextStyle(fontSize: 14))),
-            ),
-            const PopupMenuDivider(),
-            PopupMenuItem<String>(
-              value: 'delete',
-              child: ListTile(
-                  leading: Icon(Icons.delete_outline,
-                      size: 18, color: Colors.red.shade700),
-                  title: Text('删除场景',
-                      style:
-                          TextStyle(fontSize: 14, color: Colors.red.shade700))),
-            ),
-          ],
-          // 使用 IconButton 作为子项，更符合 UI 习惯
-          icon: const Icon(Icons.more_horiz, size: 20),
-          tooltip: '更多操作',
-          color: Colors.grey.shade600,
-          splashRadius: 20,
-          offset: const Offset(0, 30),
-        ),
+        widget.actId != null && widget.chapterId != null && widget.sceneId != null
+            ? MenuBuilder.buildSceneMenu(
+                context: context,
+                editorBloc: widget.editorBloc,
+                actId: widget.actId!,
+                chapterId: widget.chapterId!,
+                sceneId: widget.sceneId!,
+              )
+            : const SizedBox.shrink(),
       ],
     );
   }

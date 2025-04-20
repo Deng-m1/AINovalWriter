@@ -5,6 +5,8 @@ import 'package:ainoval/screens/editor/controllers/editor_screen_controller.dart
 import 'package:ainoval/components/editable_title.dart';
 import 'package:ainoval/utils/debouncer.dart' as debouncer;
 import 'package:ainoval/utils/logger.dart';
+import 'package:ainoval/screens/editor/widgets/custom_dropdown.dart';
+import 'package:ainoval/screens/editor/widgets/menu_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
@@ -117,16 +119,17 @@ class _ChapterSectionState extends State<ChapterSection> {
               ),
               const SizedBox(width: 8), // 增加间距
               
-              // 更多操作按钮 (PopupMenuButton 待实现)
-              IconButton(
-                icon: const Icon(Icons.more_vert, size: 20),
-                onPressed: () {
-                  // 显示章节操作菜单
-                  _showChapterMenu(context);
+              // 替换为MenuBuilder
+              MenuBuilder.buildChapterMenu(
+                context: context,
+                editorBloc: widget.editorBloc,
+                actId: widget.actId,
+                chapterId: widget.chapterId,
+                onRenamePressed: () {
+                  // 聚焦到标题编辑框
+                  // 通过setState强制刷新使标题进入编辑状态
+                  setState(() {});
                 },
-                tooltip: 'Chapter Actions',
-                color: Colors.grey.shade600,
-                splashRadius: 20,
               ),
             ],
           ),
@@ -198,58 +201,6 @@ class _ChapterSectionState extends State<ChapterSection> {
       ],
     );
   }
-  
-  // 显示章节操作菜单
-  void _showChapterMenu(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    showMenu(
-      context: context,
-      position: const RelativeRect.fromLTRB(100, 100, 0, 0), // 这个位置会根据点击位置自动调整
-      items: [
-        PopupMenuItem(
-          child: ListTile(
-            leading: const Icon(Icons.add),
-            title: const Text('添加新场景'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            onTap: () {
-              Navigator.pop(context);
-              // 触发添加新Scene事件
-              _addNewScene();
-            },
-          ),
-        ),
-        PopupMenuItem(
-          child: ListTile(
-            leading: const Icon(Icons.download),
-            title: const Text('加载场景内容'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            onTap: () {
-              Navigator.pop(context);
-              _loadScenes();
-            },
-          ),
-        ),
-        PopupMenuItem(
-          child: ListTile(
-            leading: const Icon(Icons.edit),
-            title: const Text('重命名章节'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            onTap: () {
-              Navigator.pop(context);
-              // 聚焦到标题编辑框
-              // 通过setState强制刷新使标题进入编辑状态
-              setState(() {});
-            },
-          ),
-        ),
-        // 后面可以添加更多选项如删除等
-      ],
-    );
-  }
 
   // 添加一个创建新场景的方法
   void _addNewScene() {
@@ -308,7 +259,7 @@ class _AddSceneButton extends StatelessWidget {
           ).copyWith(overlayColor: WidgetStateProperty.resolveWith<Color?>(
             (Set<WidgetState> states) {
               if (states.contains(WidgetState.hovered)) {
-                return Colors.grey.shade100;
+                return Colors.grey.shade200;
               }
               return null;
             },

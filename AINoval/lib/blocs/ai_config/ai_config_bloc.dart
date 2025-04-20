@@ -1,4 +1,5 @@
 import 'package:ainoval/models/user_ai_model_config_model.dart';
+import 'package:ainoval/models/ai_model_group.dart';
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:bloc/bloc.dart';
@@ -67,8 +68,20 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
         modelsForProvider: [], selectedProviderForModels: event.provider));
     try {
       final models = await _repository.listModelsForProvider(event.provider);
-      // Emit state with new models, clearing any previous error message
-      emit(state.copyWith(modelsForProvider: models, errorMessage: () => null));
+
+      // 创建模型分组
+      final modelGroup = AIModelGroup.fromModelList(event.provider, models);
+
+      // 更新状态中的模型分组
+      final updatedModelGroups = Map<String, AIModelGroup>.from(state.modelGroups);
+      updatedModelGroups[event.provider] = modelGroup;
+
+      // Emit state with new models and model groups, clearing any previous error message
+      emit(state.copyWith(
+        modelsForProvider: models,
+        modelGroups: updatedModelGroups,
+        errorMessage: () => null
+      ));
     } catch (e, stackTrace) {
       AppLogger.e(
           'AiConfigBloc', '加载模型失败 for ${event.provider}', e, stackTrace);
@@ -230,6 +243,11 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
 
   void _onClearProviderModels(
       ClearProviderModels event, Emitter<AiConfigState> emit) {
-    emit(state.copyWith(clearModels: true));
+    // 清除模型列表和当前选中的提供商
+    emit(state.copyWith(
+      clearModels: true,
+      // 保留模型分组信息，因为它可能在其他地方被使用
+      // 如果需要清除特定提供商的模型分组，可以在这里处理
+    ));
   }
 }
