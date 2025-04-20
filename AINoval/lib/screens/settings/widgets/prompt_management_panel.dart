@@ -20,7 +20,7 @@ class PromptManagementPanel extends StatefulWidget {
   State<PromptManagementPanel> createState() => _PromptManagementPanelState();
 }
 
-class _PromptManagementPanelState extends State<PromptManagementPanel> with SingleTickerProviderStateMixin {
+class _PromptManagementPanelState extends State<PromptManagementPanel> with TickerProviderStateMixin {
   final TextEditingController _promptController = TextEditingController();
   late TabController _tabController;
   bool _isEdited = false;
@@ -37,11 +37,31 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
   // 新建模板的功能类型
   AIFeatureType? _newTemplateFeatureType;
   
+  // 动画控制器
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  
   @override
   void initState() {
     super.initState();
     // 初始化标签控制器
     _tabController = TabController(length: 2, vsync: this);
+    
+    // 初始化动画控制器
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+      value: 0.0, // 确保从0开始
+    );
+    
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOut,
+    );
+    
+    // 立即启动动画
+    _animationController.forward();
+    
     // 加载所有提示词
     context.read<PromptBloc>().add(const LoadAllPromptsRequested());
     // 加载提示词模板
@@ -49,9 +69,19 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
   }
   
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 确保动画正在运行
+    if (!_animationController.isAnimating && _animationController.value < 1.0) {
+      _animationController.forward();
+    }
+  }
+  
+  @override
   void dispose() {
     _promptController.dispose();
     _tabController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
   
@@ -67,7 +97,19 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
         // 显示错误信息
         if (state.errorMessage != null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(state.errorMessage!)),
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white, size: 18),
+                  const SizedBox(width: 10),
+                  Text(state.errorMessage!),
+                ],
+              ),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              margin: const EdgeInsets.all(8),
+            ),
           );
         }
       },
@@ -75,40 +117,213 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
         final theme = Theme.of(context);
         final isDark = theme.brightness == Brightness.dark;
         
-        return Container(
-          constraints: const BoxConstraints(maxHeight: 670),
-          child: ListView(
-            shrinkWrap: true,
+        return FadeTransition(
+          opacity: _fadeAnimation,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 标题区域 - 添加磨砂玻璃效果
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
+              // 标题区域 - 磨砂玻璃效果
+              _buildGlassHeader(theme, isDark),
+              
+              const SizedBox(height: 16),
+              
+              // 如果正在编辑模板，显示返回按钮
+              if (_isEditingTemplate)
+                AnimatedSlide(
+                  offset: Offset(0, _animationController.value - 1),
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOutQuart,
+                  child: AnimatedOpacity(
+                    opacity: _animationController.value,
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.easeOut,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.arrow_back, size: 16),
+                        label: const Text('返回模板库'),
+                        onPressed: _cancelTemplateEditing,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          side: BorderSide(
+                            color: theme.colorScheme.outline.withOpacity(0.5),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              
+              // 内容区域 - 使用Expanded确保填充可用空间
+              Expanded(
+                child: !_isEditingTemplate
+                  ? AnimatedSlide(
+                      offset: Offset(0, (_animationController.value - 1) * 0.5),
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOutQuart,
+                      child: AnimatedOpacity(
+                        opacity: _animationController.value,
+                        duration: const Duration(milliseconds: 450),
+                        curve: Curves.easeOut,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isDark 
+                                ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.85)
+                                : theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: isDark
+                                  ? Colors.black.withOpacity(0.25)
+                                  : Colors.black.withOpacity(0.08),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                                spreadRadius: 1,
+                              ),
+                              BoxShadow(
+                                color: theme.colorScheme.primary.withOpacity(0.08),
+                                blurRadius: 20,
+                                offset: const Offset(0, 4),
+                                spreadRadius: -2,
+                              ),
+                            ],
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant.withOpacity(isDark ? 0.3 : 0.5),
+                              width: 1,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              // 标签栏 - 玻璃效果
+                              _buildGlassTabBar(theme, isDark),
+                              
+                              // TabBarView内容
+                              Expanded(
+                                child: TabBarView(
+                                  physics: const BouncingScrollPhysics(),
+                                  controller: _tabController,
+                                  children: [
+                                    // 预设提示词标签页
+                                    _buildPromptSettingsTab(context, state),
+                                    
+                                    // 模板库标签页 - 使用新组件
+                                    PromptTemplateLibrary(
+                                      onCopyToPrivate: _handleCopyToPrivate,
+                                      onView: _handleViewTemplate,
+                                      onEdit: _handleEditTemplate,
+                                      onDelete: _handleDeleteTemplate,
+                                      onToggleFavorite: _handleToggleFavorite,
+                                      onCreateNew: _createNewTemplate,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    )
+                  : FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isDark 
+                              ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.85)
+                              : theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: isDark
+                                ? Colors.black.withOpacity(0.25)
+                                : Colors.black.withOpacity(0.08),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                              spreadRadius: 1,
+                            ),
+                            BoxShadow(
+                              color: theme.colorScheme.primary.withOpacity(0.08),
+                              blurRadius: 20,
+                              offset: const Offset(0, 4),
+                              spreadRadius: -2,
+                            ),
+                          ],
+                          border: Border.all(
+                            color: theme.colorScheme.outlineVariant.withOpacity(isDark ? 0.3 : 0.5),
+                            width: 1,
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          // 使用key确保在参数变化时重建
+                          child: PromptEditorPanel(
+                            // 使用固定key
+                            key: ValueKey('editor_panel'),
+                            template: _currentEditingTemplate,
+                            isNew: _isNewTemplate,
+                            featureType: _newTemplateFeatureType ?? AIFeatureType.sceneToSummary, // 提供默认值防止null
+                            onSaveSuccess: _handleTemplateSaveSuccess,
+                            onCancel: _cancelTemplateEditing,
+                            onCopyToPrivate: _handleCopyCurrentToPrivate,
+                          ),
+                        ),
+                      ),
+                    ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+  
+  /// 构建玻璃化标题栏
+  Widget _buildGlassHeader(ThemeData theme, bool isDark) {
+    return AnimatedSlide(
+      offset: Offset(0, _animationController.value - 1),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutQuart,
+      child: AnimatedOpacity(
+        opacity: _animationController.value,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOut,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                   child: Container(
-                    padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: isDark
                             ? [
-                                theme.colorScheme.primaryContainer.withOpacity(0.6),
-                                theme.colorScheme.primaryContainer.withOpacity(0.4),
+                        theme.colorScheme.primaryContainer.withOpacity(0.65),
+                        theme.colorScheme.primaryContainer.withOpacity(0.45),
                               ]
                             : [
-                                theme.colorScheme.primaryContainer.withOpacity(0.8),
-                                theme.colorScheme.primaryContainer.withOpacity(0.6),
+                        theme.colorScheme.primaryContainer.withOpacity(0.85),
+                        theme.colorScheme.primaryContainer.withOpacity(0.65),
                               ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-                      borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
                           color: isDark
-                              ? Colors.black.withOpacity(0.2)
-                              : Colors.black.withOpacity(0.1),
-                          blurRadius: 10,
+                      ? Colors.black.withOpacity(0.25)
+                      : Colors.black.withOpacity(0.12),
+                    blurRadius: 15,
+                    offset: const Offset(0, 6),
+                    spreadRadius: 1,
+                  ),
+                  BoxShadow(
+                    color: theme.colorScheme.primary.withOpacity(0.15),
+                    blurRadius: 20,
                           offset: const Offset(0, 4),
+                    spreadRadius: -2,
                         ),
                       ],
                       border: Border.all(
@@ -119,10 +334,21 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                     child: Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: theme.colorScheme.primary.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: theme.colorScheme.primary.withOpacity(0.15),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                      border: Border.all(
+                        color: theme.colorScheme.primary.withOpacity(0.3),
+                        width: 1,
+                      ),
                           ),
                           child: Icon(
                             Icons.auto_awesome,
@@ -139,12 +365,14 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                                 '提示词管理',
                                 style: theme.textTheme.titleLarge?.copyWith(
                                   fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onPrimaryContainer,
                                 ),
                               ),
+                        const SizedBox(height: 4),
                               Text(
                                 '管理AI生成功能的提示词模板，提升AI生成效果',
                                 style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
+                            color: theme.colorScheme.onPrimaryContainer.withOpacity(0.85),
                                 ),
                               ),
                             ],
@@ -155,65 +383,37 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                   ),
                 ),
               ),
-              
-              const SizedBox(height: 16),
-              
-              // 如果正在编辑模板，显示返回按钮
-              if (_isEditingTemplate)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('返回模板库'),
-                    onPressed: _cancelTemplateEditing,
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                ),
-              
-              const SizedBox(height: 16),
-              
-              // 内容区域
-              if (!_isEditingTemplate)
-                Container(
-                  height: 500, // 固定高度约束
-                  decoration: BoxDecoration(
-                    color: isDark ? theme.colorScheme.surfaceContainerHighest : theme.colorScheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                    border: Border.all(
-                      color: theme.colorScheme.outlineVariant.withOpacity(0.5),
-                      width: 1,
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      // 标签栏 - 玻璃效果
-                      ClipRRect(
+      ),
+    );
+  }
+  
+  /// 构建玻璃化标签栏
+  Widget _buildGlassTabBar(ThemeData theme, bool isDark) {
+    return ClipRRect(
                         borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(16),
-                          topRight: Radius.circular(16),
+        topLeft: Radius.circular(20),
+        topRight: Radius.circular(20),
                         ),
                         child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                           child: Container(
                             decoration: BoxDecoration(
-                              color: isDark
-                                  ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.7)
-                                  : theme.colorScheme.surfaceContainerLowest.withOpacity(0.7),
+            gradient: LinearGradient(
+              colors: isDark
+                ? [
+                    theme.colorScheme.surfaceContainerHighest.withOpacity(0.75),
+                    theme.colorScheme.surfaceContainerHigh.withOpacity(0.65),
+                  ]
+                : [
+                    theme.colorScheme.surfaceContainerLowest.withOpacity(0.8),
+                    theme.colorScheme.surfaceContainerLow.withOpacity(0.7),
+                  ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
                               borderRadius: const BorderRadius.only(
-                                topLeft: Radius.circular(16),
-                                topRight: Radius.circular(16),
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
                               ),
                               border: Border(
                                 bottom: BorderSide(
@@ -224,107 +424,103 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                             ),
                             child: TabBar(
                               controller: _tabController,
-                              tabs: const [
-                                Tab(text: '预设提示词'),
-                                Tab(text: '模板库'),
+            tabs: [
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.tune, size: 16),
+                    const SizedBox(width: 8),
+                    const Text('预设提示词'),
+                  ],
+                ),
+              ),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.library_books, size: 16),
+                    const SizedBox(width: 8),
+                    const Text('模板库'),
+                  ],
+                ),
+              ),
                               ],
                               labelColor: theme.colorScheme.primary,
                               unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
                               indicatorColor: theme.colorScheme.primary,
                               indicatorSize: TabBarIndicatorSize.label,
                               indicatorWeight: 3,
-                              labelPadding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
+            labelPadding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 16.0),
                               labelStyle: const TextStyle(fontWeight: FontWeight.bold),
                               dividerColor: Colors.transparent,
                             ),
                           ),
-                        ),
-                      ),
-                      
-                      // TabBarView内容
-                      Expanded(
-                        child: TabBarView(
-                          controller: _tabController,
-                          children: [
-                            // 预设提示词标签页
-                            _buildPromptSettingsTab(context, state),
-                            
-                            // 模板库标签页 - 使用新组件
-                            PromptTemplateLibrary(
-                              onCopyToPrivate: _handleCopyToPrivate,
-                              onView: _handleViewTemplate,
-                              onEdit: _handleEditTemplate,
-                              onDelete: _handleDeleteTemplate,
-                              onToggleFavorite: _handleToggleFavorite,
-                              onCreateNew: _createNewTemplate,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                // 模板编辑区域
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  height: 550,
-                  decoration: BoxDecoration(
-                    color: isDark ? theme.colorScheme.surfaceContainerHighest : theme.colorScheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 15,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                    border: Border.all(
-                      color: theme.colorScheme.outlineVariant.withOpacity(0.5),
-                      width: 1,
-                    ),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: PromptEditorPanel(
-                      template: _currentEditingTemplate,
-                      isNew: _isNewTemplate,
-                      featureType: _newTemplateFeatureType,
-                      onSaveSuccess: _handleTemplateSaveSuccess,
-                      onCancel: _cancelTemplateEditing,
-                      onCopyToPrivate: _handleCopyCurrentToPrivate,
-                    ),
-                  ),
-                ),
-              
-              const SizedBox(height: 16),
-            ],
-          ),
-        );
-      },
+      ),
     );
   }
   
   /// 构建提示词设置标签页
   Widget _buildPromptSettingsTab(BuildContext context, PromptState state) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: SizedBox(
-        height: 650, // 调整高度与模板编辑区域保持一致
+        height: 650,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 功能类型选择
-            _buildFeatureTypeSelector(context, state),
-            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: _buildFeatureTypeSelector(context, state),
+            ),
+            const SizedBox(height: 12),
             
             // 提示词编辑区域
             if (state.selectedFeatureType != null) ...[
               Expanded(child: _buildPromptEditor(context, state)),
             ] else ...[
-              const Expanded(
+              Expanded(
                 child: Center(
-                  child: Text('请选择一个功能类型'),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? theme.colorScheme.surfaceContainerLow.withOpacity(0.7)
+                          : theme.colorScheme.surfaceContainerLowest.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.touch_app,
+                          size: 32,
+                          color: theme.colorScheme.primary.withOpacity(0.7),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '请选择一个功能类型',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '在上方选择一个功能类型以编辑其提示词',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -336,14 +532,36 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
   
   /// 构建功能类型选择区域
   Widget _buildFeatureTypeSelector(BuildContext context, PromptState state) {
+    final theme = Theme.of(context);
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.category,
+                size: 16,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(width: 10),
         Text(
           '功能类型',
-          style: Theme.of(context).textTheme.titleMedium,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurface,
         ),
-        const SizedBox(height: 4), // 减小间距
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
         
         // 功能类型选择卡片
         Row(
@@ -356,7 +574,7 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
               Icons.summarize,
               state.selectedFeatureType == AIFeatureType.sceneToSummary,
             ),
-            const SizedBox(width: 12), // 减小间距
+            const SizedBox(width: 16),
             _buildFeatureTypeCard(
               context,
               AIFeatureType.summaryToScene,
@@ -381,75 +599,116 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
     bool isSelected,
   ) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     
     return Expanded(
-      child: Card(
-        margin: EdgeInsets.zero,
-        elevation: isSelected ? 2 : 0, // 选中时有阴影
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (isDark
+                  ? theme.colorScheme.primaryContainer.withOpacity(0.3)
+                  : theme.colorScheme.primaryContainer.withOpacity(0.4))
+              : (isDark
+                  ? theme.colorScheme.surfaceContainerLow.withOpacity(0.7)
+                  : theme.colorScheme.surface),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: theme.colorScheme.primary.withOpacity(isDark ? 0.2 : 0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+          border: Border.all(
             color: isSelected 
                 ? theme.colorScheme.primary 
                 : theme.colorScheme.outlineVariant,
-            width: isSelected ? 2 : 1,
+            width: isSelected ? 1.5 : 1,
           ),
         ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
         child: InkWell(
+            borderRadius: BorderRadius.circular(16),
           onTap: () {
             context.read<PromptBloc>().add(SelectFeatureRequested(featureType));
             setState(() => _isEdited = false);
           },
           child: Padding(
-            padding: const EdgeInsets.all(12), // 减小内边距
+              padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(6), // 减小内边距
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: isSelected 
-                            ? theme.colorScheme.primaryContainer 
-                            : theme.colorScheme.surfaceVariant,
-                        borderRadius: BorderRadius.circular(6),
+                              ? theme.colorScheme.primary.withOpacity(0.2)
+                              : (isDark
+                                  ? theme.colorScheme.surfaceVariant.withOpacity(0.5)
+                                  : theme.colorScheme.surfaceVariant),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: isSelected
+                              ? [
+                                  BoxShadow(
+                                    color: theme.colorScheme.primary.withOpacity(0.15),
+                                    blurRadius: 5,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                              : null,
                       ),
                       child: Icon(
                         icon,
                         color: isSelected 
                             ? theme.colorScheme.primary 
                             : theme.colorScheme.onSurfaceVariant,
-                        size: 16, // 减小图标尺寸
+                          size: 18,
                       ),
                     ),
-                    const SizedBox(width: 8), // 减小间距
+                      const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         title,
-                        style: theme.textTheme.bodyMedium?.copyWith(
+                          style: theme.textTheme.bodyLarge?.copyWith(
                           color: isSelected 
                               ? theme.colorScheme.primary 
                               : theme.colorScheme.onSurface,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
+                      ),
+                      if (isSelected)
+                        Icon(
+                          Icons.check_circle,
+                          color: theme.colorScheme.primary,
+                          size: 16,
                     ),
                   ],
                 ),
-                const SizedBox(height: 8), // 减小间距
+                  const SizedBox(height: 12),
                 Text(
                   description,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.2,
+                      color: isSelected
+                          ? theme.colorScheme.onSurface
+                          : theme.colorScheme.onSurfaceVariant,
+                      height: 1.3,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
+              ),
             ),
           ),
         ),
@@ -459,6 +718,8 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
   
   /// 构建提示词编辑区域
   Widget _buildPromptEditor(BuildContext context, PromptState state) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final selectedPrompt = state.selectedPrompt;
     final isCustomized = selectedPrompt?.isCustomized ?? false;
     
@@ -467,42 +728,75 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
       mainAxisSize: MainAxisSize.min,
       children: [
         // 顶部区域：标题和状态指示
-        Row(
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.edit,
+                      size: 16,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
             Text(
               '提示词编辑',
-              style: Theme.of(context).textTheme.titleMedium,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ],
             ),
             
             // 自定义状态指示
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), // 减小内边距
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: isCustomized 
-                    ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4)
-                    : Theme.of(context).colorScheme.surfaceVariant,
+                      ? theme.colorScheme.primaryContainer.withOpacity(0.5)
+                      : (isDark
+                          ? theme.colorScheme.surfaceVariant.withOpacity(0.5)
+                          : theme.colorScheme.surfaceVariant),
                 borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isCustomized
+                          ? theme.colorScheme.primary.withOpacity(0.1)
+                          : Colors.black.withOpacity(0.03),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     isCustomized ? Icons.edit : Icons.lock_outline,
-                    size: 12, // 减小图标尺寸
+                      size: 14,
                     color: isCustomized 
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(width: 4),
+                    const SizedBox(width: 6),
                   Text(
                     isCustomized ? '已自定义' : '系统默认',
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight: isCustomized ? FontWeight.w500 : FontWeight.normal,
+                        fontWeight: isCustomized ? FontWeight.w600 : FontWeight.w500,
                       color: isCustomized 
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -510,10 +804,13 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
             ),
           ],
         ),
-        const SizedBox(height: 8), // 减小间距
+        ),
+        const SizedBox(height: 12),
         
         // 中间区域：编辑器和模板选择并排显示
         Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -523,30 +820,60 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 可用变量占位符指示 - 改为更紧凑的单行设计
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      // 可用变量占位符指示
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(6),
+                              gradient: LinearGradient(
+                                colors: isDark
+                                  ? [
+                                      theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                                      theme.colorScheme.surfaceContainerHigh.withOpacity(0.3),
+                                    ]
+                                  : [
+                                      theme.colorScheme.primaryContainer.withOpacity(0.2),
+                                      theme.colorScheme.primaryContainer.withOpacity(0.1),
+                                    ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                          width: 1,
+                                color: theme.colorScheme.primary.withOpacity(0.2),
                         ),
                       ),
                       child: Row(
                         children: [
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Icon(
+                                    Icons.code,
+                                    size: 14,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
                           Text(
                             '可用变量:',
                             style: TextStyle(
-                              fontWeight: FontWeight.w500,
+                                    fontWeight: FontWeight.w600,
                               fontSize: 12,
+                                    color: theme.colorScheme.primary,
                             ),
                           ),
-                          const SizedBox(width: 8),
+                                const SizedBox(width: 10),
                           Expanded(
                             child: SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
+                                    physics: const BouncingScrollPhysics(),
                               child: Row(
                                 children: _buildVariablePlaceholders(context),
                               ),
@@ -555,59 +882,103 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                         ],
                       ),
                     ),
-                    const SizedBox(height: 8), // 减小间距
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                     
                     // 提示词文本编辑器
                     Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? theme.colorScheme.surfaceContainerLow.withOpacity(0.6)
+                                : theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
                       child: TextField(
                         controller: _promptController,
                         maxLines: null,
                         expands: true,
                         textAlignVertical: TextAlignVertical.top,
                         style: TextStyle(
-                          fontSize: 14, // 减小字体大小
-                          height: 1.4,
+                              fontSize: 14,
+                              height: 1.5,
+                              color: theme.colorScheme.onSurface,
                         ),
                         decoration: InputDecoration(
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(6),
+                                borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide(
-                              color: Theme.of(context).colorScheme.outline,
+                                  color: theme.colorScheme.outline,
+                                  width: 1,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: theme.colorScheme.outline.withOpacity(0.3),
                               width: 1,
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(6),
+                                borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide(
-                              color: Theme.of(context).colorScheme.primary,
+                                  color: theme.colorScheme.primary,
                               width: 1.5,
                             ),
                           ),
                           hintText: '请输入提示词',
+                              hintStyle: TextStyle(
+                                color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+                              ),
                           filled: true,
-                          fillColor: Theme.of(context).colorScheme.surface,
-                          contentPadding: const EdgeInsets.all(12), // 减小内边距
-                          isDense: true, // 使内容更紧凑
+                              fillColor: isDark
+                                  ? theme.colorScheme.surfaceContainerLow.withOpacity(0.3)
+                                  : theme.colorScheme.surface,
+                              contentPadding: const EdgeInsets.all(16),
+                              isDense: true,
                         ),
                         onChanged: (_) {
                           setState(() => _isEdited = true);
                         },
                       ),
                     ),
-                    // 移除helper text，使用更紧凑的设计
-                    const SizedBox(height: 4),
-                    Text(
+                      ),
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 14,
+                              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
                       '为AI生成提供指导性的提示词，控制生成风格和内容',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.8),
+                                  color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                                ),
+                              ),
+                            ),
+                          ],
                       ),
                     ),
                   ],
                 ),
               ),
               
-              const SizedBox(width: 12), // 减小间距
+                const SizedBox(width: 16),
               
               // 右侧：模板选择区域
               Expanded(
@@ -615,38 +986,63 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      // 标题
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(6),
+                              gradient: LinearGradient(
+                                colors: isDark
+                                  ? [
+                                      theme.colorScheme.primaryContainer.withOpacity(0.3),
+                                      theme.colorScheme.primaryContainer.withOpacity(0.2),
+                                    ]
+                                  : [
+                                      theme.colorScheme.primaryContainer.withOpacity(0.3),
+                                      theme.colorScheme.primaryContainer.withOpacity(0.2),
+                                    ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                          width: 1,
+                                color: theme.colorScheme.primary.withOpacity(0.2),
                         ),
                       ),
                       child: Row(
                         children: [
-                          Icon(
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Icon(
                             Icons.auto_awesome,
                             size: 14,
-                            color: Theme.of(context).colorScheme.primary,
+                                    color: theme.colorScheme.primary,
                           ),
-                          const SizedBox(width: 6),
+                                ),
+                                const SizedBox(width: 8),
                           Text(
                             '快速模板',
                             style: TextStyle(
-                              fontWeight: FontWeight.w500,
+                                    fontWeight: FontWeight.w600,
                               fontSize: 12,
-                              color: Theme.of(context).colorScheme.primary,
+                                    color: theme.colorScheme.primary,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 6), // 减小间距
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                     
-                    // 模板列表 - 确保可滚动
+                      // 模板列表
                     Expanded(
                       child: _buildTemplateList(context, state),
                     ),
@@ -654,42 +1050,60 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                 ),
               ),
             ],
+            ),
           ),
         ),
         
-        const SizedBox(height: 12), // 减小间距
+        const SizedBox(height: 16),
         
-        // 底部区域：操作按钮 - 更紧凑
-        Row(
+        // 底部区域：操作按钮
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             // 重置按钮
             OutlinedButton.icon(
               icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('重置'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
+                label: const Text(
+                  '重置',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-                visualDensity: VisualDensity.compact,
+              style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                ),
+                  side: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.5),
+                  ),
               ),
               onPressed: () {
                 // 弹出确认对话框
                 _showResetConfirmationDialog(context, state);
               },
             ),
-            const SizedBox(width: 12), // 减小间距
+              const SizedBox(width: 16),
             // 保存按钮
             FilledButton.icon(
               icon: const Icon(Icons.save, size: 16),
-              label: const Text('保存'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
+                label: const Text(
+                  '保存',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-                visualDensity: VisualDensity.compact,
+              style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                ),
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  elevation: 1,
+                  shadowColor: theme.colorScheme.shadow.withOpacity(0.3),
               ),
               onPressed: () {
                 if (state.selectedFeatureType != null) {
@@ -703,15 +1117,25 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                   
                   // 显示保存成功提示
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('提示词已保存'),
+                      SnackBar(
+                        content: Row(
+                          children: [
+                            Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+                            const SizedBox(width: 10),
+                            const Text('提示词已保存'),
+                          ],
+                        ),
                       behavior: SnackBarBehavior.floating,
+                        backgroundColor: Colors.green,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        margin: const EdgeInsets.all(8),
                     ),
                   );
                 }
               },
             ),
           ],
+          ),
         ),
       ],
     );
@@ -719,6 +1143,7 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
   
   /// 构建变量占位符标签
   List<Widget> _buildVariablePlaceholders(BuildContext context) {
+    final theme = Theme.of(context);
     // 根据当前选择的功能类型显示不同的占位符
     final selectedType = context.read<PromptBloc>().state.selectedFeatureType;
     
@@ -733,7 +1158,9 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
     
     return variables.map((variable) {
       return Padding(
-        padding: const EdgeInsets.only(right: 6),
+        padding: const EdgeInsets.only(right: 8),
+        child: Tooltip(
+          message: variable == 'input' ? '输入内容' : '上下文信息',
         child: InkWell(
           onTap: () {
             // 在光标位置插入变量
@@ -759,33 +1186,41 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
           },
           borderRadius: BorderRadius.circular(12),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                color: theme.colorScheme.primary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                  color: theme.colorScheme.primary.withOpacity(0.3),
                 width: 1,
               ),
+                boxShadow: [
+                  BoxShadow(
+                    color: theme.colorScheme.primary.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.code,
-                  size: 12,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 4),
+                    variable == 'input' ? Icons.insert_drive_file : Icons.layers,
+                    size: 14,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
                 Text(
                   '{$variable}',
                   style: TextStyle(
-                    fontSize: 12,
+                      fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    color: Theme.of(context).colorScheme.primary,
+                      color: theme.colorScheme.primary,
                   ),
                 ),
               ],
+              ),
             ),
           ),
         ),
@@ -795,6 +1230,8 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
   
   /// 构建模板列表
   Widget _buildTemplateList(BuildContext context, PromptState state) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final selectedType = state.selectedFeatureType;
     
     // 根据选择的功能类型选择合适的提示词模板列表
@@ -807,18 +1244,35 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
               Icons.description_outlined,
-              size: 36, // 减小图标尺寸
-              color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.3),
+                size: 36,
+                color: theme.colorScheme.onSurfaceVariant.withOpacity(0.5),
             ),
-            const SizedBox(height: 8), // 减小间距
+            ),
+            const SizedBox(height: 16),
             Text(
               '暂无可用模板',
               style: TextStyle(
-                fontSize: 12, // 减小字体大小
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '请前往模板库添加模板',
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+              ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -828,22 +1282,25 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
     // 使用ListView.builder确保模板列表可滚动
     return ListView.builder(
       itemCount: templates.length,
-      padding: EdgeInsets.zero, // 去除内边距
-      shrinkWrap: false, // 确保可以滚动
+      padding: EdgeInsets.zero,
+      physics: const BouncingScrollPhysics(),
       itemBuilder: (context, index) {
         final template = templates[index];
         return Card(
-          margin: const EdgeInsets.only(bottom: 6), // 减小边距
+          margin: const EdgeInsets.only(bottom: 8),
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(12),
             side: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.7),
+              color: theme.colorScheme.outlineVariant.withOpacity(0.6),
               width: 1,
             ),
           ),
+          color: isDark
+              ? theme.colorScheme.surfaceContainerLow.withOpacity(0.7)
+              : theme.colorScheme.surface,
           child: InkWell(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(12),
             onTap: () {
               // 应用模板内容到编辑器
               _promptController.text = template.content;
@@ -851,8 +1308,17 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
               
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('已应用模板: ${template.title}'),
+                  content: Row(
+                    children: [
+                      Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+                      const SizedBox(width: 10),
+                      Text('已应用模板: ${template.title}'),
+                    ],
+                  ),
                   behavior: SnackBarBehavior.floating,
+                  backgroundColor: Colors.green,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  margin: const EdgeInsets.all(8),
                   duration: const Duration(seconds: 1),
                 ),
               );
@@ -862,39 +1328,47 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
               _showTemplateDetailDialog(context, template);
             },
             child: Padding(
-              padding: const EdgeInsets.all(8), // 减小内边距
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
                         Icons.description_outlined,
-                        size: 14, // 减小图标尺寸
-                        color: Theme.of(context).colorScheme.primary,
+                          size: 14,
+                          color: theme.colorScheme.primary,
                       ),
-                      const SizedBox(width: 6), // 减小间距
+                      ),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           template.title,
                           style: TextStyle(
-                            fontWeight: FontWeight.w500,
-                            fontSize: 13, // 减小字体大小
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: theme.colorScheme.onSurface,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4), // 减小间距
+                  const SizedBox(height: 8),
                   Text(
                     template.content,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 12, // 减小字体大小
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      height: 1.3,
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.4,
                     ),
                   ),
                 ],
@@ -908,19 +1382,44 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
   
   /// 显示重置确认对话框
   void _showResetConfirmationDialog(BuildContext context, PromptState state) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('确认重置'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        backgroundColor: isDark
+            ? theme.colorScheme.surfaceContainerHigh
+            : theme.colorScheme.surface,
+        title: Row(
+                            children: [
+                              Icon(
+              Icons.warning_amber_rounded,
+              color: theme.colorScheme.error,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            const Text('确认重置'),
+          ],
+        ),
         content: const Text('确定要恢复为系统默认提示词吗？自定义内容将会丢失。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(context).pop();
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+            child: Text(
+              '取消',
+                                style: TextStyle(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+              ),
+              FilledButton(
+                onPressed: () {
+                    Navigator.of(context).pop();
               if (state.selectedFeatureType != null) {
                 context.read<PromptBloc>().add(
                   ResetPromptRequested(state.selectedFeatureType!),
@@ -928,356 +1427,12 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                 setState(() => _isEdited = false);
               }
             },
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 显示添加提示词模板对话框
-  void _showAddPromptTemplateDialog(BuildContext context, PromptType type) {
-    final titleController = TextEditingController();
-    final contentController = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: Text(type == PromptType.summary ? '添加摘要提示词模板' : '添加风格提示词模板'),
-            content: SizedBox(
-              width: 600, // 增加宽度
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: titleController,
-                      decoration: InputDecoration(
-                        labelText: '模板名称',
-                        hintText: '输入一个简短的名称',
-                        border: const OutlineInputBorder(),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      ),
-                      maxLength: 20,
-                    ),
-                    const SizedBox(height: 20),
-                    
-                    // 可用变量占位符
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                          width: 1,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '可用变量占位符',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 13,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              _buildTemplateVariableChip(context, 'input', '输入内容', contentController),
-                              _buildTemplateVariableChip(context, 'context', '上下文信息', contentController),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '点击上方变量插入到模板内容中，生成时会被替换为实际内容',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    TextField(
-                      controller: contentController,
-                      decoration: InputDecoration(
-                        labelText: '模板内容',
-                        hintText: type == PromptType.summary 
-                            ? '输入摘要提示词内容' 
-                            : '输入风格提示词内容',
-                        border: const OutlineInputBorder(),
-                        alignLabelWithHint: true,
-                        contentPadding: const EdgeInsets.all(16),
-                      ),
-                      maxLines: 12, // 增加行数
-                      style: const TextStyle(
-                        fontSize: 15,
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  if (titleController.text.isNotEmpty && contentController.text.isNotEmpty) {
-                    // 添加提示词模板
-                    this.context.read<PromptBloc>().add(
-                      AddPromptTemplateRequested(
-                        title: titleController.text,
-                        content: contentController.text,
-                        type: type,
-                      ),
-                    );
-                    Navigator.of(context).pop();
-                  }
-                },
-                child: const Text('保存'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-  
-  /// 显示编辑提示词模板对话框
-  void _showEditPromptTemplateDialog(BuildContext context, PromptItem template) {
-    final titleController = TextEditingController(text: template.title);
-    final contentController = TextEditingController(text: template.content);
-    
-    showDialog(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('编辑提示词模板'),
-            content: SizedBox(
-              width: 600, // 增加宽度
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: titleController,
-                      decoration: const InputDecoration(
-                        labelText: '模板名称',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      ),
-                      maxLength: 20,
-                    ),
-                    const SizedBox(height: 20),
-                    
-                    // 可用变量占位符
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                          width: 1,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '可用变量占位符',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 13,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              _buildTemplateVariableChip(context, 'input', '输入内容', contentController),
-                              _buildTemplateVariableChip(context, 'context', '上下文信息', contentController),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '点击上方变量插入到模板内容中，生成时会被替换为实际内容',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    TextField(
-                      controller: contentController,
-                      decoration: const InputDecoration(
-                        labelText: '模板内容',
-                        border: OutlineInputBorder(),
-                        alignLabelWithHint: true,
-                        contentPadding: EdgeInsets.all(16),
-                      ),
-                      maxLines: 12, // 增加行数
-                      style: const TextStyle(
-                        fontSize: 15,
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  if (titleController.text.isNotEmpty && contentController.text.isNotEmpty) {
-                    // 这里应该有更新模板的操作，但目前Bloc中缺少此功能
-                    // 先删除旧模板，再添加新模板作为临时解决方案
-                    this.context.read<PromptBloc>().add(DeletePromptTemplateRequested(template.id));
-                    this.context.read<PromptBloc>().add(
-                      AddPromptTemplateRequested(
-                        title: titleController.text,
-                        content: contentController.text,
-                        type: template.type,
-                      ),
-                    );
-                    Navigator.of(context).pop();
-                  }
-                },
-                child: const Text('保存'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-  
-  /// 构建模板变量芯片（带有指定的文本控制器）
-  Widget _buildTemplateVariableChip(BuildContext context, String variable, String description, TextEditingController controller) {
-    return Tooltip(
-      message: description,
-      child: InkWell(
-        onTap: () {
-          final int cursorPos = controller.selection.baseOffset;
-          
-          if (cursorPos >= 0) {
-            final String text = controller.text;
-            final String newText = text.substring(0, cursorPos) +
-                '{$variable}' +
-                text.substring(cursorPos);
-            
-            controller.text = newText;
-            controller.selection = TextSelection.fromPosition(
-              TextPosition(offset: cursorPos + variable.length + 2), // +2 for the curly braces
-            );
-          } else {
-            // 如果光标位置无效，则附加到末尾
-            controller.text = controller.text + '{$variable}';
-          }
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
-              width: 1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.code,
-                size: 14,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '{$variable}',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-  
-  /// 显示删除模板确认对话框
-  void _showDeleteTemplateConfirmationDialog(BuildContext context, PromptItem template) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('确认删除'),
-        content: Text('确定要删除提示词模板"${template.title}"吗？此操作不可撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              context.read<PromptBloc>().add(DeletePromptTemplateRequested(template.id));
-            },
             style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('删除'),
+            child: const Text('确定'),
           ),
         ],
       ),
@@ -1286,21 +1441,40 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
   
   /// 显示模板详情对话框
   void _showTemplateDetailDialog(BuildContext context, PromptItem template) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        backgroundColor: isDark
+            ? theme.colorScheme.surfaceContainerHigh
+            : theme.colorScheme.surface,
         title: Row(
           children: [
-            Icon(
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
               Icons.description_outlined,
-              color: Theme.of(context).colorScheme.primary,
-              size: 24,
+                color: theme.colorScheme.primary,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 template.title,
-                style: Theme.of(context).textTheme.titleLarge,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
@@ -1308,6 +1482,7 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
         content: SizedBox(
           width: 600,
           child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1315,10 +1490,12 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(8),
+                    color: isDark
+                        ? theme.colorScheme.surfaceContainerLow.withOpacity(0.7)
+                        : theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
+                      color: theme.colorScheme.outlineVariant.withOpacity(0.5),
                       width: 1,
                     ),
                   ),
@@ -1327,7 +1504,7 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                     style: TextStyle(
                       fontSize: 15,
                       height: 1.5,
-                      color: Theme.of(context).colorScheme.onSurface,
+                      color: theme.colorScheme.onSurface,
                     ),
                   ),
                 ),
@@ -1338,11 +1515,22 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('关闭'),
+            child: Text(
+              '关闭',
+              style: TextStyle(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           FilledButton.icon(
-            icon: const Icon(Icons.content_paste),
+            icon: const Icon(Icons.content_paste, size: 18),
             label: const Text('应用'),
+            style: FilledButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
             onPressed: () {
               // 应用模板内容到当前编辑器
               if (context.read<PromptBloc>().state.selectedFeatureType != null) {
@@ -1352,135 +1540,23 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
                 
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('已应用模板: ${template.title}'),
+                    content: Row(
+        children: [
+                        Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+                        const SizedBox(width: 10),
+                        Text('已应用模板: ${template.title}'),
+                      ],
+                    ),
                     behavior: SnackBarBehavior.floating,
+                    backgroundColor: Colors.green,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    margin: const EdgeInsets.all(8),
                   ),
                 );
               }
             },
           ),
         ],
-      ),
-    );
-  }
-
-  /// 构建模板变量提示组件
-  Widget _buildTemplateVariableTips(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.info_outline,
-                size: 16,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '可用变量占位符',
-                style: TextStyle(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 13,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildVariableChip(context, 'input', '输入内容'),
-              _buildVariableChip(context, 'context', '上下文信息'),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '点击上方变量插入到模板内容中，生成时会被替换为实际内容',
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  /// 构建变量芯片
-  Widget _buildVariableChip(BuildContext context, String variable, String description) {
-    return Tooltip(
-      message: description,
-      child: InkWell(
-        onTap: () {
-          // 尝试通过上下文获取当前获取焦点的文本编辑器
-          final FocusNode? focusNode = FocusManager.instance.primaryFocus;
-          if (focusNode != null && focusNode.context != null) {
-            final widget = focusNode.context!.widget;
-            if (widget is EditableText) {
-              final TextEditingController controller = widget.controller;
-              final int cursorPos = controller.selection.baseOffset;
-              
-              if (cursorPos >= 0) {
-                final String text = controller.text;
-                final String newText = text.substring(0, cursorPos) +
-                    '{$variable}' +
-                    text.substring(cursorPos);
-                
-                controller.text = newText;
-                controller.selection = TextSelection.fromPosition(
-                  TextPosition(offset: cursorPos + variable.length + 2), // +2 for the curly braces
-                );
-              } else {
-                // 如果光标位置无效，则附加到末尾
-                controller.text = controller.text + '{$variable}';
-              }
-            }
-          }
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
-              width: 1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.code,
-                size: 14,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '{$variable}',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1493,7 +1569,19 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
     );
     
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已复制到私有模板')),
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            Text('已复制模板"${template.name}"到私有模板'),
+          ],
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.green,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(8),
+      ),
     );
   }
   
@@ -1517,16 +1605,41 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
   
   /// 处理删除模板
   void _handleDeleteTemplate(PromptTemplate template) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     // 弹出确认对话框
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('确认删除'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        backgroundColor: isDark
+            ? theme.colorScheme.surfaceContainerHigh
+            : theme.colorScheme.surface,
+        title: Row(
+          children: [
+            Icon(
+              Icons.delete_outline,
+              color: theme.colorScheme.error,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            const Text('确认删除'),
+          ],
+        ),
         content: Text('确定要删除模板"${template.name}"吗？此操作不可撤销。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
+            child: Text(
+              '取消',
+              style: TextStyle(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           FilledButton(
             onPressed: () {
@@ -1537,7 +1650,10 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
               );
             },
             style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
+              backgroundColor: theme.colorScheme.error,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('删除'),
           ),
@@ -1561,6 +1677,16 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
       _isNewTemplate = false;
       _newTemplateFeatureType = null;
     });
+    
+    // 重置并重启动画，而不是销毁重建动画控制器
+    _animationController.reset();
+    
+    // 确保在下一帧开始时动画能正常启动
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _animationController.forward();
+      }
+    });
   }
   
   /// 处理模板保存成功
@@ -1572,8 +1698,35 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
       _newTemplateFeatureType = null;
     });
     
+    // 重置并重启动画，而不是销毁重建动画控制器
+    _animationController.reset();
+    
+    // 确保在下一帧开始时动画能正常启动
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _animationController.forward();
+      }
+    });
+    
     // 刷新模板列表
     context.read<PromptBloc>().add(const LoadPromptTemplatesRequested());
+    
+    // 显示保存成功提示
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            const Text('模板已成功保存'),
+          ],
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.green,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(8),
+      ),
+    );
   }
   
   /// 处理复制当前显示的模板到私有模板
@@ -1589,19 +1742,73 @@ class _PromptManagementPanelState extends State<PromptManagementPanel> with Sing
         _currentEditingTemplate = null;
       });
       
+      // 重置并重启动画，而不是销毁重建动画控制器
+      _animationController.reset();
+      
+      // 确保在下一帧开始时动画能正常启动
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _animationController.forward();
+        }
+      });
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已复制到私有模板')),
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              Text('已复制"${_currentEditingTemplate!.name}"到私有模板'),
+            ],
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.green,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(8),
+        ),
       );
     }
   }
   
   /// 创建新模板
   void _createNewTemplate(AIFeatureType featureType) {
-    setState(() {
-      _isEditingTemplate = true;
-      _isNewTemplate = true;
-      _currentEditingTemplate = null;
-      _newTemplateFeatureType = featureType;
-    });
+    // 添加调试信息
+    print('创建新模板, featureType: $featureType');
+    
+    // 确保featureType不为null
+    if (featureType == null) {
+      print('错误: featureType不能为null，使用默认值');
+      featureType = AIFeatureType.sceneToSummary; // 使用默认值
+    }
+    
+    // 创建临时空PromptTemplate用于调试
+    try {
+      // 先将动画重置到初始状态
+      _animationController.reset();
+      _animationController.value = 0.0;
+      
+      // 然后更新状态
+      setState(() {
+        _isEditingTemplate = true;
+        _isNewTemplate = true;
+        _currentEditingTemplate = null;
+        _newTemplateFeatureType = featureType;
+      });
+      
+      // 打印状态更新后的信息
+      print('创建新模板状态已更新: _isEditingTemplate=$_isEditingTemplate, _isNewTemplate=$_isNewTemplate, '
+            '_newTemplateFeatureType=$_newTemplateFeatureType');
+      
+      // 确保在下一帧开始时动画能正常启动
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          print('准备启动动画...');
+          _animationController.forward(from: 0.0);
+          print('动画已启动: value=${_animationController.value}');
+        }
+      });
+    } catch (e) {
+      print('创建新模板时发生异常: $e');
+    }
   }
 } 

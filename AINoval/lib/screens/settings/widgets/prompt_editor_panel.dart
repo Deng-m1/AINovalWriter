@@ -45,7 +45,7 @@ class PromptEditorPanel extends StatefulWidget {
   State<PromptEditorPanel> createState() => _PromptEditorPanelState();
 }
 
-class _PromptEditorPanelState extends State<PromptEditorPanel> {
+class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProviderStateMixin {
   late TextEditingController _nameController;
   late TextEditingController _contentController;
   bool _isEdited = false;
@@ -54,18 +54,53 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
   OptimizationResult? _optimizationResult;
   OptimizationStyle _selectedStyle = OptimizationStyle.professional;
   double _preserveRatio = 0.5;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
   
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.template?.name ?? '');
     _contentController = TextEditingController(text: widget.template?.content ?? '');
+    
+    _animationController = AnimationController(
+      vsync: this, 
+      duration: const Duration(milliseconds: 300),
+      value: 0.0,
+    );
+    
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOut,
+    );
+    
+    _animationController.forward();
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_animationController.isAnimating && _animationController.value < 1.0) {
+      _animationController.forward();
+    }
+  }
+  
+  @override
+  void didUpdateWidget(PromptEditorPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.template != widget.template || 
+        oldWidget.isNew != widget.isNew || 
+        oldWidget.featureType != widget.featureType) {
+      _animationController.reset();
+      _animationController.forward();
+    }
   }
   
   @override
   void dispose() {
     _nameController.dispose();
     _contentController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
   
@@ -76,311 +111,251 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 标题 - 添加磨砂玻璃效果
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      isPublic 
-                        ? theme.colorScheme.primary.withOpacity(0.5)
-                        : theme.colorScheme.secondary.withOpacity(0.5),
-                      isPublic 
-                        ? theme.colorScheme.primary.withOpacity(0.3)
-                        : theme.colorScheme.secondary.withOpacity(0.3),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+    return SafeArea(
+      child: Material(
+        color: Colors.transparent,
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 简洁标题栏
+                _buildHeader(isPublic, theme),
+                
+                const SizedBox(height: 8),
+                
+                // 模板权限指示器 - 简化为行内元素
+                if (isPublic)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: _buildPermissionIndicator(isPublic),
                   ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                  border: Border.all(
-                    color: isPublic
-                      ? theme.colorScheme.primary.withOpacity(0.3)
-                      : theme.colorScheme.secondary.withOpacity(0.3),
-                    width: 1,
+                
+                // 编辑区域 - 更紧凑的布局
+                Expanded(
+                  child: _buildCompactEditorArea(isEditable, theme, isDark),
                   ),
+                
+                // 处理指示器
+                AnimatedOpacity(
+                  opacity: _isOptimizing ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  child: _isOptimizing 
+                    ? ProcessingIndicator(
+                        progress: _optimizationProgress,
+                        onCancel: _cancelOptimization,
+                      )
+                    : const SizedBox.shrink(),
                 ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: isPublic
-                          ? theme.colorScheme.primary.withOpacity(0.2)
-                          : theme.colorScheme.secondary.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        widget.isNew ? Icons.add_circle_outline : Icons.edit_note,
-                        color: isPublic
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.secondary,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _buildHeader(),
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: isPublic
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.secondary,
-                        ),
-                      ),
-                    ),
-                  ],
+                
+                // 优化结果视图
+                AnimatedOpacity(
+                  opacity: _optimizationResult != null ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  child: _optimizationResult != null
+                    ? OptimizationResultView(
+                        original: _contentController.text,
+                        optimized: _optimizationResult!.optimizedContent,
+                        sections: _optimizationResult!.sections,
+                        statistics: _optimizationResult!.statistics,
+                        onAccept: _acceptOptimization,
+                        onReject: _rejectOptimization,
+                        onPartialAccept: _partiallyAcceptOptimization,
+                      )
+                    : const SizedBox.shrink(),
                 ),
-              ),
-            ),
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // 模板权限指示器
-          TemplatePermissionIndicator(
-            isPublic: isPublic,
-            onCopyToPrivate: isPublic ? widget.onCopyToPrivate : null,
-          ),
-          
-          // 编辑器区域
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              color: isDark 
-                ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.7)
-                : theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+                
+                // 底部操作按钮 - 更简洁的设计
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12.0),
+                  child: _buildBottomActions(isEditable, theme),
                 ),
               ],
-              border: Border.all(
-                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
-              ),
             ),
-            padding: const EdgeInsets.all(16),
-            height: 400,
-            child: _buildEditorArea(isEditable),
           ),
-          
-          // AI辅助工具栏（只有私有模板或新建模板才显示）
-          if (isEditable)
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              child: AIAssistToolbar(
-                isProcessing: _isOptimizing,
-                selectedStyle: _selectedStyle,
-                onStyleChanged: _handleStyleChanged,
-                preserveRatio: _preserveRatio,
-                onRatioChanged: _handleRatioChanged,
-                onOptimizeRequested: _handleOptimizeRequest,
-              ),
-            ),
-          
-          // 处理指示器
-          if (_isOptimizing)
-            AnimatedOpacity(
-              opacity: _isOptimizing ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 300),
-              child: ProcessingIndicator(
-                progress: _optimizationProgress,
-                onCancel: _cancelOptimization,
-              ),
-            ),
-          
-          // 优化结果视图
-          if (_optimizationResult != null)
-            AnimatedOpacity(
-              opacity: _optimizationResult != null ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 300),
-              child: OptimizationResultView(
-                original: _contentController.text,
-                optimized: _optimizationResult!.optimizedContent,
-                sections: _optimizationResult!.sections,
-                statistics: _optimizationResult!.statistics,
-                onAccept: _acceptOptimization,
-                onReject: _rejectOptimization,
-                onPartialAccept: _partiallyAcceptOptimization,
-              ),
-            ),
-          
-          // 底部操作按钮
-          Container(
-            margin: const EdgeInsets.only(top: 16),
-            child: _buildBottomActions(isEditable),
+        ),
+      ),
+    );
+  }
+  
+  /// 简洁的标题栏
+  Widget _buildHeader(bool isPublic, ThemeData theme) {
+    final title = widget.isNew 
+        ? '创建提示词模板' 
+        : '编辑提示词模板';
+    
+    return Container(
+      margin: const EdgeInsets.only(top: 12, bottom: 4),
+              child: Row(
+                children: [
+          Icon(
+            widget.isNew ? Icons.add_circle_outline : Icons.edit_note,
+            color: theme.colorScheme.primary,
+            size: 20,
           ),
-          
-          const SizedBox(height: 20), // 底部额外空间，防止底部按钮被遮挡
+          const SizedBox(width: 10),
+          Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+                      ),
         ],
       ),
     );
   }
   
-  /// 构建标题栏
-  String _buildHeader() {
-    final title = widget.isNew 
-        ? '创建提示词模板' 
-        : '编辑提示词模板: ${widget.template?.name ?? ""}';
-    
-    return title;
-  }
-  
-  /// 构建编辑区域
-  Widget _buildEditorArea(bool isEditable) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 模板名称输入框
-        Container(
-          decoration: BoxDecoration(
-            color: isDark
-                ? theme.colorScheme.surfaceContainerLow.withOpacity(0.5)
-                : theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: TextField(
-            controller: _nameController,
-            decoration: InputDecoration(
-              labelText: '模板名称',
-              hintText: '请输入一个描述性的模板名称',
-              helperText: '一个好的名称应简洁明了地描述模板的用途',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: theme.colorScheme.outline.withOpacity(0.5),
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: theme.colorScheme.primary,
-                  width: 2,
-                ),
-              ),
-              enabled: isEditable,
-              prefixIcon: const Icon(Icons.title),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              fillColor: isDark
-                  ? theme.colorScheme.surfaceContainerLow.withOpacity(0.3)
-                  : theme.colorScheme.surface,
-              filled: true,
-            ),
-            onChanged: (_) => setState(() => _isEdited = true),
+  /// 简化的权限指示器
+  Widget _buildPermissionIndicator(bool isPublic) {
+    return Row(
+                      children: [
+        Icon(
+          isPublic ? Icons.public : Icons.lock_outline,
+          size: 14,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+        const SizedBox(width: 6),
+                        Text(
+                          isPublic ? '公共模板 · 只读' : '私有模板 · 可编辑',
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 16),
-        
-        // 变量占位符提示
-        _buildVariablePlaceholders(),
-        const SizedBox(height: 12),
-        
-        // 内容编辑器
-        Flexible(
-          child: Container(
-            decoration: BoxDecoration(
-              color: isDark
-                  ? theme.colorScheme.surfaceContainerLow.withOpacity(0.5)
-                  : theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+        const Spacer(),
+        if (isPublic)
+          TextButton(
+            onPressed: widget.onCopyToPrivate,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: Stack(
-              children: [
-                TextField(
-                  controller: _contentController,
-                  decoration: InputDecoration(
-                    labelText: '模板内容',
-                    hintText: widget.isNew 
-                        ? '在此处添加您的提示词模板内容...\n\n提示: 好的模板应该包含明确的指令、适当的变量和足够的上下文信息。'
-                        : '编辑模板内容...',
-                    alignLabelWithHint: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withOpacity(0.5),
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.primary,
-                        width: 2,
-                      ),
-                    ),
-                    enabled: isEditable,
-                    contentPadding: const EdgeInsets.all(16),
-                    fillColor: isDark
-                        ? theme.colorScheme.surfaceContainerLow.withOpacity(0.3)
-                        : theme.colorScheme.surface,
-                    filled: true,
-                  ),
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  onChanged: (_) => setState(() => _isEdited = true),
-                  style: const TextStyle(
-                    height: 1.5,
-                    fontSize: 14,
-                  ),
-                ),
-                
-                // 如果是新建模板且内容为空，显示引导提示
-                if (widget.isNew && _contentController.text.isEmpty)
-                  Positioned(
-                    right: 12,
-                    bottom: 12,
-                    child: _buildGuideTip(),
-                  ),
-              ],
+            child: Text(
+              '复制到私有模板',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
-        ),
       ],
     );
   }
   
-  /// 构建变量占位符提示
-  Widget _buildVariablePlaceholders() {
+  /// 更紧凑的编辑区域
+  Widget _buildCompactEditorArea(bool isEditable, ThemeData theme, bool isDark) {
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: theme.colorScheme.outline.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 模板名称输入
+            _buildNameInput(isEditable, theme),
+            
+            const SizedBox(height: 16),
+            
+            // 变量占位符 - 更紧凑的设计
+            _buildCompactVariablePlaceholders(),
+            
+            const SizedBox(height: 12),
+            
+            // 内容编辑器
+            Expanded(
+              child: _buildContentEditor(isEditable, theme, isDark),
+            ),
+
+            // AI辅助工具栏（只有私有模板或新建模板才显示）
+            if (isEditable)
+              Padding(
+                padding: const EdgeInsets.only(top: 12.0),
+                child: AIAssistToolbar(
+                  isProcessing: _isOptimizing,
+                  selectedStyle: _selectedStyle,
+                  onStyleChanged: _handleStyleChanged,
+                  preserveRatio: _preserveRatio,
+                  onRatioChanged: _handleRatioChanged,
+                  onOptimizeRequested: _handleOptimizeRequest,
+                ),
+              ),
+            ],
+          ),
+      ),
+    );
+  }
+  
+  /// 模板名称输入
+  Widget _buildNameInput(bool isEditable, ThemeData theme) {
+    return TextField(
+            controller: _nameController,
+            decoration: InputDecoration(
+              labelText: '模板名称',
+              labelStyle: TextStyle(
+                color: isEditable 
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+          fontSize: 14,
+              ),
+        hintText: '请输入模板名称',
+              border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.5),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 1.5,
+                ),
+              ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        isDense: true,
+              enabled: isEditable,
+              prefixIcon: Icon(
+                Icons.title,
+                color: isEditable 
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+          size: 18,
+              ),
+            ),
+            style: TextStyle(
+                      fontSize: 14,
+                      color: theme.colorScheme.onSurface,
+                    ),
+      onChanged: (_) => setState(() => _isEdited = true),
+    );
+  }
+  
+  /// 更紧凑的变量占位符
+  Widget _buildCompactVariablePlaceholders() {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final featureType = widget.template?.featureType ?? widget.featureType;
     
     // 根据功能类型提供不同的变量占位符
@@ -395,110 +370,52 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
         {'name': 'summary', 'desc': '摘要内容', 'icon': Icons.summarize},
         {'name': 'novel_context', 'desc': '小说上下文', 'icon': Icons.book},
       ];
+    } else {
+      variables = [
+        {'name': 'input', 'desc': '输入内容', 'icon': Icons.input},
+        {'name': 'context', 'desc': '上下文信息', 'icon': Icons.book},
+      ];
     }
     
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: isDark
-                ? [
-                    theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                    theme.colorScheme.surfaceContainerHigh.withOpacity(0.3),
-                  ]
-                : [
-                    theme.colorScheme.primaryContainer.withOpacity(0.15),
-                    theme.colorScheme.primaryContainer.withOpacity(0.05),
-                  ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: theme.colorScheme.primary.withOpacity(0.2),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
+    return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 children: [
-                  Icon(
-                    Icons.code,
-                    size: 16,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '可用变量占位符',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 13,
+            Icon(
+                      Icons.code,
+              size: 14,
                       color: theme.colorScheme.primary,
                     ),
-                  ),
-                  const Spacer(),
-                  Tooltip(
-                    message: '生成时，变量占位符会被替换为实际内容',
-                    child: Icon(
-                      Icons.info_outline,
-                      size: 14,
-                      color: theme.colorScheme.onSurfaceVariant,
+            const SizedBox(width: 6),
+                  Text(
+              '变量占位符',
+                    style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.primary,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+        const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
-                runSpacing: 8,
-                children: variables.map((variable) => _buildVariableChip(
+          runSpacing: 6,
+          children: variables.map((variable) => _buildCompactVariableChip(
                   variable['name'], 
                   variable['desc'],
                   variable['icon'],
                 )).toList(),
               ),
-              if (variables.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.touch_app,
-                      size: 12,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '点击变量插入到编辑器中',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+      ],
     );
   }
   
-  /// 构建变量芯片
-  Widget _buildVariableChip(String variable, String description, IconData icon) {
+  /// 紧凑的变量芯片
+  Widget _buildCompactVariableChip(String variable, String description, IconData icon) {
+    final theme = Theme.of(context);
+    
     return Tooltip(
       message: description,
       child: InkWell(
@@ -518,36 +435,36 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
               TextPosition(offset: cursorPos + variable.length + 2), // +2 for the curly braces
             );
           } else {
-            // 如果光标位置无效，则附加到末尾
             controller.text = controller.text + '{$variable}';
           }
           
           setState(() => _isEdited = true);
         },
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(16),
+            color: theme.colorScheme.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
-            ),
+              color: theme.colorScheme.primary.withOpacity(0.3),
+              width: 1,
+              ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 icon,
-                size: 14,
-                color: Theme.of(context).colorScheme.primary,
+                size: 12,
+                color: theme.colorScheme.primary,
               ),
               const SizedBox(width: 4),
               Text(
                 '{$variable}',
                 style: TextStyle(
-                  fontSize: 13,
-                  color: Theme.of(context).colorScheme.primary,
+                  fontSize: 12,
+                  color: theme.colorScheme.primary,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -558,10 +475,59 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
     );
   }
   
+  /// 内容编辑器
+  Widget _buildContentEditor(bool isEditable, ThemeData theme, bool isDark) {
+    return TextField(
+      controller: _contentController,
+      decoration: InputDecoration(
+        labelText: '模板内容',
+        alignLabelWithHint: true,
+        labelStyle: TextStyle(
+          color: isEditable 
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w500,
+          fontSize: 14,
+        ),
+        hintText: widget.isNew 
+            ? '在此处添加您的提示词模板内容...\n\n提示: 好的模板应该包含明确的指令、适当的变量和足够的上下文信息。'
+            : '编辑模板内容...',
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: theme.colorScheme.outline.withOpacity(0.5),
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: theme.colorScheme.outline.withOpacity(0.3),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: theme.colorScheme.primary,
+            width: 1.5,
+          ),
+        ),
+        contentPadding: const EdgeInsets.all(12),
+        enabled: isEditable,
+      ),
+      maxLines: null,
+      expands: true,
+      textAlignVertical: TextAlignVertical.top,
+      onChanged: (_) => setState(() => _isEdited = true),
+      style: TextStyle(
+        height: 1.5,
+        fontSize: 14,
+        color: theme.colorScheme.onSurface,
+      ),
+    );
+  }
+  
   /// 构建底部操作按钮
-  Widget _buildBottomActions(bool isEditable) {
-    final theme = Theme.of(context);
-    
+  Widget _buildBottomActions(bool isEditable, ThemeData theme) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
@@ -569,106 +535,41 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
         OutlinedButton(
           onPressed: widget.onCancel,
           style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
             ),
             side: BorderSide(
               color: theme.colorScheme.outline.withOpacity(0.5),
             ),
           ),
-          child: const Text('取消'),
+          child: Text(
+            '取消',
+            style: TextStyle(
+              fontSize: 14,
+            ),
+          ),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         
         // 保存按钮（只有私有模板或新建模板才可用）
         if (isEditable)
-          FilledButton.icon(
-            icon: const Icon(Icons.save, size: 18),
-            label: const Text('保存模板'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-              backgroundColor: theme.colorScheme.primary,
-              foregroundColor: theme.colorScheme.onPrimary,
-            ),
+          FilledButton(
             onPressed: _isEdited ? _saveTemplate : null,
-          ),
-      ],
-    );
-  }
-  
-  /// 构建引导提示
-  Widget _buildGuideTip() {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            theme.colorScheme.primaryContainer.withOpacity(0.9),
-            theme.colorScheme.primaryContainer.withOpacity(0.7),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.15),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-        border: Border.all(
-          color: theme.colorScheme.primary.withOpacity(0.3),
-          width: 1,
-        ),
-      ),
-      constraints: const BoxConstraints(maxWidth: 240),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.lightbulb_outline,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
-              const SizedBox(width: 8),
-              Text(
-                '创作提示',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onPrimaryContainer,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            '点击上方的变量标签插入占位符，使用AI辅助工具可以优化您的提示词，让AI生成更符合您期望的内容。',
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.4,
-              color: theme.colorScheme.onPrimaryContainer,
             ),
-          ),
-        ],
-      ),
+            child: Text(
+              '保存模板',
+                      style: TextStyle(
+                fontSize: 14,
+              ),
+                  ),
+                ),
+              ],
     );
   }
   
@@ -694,7 +595,19 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
     if (content.isEmpty || featureType == null) {
       // 显示错误提示
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('模板内容不能为空')),
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.error_outline, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              const Text('模板内容不能为空'),
+            ],
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.redAccent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(8),
+        ),
       );
       return;
     }
@@ -752,14 +665,25 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
         _isOptimizing = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('优化失败: $errorMessage')),
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.error_outline, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              Text('优化失败: $errorMessage'),
+            ],
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.redAccent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(8),
+        ),
       );
     }
   }
   
   /// 取消优化
   void _cancelOptimization() {
-    // 通知BLoC取消优化请求
     context.read<PromptBloc>().add(const CancelOptimizationRequested());
     setState(() {
       _isOptimizing = false;
@@ -774,6 +698,23 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
         _optimizationResult = null;
         _isEdited = true;
       });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              const Text('优化内容已应用'),
+            ],
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.green,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(8),
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
   
@@ -812,7 +753,25 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
     // 关闭优化结果视图
     setState(() {
       _optimizationResult = null;
+      _isEdited = true;
     });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            const Text('部分优化内容已应用'),
+          ],
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.green,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(8),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
   
   /// 保存模板
@@ -822,7 +781,19 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
     
     if (name.isEmpty || content.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('模板名称和内容不能为空')),
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.error_outline, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              const Text('模板名称和内容不能为空'),
+            ],
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.redAccent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(8),
+        ),
       );
       return;
     }
@@ -831,7 +802,19 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
       // 创建新模板
       if (widget.featureType == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('缺少功能类型')),
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.white, size: 18),
+                const SizedBox(width: 10),
+                const Text('缺少功能类型'),
+              ],
+            ),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.redAccent,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(8),
+          ),
         );
         return;
       }
@@ -858,19 +841,5 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> {
     if (widget.onSaveSuccess != null) {
       widget.onSaveSuccess!();
     }
-  }
-}
-
-/// 字符串构建器，用于高效拼接字符串
-class StringBuilder {
-  final StringBuffer _buffer = StringBuffer();
-  
-  void append(String str) {
-    _buffer.write(str);
-  }
-  
-  @override
-  String toString() {
-    return _buffer.toString();
   }
 } 

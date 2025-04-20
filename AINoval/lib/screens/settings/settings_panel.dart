@@ -105,15 +105,34 @@ class _SettingsPanelState extends State<SettingsPanel> {
 
     return Material(
       elevation: 4.0,
-      borderRadius: BorderRadius.circular(12.0),
+      borderRadius: BorderRadius.circular(16.0),
       color: Colors.transparent, // Make Material transparent
       child: Container(
-        width: 960, // 增加宽度从800到960
-        height: 700, // 增加高度从600到700
+        width: 1440, // 增加宽度从800到960
+        height: 1080, // 增加高度从600到700
         decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(12.0),
+          color: isDark
+              ? theme.colorScheme.surface.withAlpha(217) // 0.85 opacity
+              : theme.colorScheme.surface.withAlpha(242), // 0.95 opacity
+          borderRadius: BorderRadius.circular(16.0),
+          boxShadow: [
+            BoxShadow(
+              color: isDark
+                  ? Colors.black.withAlpha(77) // 0.3 opacity
+                  : Colors.black.withAlpha(26), // 0.1 opacity
+              blurRadius: 20,
+              spreadRadius: 2,
+            ),
+          ],
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withAlpha(26) // 0.1 opacity
+                : Colors.white.withAlpha(153), // 0.6 opacity
+            width: 0.5,
+          ),
         ),
+        // 添加背景模糊效果
+        clipBehavior: Clip.antiAlias,
         child: Row(
           children: [
             // Left Navigation Rail
@@ -122,53 +141,88 @@ class _SettingsPanelState extends State<SettingsPanel> {
               padding: const EdgeInsets.symmetric(vertical: 16.0),
               decoration: BoxDecoration(
                 color: isDark
-                    ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.1)
-                    : theme.colorScheme.surfaceContainerLowest,
+                    ? theme.colorScheme.surfaceContainerHighest.withAlpha(51) // 0.2 opacity
+                    : theme.colorScheme.surfaceContainerLowest.withAlpha(179), // 0.7 opacity
                 borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(12.0),
-                  bottomLeft: Radius.circular(12.0),
+                  topLeft: Radius.circular(16.0),
+                  bottomLeft: Radius.circular(16.0),
                 ),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withAlpha(13) // 0.05 opacity
+                      : Colors.white.withAlpha(77), // 0.3 opacity
+                  width: 0.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: isDark
+                        ? Colors.black.withAlpha(51) // 0.2 opacity
+                        : Colors.black.withAlpha(13), // 0.05 opacity
+                    blurRadius: 10,
+                    spreadRadius: 0,
+                  ),
+                ],
               ),
               child: ListView.builder(
                 itemCount: _categories.length,
                 itemBuilder: (context, index) {
                   final category = _categories[index];
                   final isSelected = _selectedIndex == index;
-                  return ListTile(
-                    leading: Icon(
-                      category['icon'] as IconData?,
-                      color: isSelected
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant,
-                      size: 20, // Smaller icon
-                    ),
-                    title: Text(
-                      category['title'] as String,
-                      style: TextStyle(
-                        fontSize: 13, // Slightly smaller font
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.normal,
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      decoration: BoxDecoration(
                         color: isSelected
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurfaceVariant,
+                            ? (isDark
+                                ? theme.colorScheme.primary.withAlpha(38) // 0.15 opacity
+                                : theme.colorScheme.primary.withAlpha(26)) // 0.1 opacity
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: isSelected ? [
+                          BoxShadow(
+                            color: theme.colorScheme.primary.withAlpha(26), // 0.1 opacity
+                            blurRadius: 8,
+                            spreadRadius: 0,
+                            offset: const Offset(0, 2),
+                          ),
+                        ] : [],
+                      ),
+                      child: ListTile(
+                        leading: Icon(
+                          category['icon'] as IconData?,
+                          color: isSelected
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.onSurfaceVariant,
+                          size: 20, // Smaller icon
+                        ),
+                        title: Text(
+                          category['title'] as String,
+                          style: TextStyle(
+                            fontSize: 13, // Slightly smaller font
+                            fontWeight:
+                                isSelected ? FontWeight.bold : FontWeight.normal,
+                            color: isSelected
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        onTap: () {
+                          setState(() {
+                            _selectedIndex = index;
+                            _hideAddEditForm(); // Hide form when changing category
+                          });
+                        },
+                        selected: isSelected,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12.0, vertical: 4.0),
+                        visualDensity: VisualDensity.compact,
                       ),
                     ),
-                    onTap: () {
-                      setState(() {
-                        _selectedIndex = index;
-                        _hideAddEditForm(); // Hide form when changing category
-                      });
-                    },
-                    selected: isSelected,
-                    selectedTileColor:
-                        theme.colorScheme.primary.withOpacity(0.1),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    dense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16.0, vertical: 4.0),
-                    visualDensity: VisualDensity.compact,
                   );
                 },
               ),
@@ -179,12 +233,25 @@ class _SettingsPanelState extends State<SettingsPanel> {
               child: ClipRRect(
                 // Clip content to rounded corners
                 borderRadius: const BorderRadius.only(
-                  topRight: Radius.circular(12.0),
-                  bottomRight: Radius.circular(12.0),
+                  topRight: Radius.circular(16.0),
+                  bottomRight: Radius.circular(16.0),
                 ),
                 child: Container(
                   // Add a background for the content area if needed
-                  color: theme.cardColor, // Or theme.colorScheme.surface
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? theme.cardColor.withAlpha(179) // 0.7 opacity
+                        : theme.cardColor.withAlpha(217), // 0.85 opacity
+                    boxShadow: [
+                      BoxShadow(
+                        color: isDark
+                            ? Colors.black.withAlpha(51) // 0.2 opacity
+                            : Colors.black.withAlpha(13), // 0.05 opacity
+                        blurRadius: 10,
+                        spreadRadius: 0,
+                      ),
+                    ],
+                  ),
                   child: Stack(
                     children: [
                       // Listener for Feedback Toasts
@@ -220,14 +287,24 @@ class _SettingsPanelState extends State<SettingsPanel> {
                         },
                         child: Padding(
                           padding:
-                              const EdgeInsets.fromLTRB(24.0, 48.0, 24.0, 24.0),
+                              const EdgeInsets.fromLTRB(32.0, 48.0, 32.0, 32.0),
                           child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
+                            duration: const Duration(milliseconds: 400),
+                            switchInCurve: Curves.easeOutQuint,
+                            switchOutCurve: Curves.easeInQuint,
                             transitionBuilder:
                                 (Widget child, Animation<double> animation) {
                               // Using Key on the child ensures AnimatedSwitcher differentiates them
                               return FadeTransition(
-                                  opacity: animation, child: child);
+                                  opacity: animation,
+                                  child: SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0.05, 0),
+                                      end: Offset.zero,
+                                    ).animate(animation),
+                                    child: child,
+                                  )
+                              );
                             },
                             // Directly determine the child and its key here
                             child: _showAddEditForm &&
@@ -247,10 +324,25 @@ class _SettingsPanelState extends State<SettingsPanel> {
                       Positioned(
                         top: 8,
                         right: 8,
-                        child: IconButton(
-                          icon: const Icon(Icons.close),
-                          tooltip: '关闭设置', // TODO: Localize
-                          onPressed: widget.onClose,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? Colors.black.withAlpha(51) // 0.2 opacity
+                                : Colors.white.withAlpha(128), // 0.5 opacity
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withAlpha(26), // 0.1 opacity
+                                blurRadius: 4,
+                                spreadRadius: 0,
+                              ),
+                            ],
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.close),
+                            tooltip: '关闭设置', // TODO(developer): Localize
+                            onPressed: widget.onClose,
+                          ),
                         ),
                       ),
                     ],
@@ -286,6 +378,9 @@ class _SettingsPanelState extends State<SettingsPanel> {
 
   // Extracted AI Config List building logic, added key parameter
   Widget _buildAiConfigList({required Key key, required AiConfigBloc bloc}) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return BlocBuilder<AiConfigBloc, AiConfigState>(
       // <<< Changed to BlocBuilder
       key: key, // Pass the key here
@@ -293,7 +388,18 @@ class _SettingsPanelState extends State<SettingsPanel> {
         // Builder logic remains the same - Loading/Error/Empty/List states
         // ... (Loading state)
         if (state.status == AiConfigStatus.loading && state.configs.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(height: 40),
+                const CircularProgressIndicator(),
+                const SizedBox(height: 20),
+                Text('正在加载模型服务...',
+                  style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(179))), // 0.7 opacity
+              ],
+            ),
+          );
         }
         // ... (Error state for initial load)
         if (state.status == AiConfigStatus.error && state.configs.isEmpty) {
@@ -301,15 +407,26 @@ class _SettingsPanelState extends State<SettingsPanel> {
               child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('加载配置时出错', style: TextStyle(color: Colors.red)),
+              Icon(Icons.error_outline, color: Colors.red, size: 48),
+              const SizedBox(height: 16),
+              const Text('加载配置时出错',
+                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16)),
               if (state.errorMessage != null)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Text(state.errorMessage!),
+                  child: Text(state.errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: theme.colorScheme.error.withAlpha(204))), // 0.8 opacity
                 ),
-              ElevatedButton(
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.refresh),
+                label: const Text('重试'),
                 onPressed: () => bloc.add(LoadAiConfigs(userId: widget.userId)),
-                child: const Text('重试'),
+                style: ElevatedButton.styleFrom(
+                  elevation: 2,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
               )
             ],
           ));
@@ -325,12 +442,31 @@ class _SettingsPanelState extends State<SettingsPanel> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text('未找到任何配置'),
-                const SizedBox(height: 16),
+                const Icon(Icons.cloud_off,
+                  size: 64,
+                  color: Color(0x66757575)), // 0.4 opacity of onSurface
+                const SizedBox(height: 24),
+                Text('未找到任何模型服务配置',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withAlpha(179) // 0.7 opacity
+                  )),
+                const SizedBox(height: 8),
+                Text('添加您的第一个AI模型服务配置以开始使用',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withAlpha(128) // 0.5 opacity
+                  )),
+                const SizedBox(height: 32),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.add),
                   label: const Text('添加第一个配置'),
                   onPressed: _showAddForm,
+                  style: ElevatedButton.styleFrom(
+                    elevation: 4,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
+                  ),
                 )
               ],
             ),
@@ -344,7 +480,10 @@ class _SettingsPanelState extends State<SettingsPanel> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('已配置的模型服务',
-                    style: Theme.of(context).textTheme.titleMedium),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    )),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('添加'),
@@ -352,14 +491,32 @@ class _SettingsPanelState extends State<SettingsPanel> {
                       ? null
                       : _showAddForm,
                   style: ElevatedButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    textStyle: const TextStyle(fontSize: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                    elevation: 2,
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
                   ),
                 ),
               ],
             ),
-            const Divider(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              child: Container(
+                height: 1,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      isDark ? Colors.white.withAlpha(26) : Colors.black.withAlpha(26), // 0.1 opacity
+                      isDark ? Colors.white.withAlpha(26) : Colors.black.withAlpha(26), // 0.1 opacity
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.2, 0.8, 1.0],
+                  ),
+                ),
+              ),
+            ),
             Expanded(
               child: ListView.builder(
                 itemCount: configs.length,
@@ -367,16 +524,19 @@ class _SettingsPanelState extends State<SettingsPanel> {
                   final config = configs[index];
                   final itemIsLoading =
                       isActionLoading && state.loadingConfigId == config.id;
-                  return AiConfigListItem(
-                    key: ValueKey(config.id),
-                    config: config,
-                    isLoading: itemIsLoading,
-                    onEdit: () => _showEditForm(config),
-                    onDelete: () => _showDeleteConfirmation(context, config),
-                    onValidate: () => bloc.add(ValidateAiConfig(
-                        userId: widget.userId, configId: config.id)),
-                    onSetDefault: () => bloc.add(SetDefaultAiConfig(
-                        userId: widget.userId, configId: config.id)),
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: AiConfigListItem(
+                      key: ValueKey(config.id),
+                      config: config,
+                      isLoading: itemIsLoading,
+                      onEdit: () => _showEditForm(config),
+                      onDelete: () => _showDeleteConfirmation(context, config),
+                      onValidate: () => bloc.add(ValidateAiConfig(
+                          userId: widget.userId, configId: config.id)),
+                      onSetDefault: () => bloc.add(SetDefaultAiConfig(
+                          userId: widget.userId, configId: config.id)),
+                    ),
                   );
                 },
               ),

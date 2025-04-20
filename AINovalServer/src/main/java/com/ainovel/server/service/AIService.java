@@ -5,6 +5,7 @@ import java.util.Map;
 
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
+import com.ainovel.server.domain.model.ModelInfo;
 import com.ainovel.server.service.ai.AIModelProvider;
 
 import reactor.core.publisher.Flux;
@@ -79,6 +80,24 @@ public interface AIService {
      * @return 模型列表
      */
     Flux<String> getModelsForProvider(String provider);
+
+    /**
+     * 获取指定提供商支持的模型详细信息
+     *
+     * @param provider 提供商名称 (小写)
+     * @return 模型信息列表
+     */
+    Flux<ModelInfo> getModelInfosForProvider(String provider);
+
+    /**
+     * 使用API密钥获取指定提供商支持的模型详细信息
+     *
+     * @param provider 提供商名称 (小写)
+     * @param apiKey API密钥
+     * @param apiEndpoint API端点 (可选)
+     * @return 模型信息列表
+     */
+    Flux<ModelInfo> getModelInfosForProviderWithApiKey(String provider, String apiKey, String apiEndpoint);
 
     /**
      * 获取所有支持的提供商

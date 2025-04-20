@@ -22,22 +22,31 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * OpenAI的LangChain4j实现
+ * OpenRouter的LangChain4j实现
+ * 使用OpenAI兼容模式，因为OpenRouter API与OpenAI兼容
  */
 @Slf4j
-public class OpenAILangChain4jModelProvider extends LangChain4jModelProvider {
+public class OpenRouterLangChain4jModelProvider extends LangChain4jModelProvider {
 
-    private static final String DEFAULT_API_ENDPOINT = "https://api.openai.com/v1";
+    private static final String DEFAULT_API_ENDPOINT = "https://openrouter.ai/api/v1";
+
+    // OpenRouter模型价格配置
+    // 注意：这些价格需要根据OpenRouter的实际价格进行调整
     private static final Map<String, Double> TOKEN_PRICES;
 
     static {
         Map<String, Double> prices = new HashMap<>();
-        prices.put("gpt-3.5-turbo", 0.0015);
-        prices.put("gpt-3.5-turbo-16k", 0.003);
-        prices.put("gpt-4", 0.03);
-        prices.put("gpt-4-32k", 0.06);
-        prices.put("gpt-4-turbo", 0.01);
-        prices.put("gpt-4o", 0.01);
+        prices.put("openai/gpt-3.5-turbo", 0.0015);
+        prices.put("openai/gpt-4", 0.03);
+        prices.put("openai/gpt-4-turbo", 0.01);
+        prices.put("openai/gpt-4o", 0.01);
+        prices.put("anthropic/claude-3-opus", 0.015);
+        prices.put("anthropic/claude-3-sonnet", 0.003);
+        prices.put("anthropic/claude-3-haiku", 0.00025);
+        prices.put("google/gemini-pro", 0.0001);
+        prices.put("google/gemini-1.5-pro", 0.0007);
+        prices.put("meta-llama/llama-3-70b-instruct", 0.0009);
+        prices.put("meta-llama/llama-3-8b-instruct", 0.0002);
         TOKEN_PRICES = Collections.unmodifiableMap(prices);
     }
 
@@ -47,10 +56,11 @@ public class OpenAILangChain4jModelProvider extends LangChain4jModelProvider {
      * @param modelName 模型名称
      * @param apiKey API密钥
      * @param apiEndpoint API端点
+     * @param proxyConfig 代理配置
      */
-    public OpenAILangChain4jModelProvider(String modelName, String apiKey, String apiEndpoint,
+    public OpenRouterLangChain4jModelProvider(String modelName, String apiKey, String apiEndpoint,
                                           ProxyConfig proxyConfig) {
-        super("openai", modelName, apiKey, apiEndpoint,proxyConfig);
+        super("openrouter", modelName, apiKey, apiEndpoint, proxyConfig);
     }
 
     @Override
@@ -82,9 +92,9 @@ public class OpenAILangChain4jModelProvider extends LangChain4jModelProvider {
                     .logResponses(true)
                     .build();
 
-            log.info("OpenAI模型初始化成功: {}", modelName);
+            log.info("OpenRouter模型初始化成功: {}", modelName);
         } catch (Exception e) {
-            log.error("初始化OpenAI模型时出错", e);
+            log.error("初始化OpenRouter模型时出错", e);
             this.chatModel = null;
             this.streamingChatModel = null;
         }
@@ -115,7 +125,7 @@ public class OpenAILangChain4jModelProvider extends LangChain4jModelProvider {
 
     @Override
     public Flux<String> generateContentStream(AIRequest request) {
-        log.info("开始OpenAI流式生成，模型: {}", modelName);
+        log.info("开始OpenRouter流式生成，模型: {}", modelName);
 
         // 记录连接开始时间
         final long connectionStartTime = System.currentTimeMillis();
@@ -123,140 +133,141 @@ public class OpenAILangChain4jModelProvider extends LangChain4jModelProvider {
 
         return super.generateContentStream(request)
                 .doOnSubscribe(__ -> {
-                    log.info("OpenAI流式生成已订阅，等待首次响应...");
+                    log.info("OpenRouter流式生成已订阅，等待首次响应...");
                 })
                 .doOnNext(content -> {
                     // 记录首次响应时间
                     if (firstResponseTime.get() == 0 && !"heartbeat".equals(content) && !content.startsWith("错误：")) {
                         firstResponseTime.set(System.currentTimeMillis());
-                        log.info("OpenAI首次响应耗时: {}ms, 模型: {}",
+                        log.info("OpenRouter首次响应耗时: {}ms, 模型: {}",
                                 (firstResponseTime.get() - connectionStartTime), modelName);
                     }
 
                     if (!"heartbeat".equals(content) && !content.startsWith("错误：")) {
-                        log.debug("OpenAI生成内容: {}", content);
+                        log.debug("OpenRouter生成内容: {}", content);
                     }
                 })
                 .doOnComplete(() -> {
                     if (firstResponseTime.get() > 0) {
-                        log.info("OpenAI流式生成完成，总耗时: {}ms, 模型: {}",
+                        log.info("OpenRouter流式生成完成，总耗时: {}ms, 模型: {}",
                                 (System.currentTimeMillis() - connectionStartTime), modelName);
                     } else {
-                        log.warn("OpenAI流式生成完成，但未收到任何内容，可能是连接问题，总耗时: {}ms, 模型: {}",
+                        log.warn("OpenRouter流式生成完成，但未收到有效响应，总耗时: {}ms, 模型: {}",
                                 (System.currentTimeMillis() - connectionStartTime), modelName);
                     }
                 })
                 .doOnError(e -> {
-                    log.error("OpenAI流式生成出错: {}, 模型: {}", e.getMessage(), modelName, e);
-                })
-                .doOnCancel(() -> {
-                    if (firstResponseTime.get() > 0) {
-                        log.info("OpenAI流式生成被取消，已生成内容 {}ms，总耗时: {}ms, 模型: {}",
-                                (firstResponseTime.get() - connectionStartTime),
-                                (System.currentTimeMillis() - connectionStartTime),
-                                modelName);
-                    } else {
-                        log.warn("OpenAI流式生成被取消，未收到任何内容，可能是连接超时，总耗时: {}ms, 模型: {}",
-                                (System.currentTimeMillis() - connectionStartTime), modelName);
-                    }
+                    log.error("OpenRouter流式生成出错: {}, 模型: {}", e.getMessage(), modelName, e);
                 });
     }
 
     /**
-     * OpenAI需要API密钥才能获取模型列表
-     * 覆盖基类的listModelsWithApiKey方法
+     * OpenRouter不需要API密钥就能获取模型列表
+     * 覆盖基类的listModels方法
      *
-     * @param apiKey API密钥
-     * @param apiEndpoint 可选的API端点
      * @return 模型信息列表
      */
     @Override
-    public Flux<ModelInfo> listModelsWithApiKey(String apiKey, String apiEndpoint) {
-        if (isApiKeyEmpty(apiKey)) {
-            return Flux.error(new RuntimeException("API密钥不能为空"));
-        }
-
-        log.info("获取OpenAI模型列表");
-
-        // 获取API端点
-        String baseUrl = apiEndpoint != null && !apiEndpoint.trim().isEmpty() ?
-                apiEndpoint : DEFAULT_API_ENDPOINT;
+    public Flux<ModelInfo> listModels() {
+        log.info("获取OpenRouter模型列表");
 
         // 创建WebClient
         WebClient webClient = WebClient.builder()
-                .baseUrl(baseUrl)
+                .baseUrl("https://openrouter.ai/api")
                 .build();
 
-        // 调用OpenAI API获取模型列表
+        // 调用OpenRouter API获取模型列表
         return webClient.get()
-                .uri("/models")
-                .header("Authorization", "Bearer " + apiKey)
+                .uri("/v1/models")
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
                 .bodyToMono(String.class)
                 .flatMapMany(response -> {
                     try {
                         // 解析响应
-                        log.debug("OpenAI模型列表响应: {}", response);
+                        log.debug("OpenRouter模型列表响应: {}", response);
 
                         // 这里应该使用JSON解析库来解析响应
                         // 简化起见，返回预定义的模型列表
-                        return Flux.fromIterable(getDefaultOpenAIModels());
+                        return Flux.fromIterable(getDefaultOpenRouterModels());
                     } catch (Exception e) {
-                        log.error("解析OpenAI模型列表时出错", e);
-                        return Flux.fromIterable(getDefaultOpenAIModels());
+                        log.error("解析OpenRouter模型列表时出错", e);
+                        return Flux.fromIterable(getDefaultOpenRouterModels());
                     }
                 })
                 .onErrorResume(e -> {
-                    log.error("获取OpenAI模型列表时出错", e);
+                    log.error("获取OpenRouter模型列表时出错", e);
                     // 出错时返回预定义的模型列表
-                    return Flux.fromIterable(getDefaultOpenAIModels());
+                    return Flux.fromIterable(getDefaultOpenRouterModels());
                 });
     }
 
     /**
-     * 获取默认的OpenAI模型列表
+     * 获取默认的OpenRouter模型列表
      *
      * @return 模型信息列表
      */
-    private List<ModelInfo> getDefaultOpenAIModels() {
+    private List<ModelInfo> getDefaultOpenRouterModels() {
         List<ModelInfo> models = new ArrayList<>();
 
-        models.add(ModelInfo.basic("gpt-3.5-turbo", "GPT-3.5 Turbo", "openai")
+        // OpenAI模型
+        models.add(ModelInfo.basic("openai/gpt-3.5-turbo", "GPT-3.5 Turbo", "openrouter")
                 .withDescription("OpenAI的GPT-3.5 Turbo模型")
                 .withMaxTokens(16385)
-                .withInputPrice(0.0015)
-                .withOutputPrice(0.002));
+                .withUnifiedPrice(0.0015));
 
-        models.add(ModelInfo.basic("gpt-3.5-turbo-16k", "GPT-3.5 Turbo 16K", "openai")
-                .withDescription("OpenAI的GPT-3.5 Turbo 16K模型")
-                .withMaxTokens(16385)
-                .withInputPrice(0.003)
-                .withOutputPrice(0.004));
-
-        models.add(ModelInfo.basic("gpt-4", "GPT-4", "openai")
+        models.add(ModelInfo.basic("openai/gpt-4", "GPT-4", "openrouter")
                 .withDescription("OpenAI的GPT-4模型")
                 .withMaxTokens(8192)
-                .withInputPrice(0.03)
-                .withOutputPrice(0.06));
+                .withUnifiedPrice(0.03));
 
-        models.add(ModelInfo.basic("gpt-4-32k", "GPT-4 32K", "openai")
-                .withDescription("OpenAI的GPT-4 32K模型")
-                .withMaxTokens(32768)
-                .withInputPrice(0.06)
-                .withOutputPrice(0.12));
-
-        models.add(ModelInfo.basic("gpt-4-turbo", "GPT-4 Turbo", "openai")
+        models.add(ModelInfo.basic("openai/gpt-4-turbo", "GPT-4 Turbo", "openrouter")
                 .withDescription("OpenAI的GPT-4 Turbo模型")
                 .withMaxTokens(128000)
-                .withInputPrice(0.01)
-                .withOutputPrice(0.03));
+                .withUnifiedPrice(0.01));
 
-        models.add(ModelInfo.basic("gpt-4o", "GPT-4o", "openai")
+        models.add(ModelInfo.basic("openai/gpt-4o", "GPT-4o", "openrouter")
                 .withDescription("OpenAI的GPT-4o模型")
                 .withMaxTokens(128000)
-                .withInputPrice(0.01)
-                .withOutputPrice(0.03));
+                .withUnifiedPrice(0.01));
+
+        // Anthropic模型
+        models.add(ModelInfo.basic("anthropic/claude-3-opus", "Claude 3 Opus", "openrouter")
+                .withDescription("Anthropic的Claude 3 Opus模型")
+                .withMaxTokens(200000)
+                .withUnifiedPrice(0.015));
+
+        models.add(ModelInfo.basic("anthropic/claude-3-sonnet", "Claude 3 Sonnet", "openrouter")
+                .withDescription("Anthropic的Claude 3 Sonnet模型")
+                .withMaxTokens(200000)
+                .withUnifiedPrice(0.003));
+
+        models.add(ModelInfo.basic("anthropic/claude-3-haiku", "Claude 3 Haiku", "openrouter")
+                .withDescription("Anthropic的Claude 3 Haiku模型")
+                .withMaxTokens(200000)
+                .withUnifiedPrice(0.00025));
+
+        // Google模型
+        models.add(ModelInfo.basic("google/gemini-pro", "Gemini Pro", "openrouter")
+                .withDescription("Google的Gemini Pro模型")
+                .withMaxTokens(32768)
+                .withUnifiedPrice(0.0001));
+
+        models.add(ModelInfo.basic("google/gemini-1.5-pro", "Gemini 1.5 Pro", "openrouter")
+                .withDescription("Google的Gemini 1.5 Pro模型")
+                .withMaxTokens(1000000)
+                .withUnifiedPrice(0.0007));
+
+        // Meta模型
+        models.add(ModelInfo.basic("meta-llama/llama-3-70b-instruct", "Llama 3 70B Instruct", "openrouter")
+                .withDescription("Meta的Llama 3 70B Instruct模型")
+                .withMaxTokens(8192)
+                .withUnifiedPrice(0.0009));
+
+        models.add(ModelInfo.basic("meta-llama/llama-3-8b-instruct", "Llama 3 8B Instruct", "openrouter")
+                .withDescription("Meta的Llama 3 8B Instruct模型")
+                .withMaxTokens(8192)
+                .withUnifiedPrice(0.0002));
 
         return models;
     }

@@ -466,11 +466,15 @@ class _PromptTemplateLibraryState extends State<PromptTemplateLibrary> with Sing
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
             onPressed: () {
+              // 调试信息
+              print('点击创建模板按钮，选中类型: $_selectedFeatureType, 回调存在: ${widget.onCreateNew != null}');
+              
               // 跳转到当前用户的私有模板标签页
               _tabController.animateTo(1);
               
               // 如果提供了创建新模板的回调，则调用它
               if (widget.onCreateNew != null) {
+                print('准备调用onCreateNew回调，featureType: $_selectedFeatureType');
                 widget.onCreateNew!(_selectedFeatureType);
                 return;
               }
