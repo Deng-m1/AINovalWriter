@@ -71,50 +71,66 @@ class _PromptTemplateLibraryState extends State<PromptTemplateLibrary> with Sing
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 标题和搜索栏
-            _buildHeader(context),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: _buildHeader(context),
+            ),
             
             // 功能类型选择器
-            _buildFeatureTypeSelector(context),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildFeatureTypeSelector(context),
+            ),
             
             const SizedBox(height: 12),
             
             // 标签栏
-            TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(text: '公共模板'),
-                Tab(text: '我的模板'),
-              ],
-              labelColor: Theme.of(context).colorScheme.primary,
-              unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-              indicatorColor: Theme.of(context).colorScheme.primary,
-              labelPadding: const EdgeInsets.symmetric(vertical: 8.0),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: '公共模板'),
+                  Tab(text: '我的模板'),
+                ],
+                labelColor: Theme.of(context).colorScheme.primary,
+                unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                indicatorColor: Theme.of(context).colorScheme.primary,
+                labelPadding: const EdgeInsets.symmetric(vertical: 8.0),
+              ),
             ),
             
             // 标签内容
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  // 公共模板列表
-                  _buildTemplateList(
-                    context, 
-                    state, 
-                    isPublic: true,
-                  ),
-                  
-                  // 私有模板列表
-                  _buildTemplateList(
-                    context, 
-                    state, 
-                    isPublic: false,
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    // 公共模板列表
+                    _buildTemplateList(
+                      context, 
+                      state, 
+                      isPublic: true,
+                    ),
+                    
+                    // 私有模板列表
+                    _buildTemplateList(
+                      context, 
+                      state, 
+                      isPublic: false,
+                    ),
+                  ],
+                ),
               ),
             ),
             
             // 添加按钮区域
-            if (!state.isLoading) _buildBottomActions(context),
+            if (!state.isLoading) 
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: _buildBottomActions(context),
+              ),
           ],
         );
       },
@@ -296,10 +312,10 @@ class _PromptTemplateLibraryState extends State<PromptTemplateLibrary> with Sing
     final bool isEditable = !isPublic && template.authorId == currentUserId;
     
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 16),
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant,
           width: 1,
@@ -310,14 +326,14 @@ class _PromptTemplateLibraryState extends State<PromptTemplateLibrary> with Sing
         children: [
           // 标题栏
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(
               color: isPublic 
                   ? theme.colorScheme.primary.withOpacity(0.1)
                   : theme.colorScheme.secondary.withOpacity(0.1),
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(8),
-                topRight: Radius.circular(8),
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
               ),
             ),
             child: Row(
@@ -329,7 +345,7 @@ class _PromptTemplateLibraryState extends State<PromptTemplateLibrary> with Sing
                       ? theme.colorScheme.primary
                       : theme.colorScheme.secondary,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     template.name,
@@ -376,7 +392,7 @@ class _PromptTemplateLibraryState extends State<PromptTemplateLibrary> with Sing
           
           // 内容预览
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             child: Text(
               template.content,
               style: TextStyle(
@@ -390,7 +406,7 @@ class _PromptTemplateLibraryState extends State<PromptTemplateLibrary> with Sing
           
           // 底部操作栏
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -399,8 +415,8 @@ class _PromptTemplateLibraryState extends State<PromptTemplateLibrary> with Sing
                     icon: const Icon(Icons.copy, size: 16),
                     label: const Text('复制到我的模板'),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      minimumSize: const Size(0, 36),
                       visualDensity: VisualDensity.compact,
                     ),
                     onPressed: () {
@@ -420,6 +436,7 @@ class _PromptTemplateLibraryState extends State<PromptTemplateLibrary> with Sing
                       }
                     },
                     visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(8),
                   ),
                   // 删除按钮
                   IconButton(
@@ -431,6 +448,7 @@ class _PromptTemplateLibraryState extends State<PromptTemplateLibrary> with Sing
                       }
                     },
                     visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(8),
                   ),
                 ],
                 // 查看按钮
@@ -443,6 +461,7 @@ class _PromptTemplateLibraryState extends State<PromptTemplateLibrary> with Sing
                     }
                   },
                   visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(8),
                 ),
               ],
             ),

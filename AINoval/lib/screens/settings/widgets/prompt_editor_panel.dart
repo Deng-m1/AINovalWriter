@@ -117,7 +117,7 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProvid
         child: FadeTransition(
           opacity: _fadeAnimation,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -125,54 +125,60 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProvid
                 // 简洁标题栏
                 _buildHeader(isPublic, theme),
                 
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
                 
                 // 模板权限指示器 - 简化为行内元素
                 if (isPublic)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
+                    padding: const EdgeInsets.only(bottom: 16.0),
                     child: _buildPermissionIndicator(isPublic),
                   ),
                 
                 // 编辑区域 - 更紧凑的布局
                 Expanded(
                   child: _buildCompactEditorArea(isEditable, theme, isDark),
-                  ),
+                ),
                 
                 // 处理指示器
-                AnimatedOpacity(
-                  opacity: _isOptimizing ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  child: _isOptimizing 
-                    ? ProcessingIndicator(
-                        progress: _optimizationProgress,
-                        onCancel: _cancelOptimization,
-                      )
-                    : const SizedBox.shrink(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: AnimatedOpacity(
+                    opacity: _isOptimizing ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    child: _isOptimizing 
+                      ? ProcessingIndicator(
+                          progress: _optimizationProgress,
+                          onCancel: _cancelOptimization,
+                        )
+                      : const SizedBox.shrink(),
+                  ),
                 ),
                 
                 // 优化结果视图
-                AnimatedOpacity(
-                  opacity: _optimizationResult != null ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  child: _optimizationResult != null
-                    ? OptimizationResultView(
-                        original: _contentController.text,
-                        optimized: _optimizationResult!.optimizedContent,
-                        sections: _optimizationResult!.sections,
-                        statistics: _optimizationResult!.statistics,
-                        onAccept: _acceptOptimization,
-                        onReject: _rejectOptimization,
-                        onPartialAccept: _partiallyAcceptOptimization,
-                      )
-                    : const SizedBox.shrink(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: AnimatedOpacity(
+                    opacity: _optimizationResult != null ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    child: _optimizationResult != null
+                      ? OptimizationResultView(
+                          original: _contentController.text,
+                          optimized: _optimizationResult!.optimizedContent,
+                          sections: _optimizationResult!.sections,
+                          statistics: _optimizationResult!.statistics,
+                          onAccept: _acceptOptimization,
+                          onReject: _rejectOptimization,
+                          onPartialAccept: _partiallyAcceptOptimization,
+                        )
+                      : const SizedBox.shrink(),
+                  ),
                 ),
                 
                 // 底部操作按钮 - 更简洁的设计
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12.0),
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
                   child: _buildBottomActions(isEditable, theme),
                 ),
               ],
@@ -190,9 +196,9 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProvid
         : '编辑提示词模板';
     
     return Container(
-      margin: const EdgeInsets.only(top: 12, bottom: 4),
-              child: Row(
-                children: [
+      margin: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Row(
+        children: [
           Icon(
             widget.isNew ? Icons.add_circle_outline : Icons.edit_note,
             color: theme.colorScheme.primary,
@@ -205,7 +211,7 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProvid
               fontWeight: FontWeight.w600,
               color: theme.colorScheme.onSurface,
             ),
-                      ),
+          ),
         ],
       ),
     );
@@ -213,39 +219,57 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProvid
   
   /// 简化的权限指示器
   Widget _buildPermissionIndicator(bool isPublic) {
-    return Row(
-                      children: [
-        Icon(
-          isPublic ? Icons.public : Icons.lock_outline,
-          size: 14,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-        const SizedBox(width: 6),
-                        Text(
-                          isPublic ? '公共模板 · 只读' : '私有模板 · 可编辑',
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
+    final theme = Theme.of(context);
+    
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: theme.colorScheme.outline.withOpacity(0.2),
+          width: 1,
         ),
-        const Spacer(),
-        if (isPublic)
-          TextButton(
-            onPressed: widget.onCopyToPrivate,
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(
-              '复制到私有模板',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isPublic ? Icons.public : Icons.lock_outline,
+            size: 16,
+            color: isPublic
+                ? theme.colorScheme.primary
+                : theme.colorScheme.secondary,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            isPublic ? '公共模板 · 只读' : '私有模板 · 可编辑',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: isPublic
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.secondary,
             ),
           ),
-      ],
+          const Spacer(),
+          if (isPublic)
+            ElevatedButton.icon(
+              icon: const Icon(Icons.copy, size: 16),
+              label: const Text('复制到私有模板'),
+              style: ElevatedButton.styleFrom(
+                foregroundColor: theme.colorScheme.onPrimary,
+                backgroundColor: theme.colorScheme.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                minimumSize: Size.zero,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              onPressed: widget.onCopyToPrivate,
+            ),
+        ],
+      ),
     );
   }
   
@@ -263,19 +287,19 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProvid
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20.0),
         child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 模板名称输入
             _buildNameInput(isEditable, theme),
             
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             
             // 变量占位符 - 更紧凑的设计
             _buildCompactVariablePlaceholders(),
             
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             
             // 内容编辑器
             Expanded(
@@ -285,7 +309,7 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProvid
             // AI辅助工具栏（只有私有模板或新建模板才显示）
             if (isEditable)
               Padding(
-                padding: const EdgeInsets.only(top: 12.0),
+                padding: const EdgeInsets.only(top: 16.0),
                 child: AIAssistToolbar(
                   isProcessing: _isOptimizing,
                   selectedStyle: _selectedStyle,
@@ -295,8 +319,8 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProvid
                   onOptimizeRequested: _handleOptimizeRequest,
                 ),
               ),
-            ],
-          ),
+          ],
+        ),
       ),
     );
   }
@@ -377,38 +401,49 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProvid
       ];
     }
     
-    return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: theme.colorScheme.primary.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-            Icon(
-                      Icons.code,
-              size: 14,
-                      color: theme.colorScheme.primary,
-                    ),
-            const SizedBox(width: 6),
-                  Text(
-              '变量占位符',
-                    style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ],
+              Icon(
+                Icons.code,
+                size: 16,
+                color: theme.colorScheme.primary,
               ),
-        const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-          runSpacing: 6,
-          children: variables.map((variable) => _buildCompactVariableChip(
-                  variable['name'], 
-                  variable['desc'],
-                  variable['icon'],
-                )).toList(),
+              const SizedBox(width: 8),
+              Text(
+                '变量占位符',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.primary,
+                ),
               ),
-      ],
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: variables.map((variable) => _buildCompactVariableChip(
+              variable['name'], 
+              variable['desc'],
+              variable['icon'],
+            )).toList(),
+          ),
+        ],
+      ),
     );
   }
   
@@ -442,28 +477,28 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProvid
         },
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: theme.colorScheme.primary.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: theme.colorScheme.primary.withOpacity(0.3),
               width: 1,
-              ),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 icon,
-                size: 12,
+                size: 14,
                 color: theme.colorScheme.primary,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
               Text(
                 '{$variable}',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 13,
                   color: theme.colorScheme.primary,
                   fontWeight: FontWeight.w500,
                 ),
@@ -528,48 +563,73 @@ class _PromptEditorPanelState extends State<PromptEditorPanel> with TickerProvid
   
   /// 构建底部操作按钮
   Widget _buildBottomActions(bool isEditable, ThemeData theme) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        // 取消按钮
-        OutlinedButton(
-          onPressed: widget.onCancel,
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            side: BorderSide(
-              color: theme.colorScheme.outline.withOpacity(0.5),
-            ),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: theme.colorScheme.shadow.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-          child: Text(
-            '取消',
-            style: TextStyle(
-              fontSize: 14,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        
-        // 保存按钮（只有私有模板或新建模板才可用）
-        if (isEditable)
-          FilledButton(
-            onPressed: _isEdited ? _saveTemplate : null,
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          // 取消按钮
+          OutlinedButton(
+            onPressed: widget.onCancel,
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
+              side: BorderSide(
+                color: theme.colorScheme.outline.withOpacity(0.5),
+                width: 1.5,
+              ),
             ),
             child: Text(
-              '保存模板',
-                      style: TextStyle(
-                fontSize: 14,
+              '取消',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
               ),
-                  ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          
+          // 保存按钮（只有私有模板或新建模板才可用）
+          if (isEditable)
+            FilledButton(
+              onPressed: _isEdited ? _saveTemplate : null,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              ],
+                backgroundColor: theme.colorScheme.primary,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.save, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    '保存模板',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
   
