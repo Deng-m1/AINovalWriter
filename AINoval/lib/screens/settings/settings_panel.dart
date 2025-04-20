@@ -1,15 +1,12 @@
-import 'package:ainoval/blocs/ai_config/ai_config_bloc.dart';
-import 'package:ainoval/models/user_ai_model_config_model.dart';
-import 'package:ainoval/models/editor_settings.dart';
-import 'package:ainoval/screens/ai_config/widgets/ai_config_list_item.dart';
-// Import the new form widget
-import 'package:ainoval/screens/settings/widgets/ai_config_form.dart';
-// Import AddEditAiConfigDialog to reuse its form structure later
-// import 'package:ainoval/screens/ai_config/widgets/add_edit_ai_config_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fluttertoast/fluttertoast.dart'; // <<< Import fluttertoast
-// import 'package:flutter_gen/gen_l10n/app_localizations.dart'; // For delete confirmation dialog
+import 'package:fluttertoast/fluttertoast.dart';
+
+import 'package:ainoval/blocs/ai_config/ai_config_bloc.dart';
+import 'package:ainoval/models/editor_settings.dart';
+import 'package:ainoval/models/user_ai_model_config_model.dart';
+import 'package:ainoval/screens/settings/widgets/ai_config_form.dart';
+import 'package:ainoval/screens/settings/widgets/model_service_list_page.dart';
 import 'package:ainoval/screens/settings/widgets/prompt_management_panel.dart';
 
 class SettingsPanel extends StatefulWidget {
@@ -34,7 +31,6 @@ class _SettingsPanelState extends State<SettingsPanel> {
   UserAIModelConfigModel?
       _configToEdit; // Track config being edited, null for add mode
   bool _showAddEditForm = false; // Flag to show the add/edit form view
-  String _selectedSetting = '';
   late EditorSettings _editorSettings;
 
   // Define category titles and icons (adjust as needed)
@@ -71,23 +67,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
     });
   }
 
-  void _showEditForm(UserAIModelConfigModel config) {
-    // Load providers/models if needed when opening edit form
-    if (mounted) {
-      final bloc = context.read<AiConfigBloc>();
-      if (bloc.state.availableProviders.isEmpty) {
-        bloc.add(LoadAvailableProviders());
-      }
-      if (bloc.state.selectedProviderForModels != config.provider ||
-          bloc.state.modelsForProvider.isEmpty) {
-        bloc.add(LoadModelsForProvider(provider: config.provider));
-      }
-    }
-    setState(() {
-      _configToEdit = config;
-      _showAddEditForm = true;
-    });
-  }
+
 
   void _hideAddEditForm() {
     setState(() {
@@ -340,7 +320,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
                           ),
                           child: IconButton(
                             icon: const Icon(Icons.close),
-                            tooltip: '关闭设置', // TODO(developer): Localize
+                            tooltip: '关闭设置',
                             onPressed: widget.onClose,
                           ),
                         ),
@@ -359,11 +339,14 @@ class _SettingsPanelState extends State<SettingsPanel> {
   // Renamed for clarity and added index parameter
   Widget _buildCategoryListContent({required Key key, required int index}) {
     final categoryTitle = _categories[index]['title'] as String;
-    final bloc = context.read<AiConfigBloc>();
 
     switch (categoryTitle) {
       case '模型服务':
-        return _buildAiConfigList(key: key, bloc: bloc);
+        return ModelServiceListPage(
+          key: key,
+          userId: widget.userId,
+          onAddNew: _showAddForm,
+        );
       case '提示词管理':
         return const PromptManagementPanel();
       case '编辑器设置':
@@ -376,176 +359,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
     }
   }
 
-  // Extracted AI Config List building logic, added key parameter
-  Widget _buildAiConfigList({required Key key, required AiConfigBloc bloc}) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
-    return BlocBuilder<AiConfigBloc, AiConfigState>(
-      // <<< Changed to BlocBuilder
-      key: key, // Pass the key here
-      builder: (context, state) {
-        // Builder logic remains the same - Loading/Error/Empty/List states
-        // ... (Loading state)
-        if (state.status == AiConfigStatus.loading && state.configs.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(height: 40),
-                const CircularProgressIndicator(),
-                const SizedBox(height: 20),
-                Text('正在加载模型服务...',
-                  style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(179))), // 0.7 opacity
-              ],
-            ),
-          );
-        }
-        // ... (Error state for initial load)
-        if (state.status == AiConfigStatus.error && state.configs.isEmpty) {
-          return Center(
-              child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.error_outline, color: Colors.red, size: 48),
-              const SizedBox(height: 16),
-              const Text('加载配置时出错',
-                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16)),
-              if (state.errorMessage != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Text(state.errorMessage!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: theme.colorScheme.error.withAlpha(204))), // 0.8 opacity
-                ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.refresh),
-                label: const Text('重试'),
-                onPressed: () => bloc.add(LoadAiConfigs(userId: widget.userId)),
-                style: ElevatedButton.styleFrom(
-                  elevation: 2,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-              )
-            ],
-          ));
-        }
-
-        final configs = state.configs;
-        final bool isActionLoading =
-            state.actionStatus == AiConfigActionStatus.loading;
-
-        // ... (Empty state)
-        if (configs.isEmpty && state.status != AiConfigStatus.loading) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.cloud_off,
-                  size: 64,
-                  color: Color(0x66757575)), // 0.4 opacity of onSurface
-                const SizedBox(height: 24),
-                Text('未找到任何模型服务配置',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.onSurface.withAlpha(179) // 0.7 opacity
-                  )),
-                const SizedBox(height: 8),
-                Text('添加您的第一个AI模型服务配置以开始使用',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface.withAlpha(128) // 0.5 opacity
-                  )),
-                const SizedBox(height: 32),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.add),
-                  label: const Text('添加第一个配置'),
-                  onPressed: _showAddForm,
-                  style: ElevatedButton.styleFrom(
-                    elevation: 4,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                    backgroundColor: theme.colorScheme.primary,
-                    foregroundColor: theme.colorScheme.onPrimary,
-                  ),
-                )
-              ],
-            ),
-          );
-        }
-        // ... (Display List and Add Button)
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('已配置的模型服务',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                    )),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('添加'),
-                  onPressed: state.status == AiConfigStatus.loading
-                      ? null
-                      : _showAddForm,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                    elevation: 2,
-                    backgroundColor: theme.colorScheme.primary,
-                    foregroundColor: theme.colorScheme.onPrimary,
-                  ),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16.0),
-              child: Container(
-                height: 1,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.transparent,
-                      isDark ? Colors.white.withAlpha(26) : Colors.black.withAlpha(26), // 0.1 opacity
-                      isDark ? Colors.white.withAlpha(26) : Colors.black.withAlpha(26), // 0.1 opacity
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.2, 0.8, 1.0],
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: configs.length,
-                itemBuilder: (context, index) {
-                  final config = configs[index];
-                  final itemIsLoading =
-                      isActionLoading && state.loadingConfigId == config.id;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12.0),
-                    child: AiConfigListItem(
-                      key: ValueKey(config.id),
-                      config: config,
-                      isLoading: itemIsLoading,
-                      onEdit: () => _showEditForm(config),
-                      onDelete: () => _showDeleteConfirmation(context, config),
-                      onValidate: () => bloc.add(ValidateAiConfig(
-                          userId: widget.userId, configId: config.id)),
-                      onSetDefault: () => bloc.add(SetDefaultAiConfig(
-                          userId: widget.userId, configId: config.id)),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   // Builds the actual form widget, added key parameter
   Widget _buildAiConfigForm({required Key key}) {
@@ -560,40 +374,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
     );
   }
 
-  // Delete confirmation dialog remains the same
-  void _showDeleteConfirmation(
-      BuildContext context, UserAIModelConfigModel config) {
-    const titleText = '删除配置';
-    final contentText = '确定要删除配置 ${config.alias} 吗？此操作无法撤销。';
-    const cancelText = '取消';
-    const deleteText = '删除';
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(titleText),
-        content: Text(contentText),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text(cancelText),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            onPressed: () {
-              // Ensure context used for read is still valid (it should be from showDialog)
-              if (mounted) {
-                context.read<AiConfigBloc>().add(
-                    DeleteAiConfig(userId: widget.userId, configId: config.id));
-              }
-              Navigator.pop(ctx);
-            },
-            child: const Text(deleteText),
-          ),
-        ],
-      ),
-    );
-  }
 
   // 新增编辑器设置面板构建方法
   Widget _buildEditorSettingsPanel({required Key key}) {
