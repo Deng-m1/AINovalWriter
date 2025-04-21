@@ -92,7 +92,7 @@ class _ModelServiceCardState extends State<ModelServiceCard> {
     return Icon(
       iconData,
       color: iconColor,
-      size: 24,
+      size: 20,
     );
   }
 
@@ -135,6 +135,7 @@ class _ModelServiceCardState extends State<ModelServiceCard> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Container(
+      margin: EdgeInsets.zero,
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(8),
@@ -156,200 +157,374 @@ class _ModelServiceCardState extends State<ModelServiceCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 卡片主体内容
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 头部：图标和名称
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 提供商图标
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHighest.withAlpha(128),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Center(
-                          child: _getProviderLogo(widget.model.provider),
-                        ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 头部：图标、名称和操作菜单
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 提供商图标
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest.withAlpha(128),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      const SizedBox(width: 8),
-
-                      // 名称
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.model.name,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              widget.model.provider,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                fontWeight: FontWeight.w500,
-                                color: theme.colorScheme.onSurface.withAlpha(179),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
+                      child: Center(
+                        child: _getProviderLogo(widget.model.provider),
                       ),
+                    ),
+                    const SizedBox(width: 12),
 
-                      // 操作菜单
-                      PopupMenuButton(
-                        icon: Icon(
-                          Icons.more_vert,
-                          size: 16,
-                          color: theme.colorScheme.onSurface.withAlpha(153),
-                        ),
-                        padding: EdgeInsets.zero,
-                        itemBuilder: (context) => [
-                          PopupMenuItem(
-                            child: const Row(
-                              children: [
-                                Icon(Icons.copy, size: 16),
-                                SizedBox(width: 8),
-                                Text('复制路径', style: TextStyle(fontSize: 13)),
-                              ],
+                    // 名称和路径
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.model.name,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
                             ),
-                            onTap: () {
-                              // 复制路径逻辑
-                            },
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          PopupMenuItem(
-                            child: const Row(
-                              children: [
-                                Icon(Icons.star_outline, size: 16),
-                                SizedBox(width: 8),
-                                Text('添加到收藏', style: TextStyle(fontSize: 13)),
-                              ],
-                            ),
-                            onTap: () {
-                              // 添加到收藏逻辑
-                            },
-                          ),
-                          if (widget.model.apiEndpoint != null)
-                            PopupMenuItem(
-                              child: const Row(
-                                children: [
-                                  Icon(Icons.open_in_new, size: 16),
-                                  SizedBox(width: 8),
-                                  Text('访问API', style: TextStyle(fontSize: 13)),
-                                ],
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Text(
+                                widget.model.provider,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 11,
+                                ),
                               ),
-                              onTap: () {
-                                // 访问API逻辑
-                              },
-                            ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '•',
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSurface.withAlpha(77),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.surfaceContainerHighest.withAlpha(128),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    widget.model.path,
+                                    style: TextStyle(
+                                      fontFamily: 'monospace',
+                                      fontSize: 11,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // 模型路径
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest.withAlpha(128),
-                      borderRadius: BorderRadius.circular(4),
                     ),
-                    child: Text(
-                      widget.model.path,
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 10,
-                        color: theme.colorScheme.onSurfaceVariant,
+
+                    // 操作菜单
+                    PopupMenuButton(
+                      icon: Icon(
+                        Icons.more_vert,
+                        size: 18,
+                        color: theme.colorScheme.onSurface.withAlpha(153),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-
-                  const Spacer(),
-
-                  // 状态标签
-                  Row(
-                    children: [
-                      // 验证状态
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: widget.model.verified
-                              ? Colors.green.withAlpha(26)
-                              : Colors.orange.withAlpha(26),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: widget.model.verified
-                                ? Colors.green.withAlpha(77)
-                                : Colors.orange.withAlpha(77),
-                            width: 1,
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          child: const Row(
+                            children: [
+                              Icon(Icons.copy, size: 16),
+                              SizedBox(width: 8),
+                              Text('复制路径', style: TextStyle(fontSize: 13)),
+                            ],
                           ),
+                          onTap: () {
+                            // 复制路径逻辑
+                          },
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              widget.model.verified
-                                  ? Icons.check_circle_outline
-                                  : Icons.access_time,
-                              size: 10,
-                              color: widget.model.verified
-                                  ? Colors.green
-                                  : Colors.orange,
+                        PopupMenuItem(
+                          child: const Row(
+                            children: [
+                              Icon(Icons.star_outline, size: 16),
+                              SizedBox(width: 8),
+                              Text('添加到收藏', style: TextStyle(fontSize: 13)),
+                            ],
+                          ),
+                          onTap: () {
+                            // 添加到收藏逻辑
+                          },
+                        ),
+                        if (widget.model.apiEndpoint != null)
+                          PopupMenuItem(
+                            child: const Row(
+                              children: [
+                                Icon(Icons.open_in_new, size: 16),
+                                SizedBox(width: 8),
+                                Text('访问API', style: TextStyle(fontSize: 13)),
+                              ],
                             ),
-                            const SizedBox(width: 2),
-                            Text(
-                              widget.model.verified ? '已验证' : '待验证',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
+                            onTap: () {
+                              // 访问API逻辑
+                            },
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                // 状态标签和时间戳
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // 状态标签
+                    Row(
+                      children: [
+                        // 验证状态
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: widget.model.verified
+                                ? Colors.green.withAlpha(26)
+                                : Colors.orange.withAlpha(26),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: widget.model.verified
+                                  ? Colors.green.withAlpha(77)
+                                  : Colors.orange.withAlpha(77),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                widget.model.verified
+                                    ? Icons.check_circle_outline
+                                    : Icons.access_time,
+                                size: 12,
                                 color: widget.model.verified
                                     ? Colors.green
                                     : Colors.orange,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 4),
+                              Text(
+                                widget.model.verified ? '已验证' : '待验证',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: widget.model.verified
+                                      ? Colors.green
+                                      : Colors.orange,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
 
-                      const Spacer(),
+                        // 其他状态标签
+                        if (widget.model.status != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withAlpha(26),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: Colors.blue.withAlpha(77),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.info_outline,
+                                    size: 12,
+                                    color: Colors.blue,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _getStatusText(widget.model.status!),
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
 
-                      // 时间戳
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.access_time,
-                            size: 10,
+                    // 时间戳
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.access_time,
+                          size: 12,
+                          color: theme.colorScheme.onSurface.withAlpha(128),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatDate(widget.model.timestamp),
+                          style: TextStyle(
+                            fontSize: 11,
                             color: theme.colorScheme.onSurface.withAlpha(128),
                           ),
-                          const SizedBox(width: 2),
-                          Text(
-                            _formatDate(widget.model.timestamp),
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: theme.colorScheme.onSurface.withAlpha(128),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+
+                // 性能指标
+                if (widget.model.performance != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest.withAlpha(77),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          // 延迟
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '延迟',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: theme.colorScheme.onSurface.withAlpha(153),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.bolt,
+                                      size: 14,
+                                      color: _getPerformanceColor(widget.model.performance!.latency),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${widget.model.performance!.latency}ms',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color: _getPerformanceColor(widget.model.performance!.latency),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          // 吞吐量
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '吞吐量',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: theme.colorScheme.onSurface.withAlpha(153),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${widget.model.performance!.throughput} req/s',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
-                ],
-              ),
+
+                // 展开的详情内容
+                if (_expanded && widget.model.description != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Divider(
+                          color: theme.colorScheme.outline.withAlpha(26),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          widget.model.description!,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: theme.colorScheme.onSurface.withAlpha(204),
+                            height: 1.5,
+                          ),
+                        ),
+
+                        // 标签
+                        if (widget.model.tags != null && widget.model.tags!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: widget.model.tags!.map((tag) {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary.withAlpha(26),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: theme.colorScheme.primary.withAlpha(77),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    tag,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
 
@@ -374,7 +549,7 @@ class _ModelServiceCardState extends State<ModelServiceCard> {
                       });
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surfaceContainerHighest.withAlpha(77),
                       ),
@@ -396,7 +571,7 @@ class _ModelServiceCardState extends State<ModelServiceCard> {
                     child: InkWell(
                       onTap: () => widget.onVerify(widget.model.id),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
                         decoration: BoxDecoration(
                           border: Border(
                             left: BorderSide(

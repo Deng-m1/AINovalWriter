@@ -187,10 +187,10 @@ class _ModelServiceListPageState extends State<ModelServiceListPage> {
                 return GridView.builder(
                   padding: const EdgeInsets.all(16),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 1.2,
+                    crossAxisCount: 3, // 一行显示三个卡片
+                    crossAxisSpacing: 16, // 水平间距
+                    mainAxisSpacing: 16, // 垂直间距
+                    childAspectRatio: 0.75, // 宽高比，调整为更适合卡片的比例
                   ),
                   itemCount: filteredConfigs.length,
                   itemBuilder: (context, index) {

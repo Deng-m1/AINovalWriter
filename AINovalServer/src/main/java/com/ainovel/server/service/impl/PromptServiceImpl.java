@@ -39,7 +39,7 @@ public class PromptServiceImpl implements PromptService {
         DEFAULT_TEMPLATES.put("character_generation", "请根据以下描述，为我的小说创建一个详细的角色：\n\n{{description}}\n\n请提供角色的姓名、外貌、性格、背景故事、动机和特点等信息。");
         DEFAULT_TEMPLATES.put("plot_generation", "请根据以下描述，为我的小说创建一个详细的情节：\n\n{{description}}\n\n请提供情节的起因、发展、高潮和结局，以及可能的转折点和悬念。");
         DEFAULT_TEMPLATES.put("setting_generation", "请根据以下描述，为我的小说创建一个详细的世界设定：\n\n{{description}}\n\n请提供这个世界的地理、历史、文化、社会结构、规则和特殊元素等信息。");
-        DEFAULT_TEMPLATES.put("next_outlines_generation", "你是一位经验丰富的网络小说作家助手。请根据以下提供的小说背景信息和当前剧情进展：\n\n{{context}}\n\n{{authorGuidance}}\n\n请为这部小说构思接下来可能发生的 {{numberOfOptions}} 个不同的剧情大纲选项。每个大纲应包含：\n1. 主要事件或转折点。\n2. 涉及的关键角色及其行动。\n3. 可能产生的悬念或冲突。\n请确保每个选项都逻辑连贯，符合现有设定，并且彼此之间具有明显的区别。请以清晰的列表格式输出每个大纲选项。");
+        DEFAULT_TEMPLATES.put("next_outlines_generation", "你是一位专业的小说创作顾问，擅长为作者提供多样化的剧情发展选项。请根据以下信息，为作者生成 {{numberOfOptions}} 个不同的剧情大纲选项，每个选项应该是对当前故事的合理延续。\n\n小说当前进展：{{context}}\n\n{{authorGuidance}}\n\n请为每个选项提供以下内容：\n1. 一个简短但吸引人的标题\n2. 剧情概要（200-300字）\n3. 主要事件（3-5个关键点）\n4. 涉及的角色\n5. 冲突或悬念\n\n格式要求：\n选项1：[标题]\n[剧情概要]\n主要事件：\n- [事件1]\n- [事件2]\n- [事件3]\n涉及角色：[角色列表]\n冲突/悬念：[冲突或悬念描述]\n\n选项2：[标题]\n...\n\n注意事项：\n- 每个选项应该有明显的差异，提供真正不同的故事发展方向\n- 保持与已有故事的连贯性和一致性\n- 考虑角色动机和故事内在逻辑\n- 提供有创意但合理的发展方向\n- 确保每个选项都有足够的戏剧冲突和情感张力");
     }
 
     @Autowired

@@ -168,6 +168,29 @@ public interface NovelAIService {
     Mono<AIResponse> generateNextOutlines(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance);
 
     /**
+     * 生成下一剧情大纲选项（流式）
+     *
+     * @param novelId 小说ID
+     * @param currentContext 当前剧情上下文（可以是最近一个场景ID、章节ID或剧情描述）
+     * @param numberOfOptions 希望生成的大纲选项数量（默认3）
+     * @param authorGuidance 作者希望的剧情引导（可选）
+     * @return 流式生成的剧情大纲内容
+     */
+    Flux<String> generateNextOutlinesStream(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance);
+
+    /**
+     * 生成下一剧情大纲选项（流式，指定章节范围）
+     *
+     * @param novelId 小说ID
+     * @param startChapterId 上下文开始章节ID
+     * @param endChapterId 上下文结束章节ID
+     * @param numberOfOptions 希望生成的大纲选项数量（默认3）
+     * @param authorGuidance 作者希望的剧情引导（可选）
+     * @return 流式生成的剧情大纲内容
+     */
+    Flux<String> generateNextOutlinesStream(String novelId, String startChapterId, String endChapterId, Integer numberOfOptions, String authorGuidance);
+
+    /**
      * 为指定场景生成摘要
      *
      * @param userId 用户ID

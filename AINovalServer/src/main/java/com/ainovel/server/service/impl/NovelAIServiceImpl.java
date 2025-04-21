@@ -106,17 +106,17 @@ public class NovelAIServiceImpl implements NovelAIService {
                     return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
                             .flatMap(provider -> {
                                 // 添加请求日志
-                                log.info("开始向AI模型发送内容生成请求，用户ID: {}, 模型: {}", 
+                                log.info("开始向AI模型发送内容生成请求，用户ID: {}, 模型: {}",
                                         enrichedRequest.getUserId(), enrichedRequest.getModel());
-                                
+
                                 // 直接使用业务请求调用提供商
                                 return provider.generateContent(enrichedRequest)
                                         .doOnCancel(() -> {
-                                            log.info("客户端取消了连接，但AI生成会在后台继续完成, 用户: {}, 模型: {}", 
+                                            log.info("客户端取消了连接，但AI生成会在后台继续完成, 用户: {}, 模型: {}",
                                                     enrichedRequest.getUserId(), enrichedRequest.getModel());
                                         })
                                         .doOnSuccess(resp -> {
-                                            log.info("AI内容生成成功完成，用户ID: {}, 模型: {}", 
+                                            log.info("AI内容生成成功完成，用户ID: {}, 模型: {}",
                                                     enrichedRequest.getUserId(), enrichedRequest.getModel());
                                         })
                                         .timeout(Duration.ofSeconds(600)) // 添加超时设置
@@ -137,17 +137,17 @@ public class NovelAIServiceImpl implements NovelAIService {
                     return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
                             .flatMapMany(provider -> {
                                 // 添加请求日志
-                                log.info("开始向AI模型发送流式内容生成请求，用户ID: {}, 模型: {}", 
+                                log.info("开始向AI模型发送流式内容生成请求，用户ID: {}, 模型: {}",
                                         enrichedRequest.getUserId(), enrichedRequest.getModel());
-                                
+
                                 // 记录开始时间和最后活动时间
                                 final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
                                 final AtomicLong lastActivityTime = new AtomicLong(System.currentTimeMillis());
-                                
+
                                 // 直接使用业务请求调用提供商
                                 return provider.generateContentStream(enrichedRequest)
                                         .doOnSubscribe(sub -> {
-                                            log.info("流式生成已订阅，用户ID: {}, 模型: {}", 
+                                            log.info("流式生成已订阅，用户ID: {}, 模型: {}",
                                                     enrichedRequest.getUserId(), enrichedRequest.getModel());
                                         })
                                         .doOnNext(chunk -> {
@@ -158,11 +158,11 @@ public class NovelAIServiceImpl implements NovelAIService {
                                         })
                                         .doOnComplete(() -> {
                                             long duration = System.currentTimeMillis() - startTime.get();
-                                            log.info("流式内容生成成功完成，耗时: {}ms，用户ID: {}, 模型: {}", 
+                                            log.info("流式内容生成成功完成，耗时: {}ms，用户ID: {}, 模型: {}",
                                                     duration, enrichedRequest.getUserId(), enrichedRequest.getModel());
                                         })
                                         .doOnCancel(() -> {
-                                            log.info("流式生成被取消，但模型会在后台继续生成，用户ID: {}, 模型: {}", 
+                                            log.info("流式生成被取消，但模型会在后台继续生成，用户ID: {}, 模型: {}",
                                                     enrichedRequest.getUserId(), enrichedRequest.getModel());
                                         })
                                         .timeout(Duration.ofSeconds(600)) // 添加超时设置
@@ -292,6 +292,53 @@ public class NovelAIServiceImpl implements NovelAIService {
                                 return provider.generateContent(enrichedRequest);
                             });
                 });
+    }
+
+    @Override
+    public Flux<String> generateNextOutlinesStream(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance) {
+        log.info("为小说 {} 流式生成下一剧情大纲选项", novelId);
+
+        // 设置默认值
+        int optionsCount = numberOfOptions != null ? numberOfOptions : 3;
+        String guidance = authorGuidance != null ? authorGuidance : "";
+
+        return createNextOutlinesGenerationRequest(novelId, currentContext, optionsCount, guidance)
+                .flatMapMany(request -> enrichRequestWithContext(request)
+                .flatMapMany(enrichedRequest -> {
+                    // 获取AI模型提供商并直接调用
+                    return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
+                            .flatMapMany(provider -> {
+                                // 添加请求日志
+                                log.info("开始向AI模型发送流式剧情大纲生成请求，用户ID: {}, 模型: {}",
+                                        enrichedRequest.getUserId(), enrichedRequest.getModel());
+
+                                // 记录开始时间和最后活动时间
+                                final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
+                                final AtomicLong lastActivityTime = new AtomicLong(System.currentTimeMillis());
+
+                                // 直接使用业务请求调用提供商
+                                return provider.generateContentStream(enrichedRequest)
+                                        .doOnSubscribe(sub -> {
+                                            log.info("流式剧情大纲生成已订阅，用户ID: {}, 模型: {}",
+                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                        })
+                                        .doOnNext(chunk -> {
+                                            // 只为非心跳消息更新活动时间
+                                            if (!"心跳".equals(chunk) && !"heartbeat".equals(chunk)) {
+                                                lastActivityTime.set(System.currentTimeMillis());
+                                            }
+                                        })
+                                        .doOnComplete(() -> {
+                                            long duration = System.currentTimeMillis() - startTime.get();
+                                            log.info("流式剧情大纲生成成功完成，耗时: {}ms，用户ID: {}, 模型: {}",
+                                                    duration, enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                        })
+                                        .doOnCancel(() -> {
+                                            log.info("流式剧情大纲生成被取消，但模型会在后台继续生成，用户ID: {}, 模型: {}",
+                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                        });
+                            });
+                }));
     }
 
     @Override
@@ -673,7 +720,7 @@ public class NovelAIServiceImpl implements NovelAIService {
                     String prompt = promptTemplate
                             .replace("{{context}}", currentContext)
                             .replace("{{numberOfOptions}}", String.valueOf(numberOfOptions))
-                            .replace("{{authorGuidance}}", authorGuidance.isEmpty() ? "" : "作者希望: " + authorGuidance);
+                            .replace("{{authorGuidance}}", authorGuidance.isEmpty() ? "" : "作者引导：" + authorGuidance);
 
                     AIRequest request = new AIRequest();
                     request.setNovelId(novelId);
@@ -681,6 +728,14 @@ public class NovelAIServiceImpl implements NovelAIService {
 
                     // 设置较高的温度以获得多样性
                     request.setTemperature(0.8);
+                    // 设置较大的最大令牌数，以确保生成足够详细的大纲
+                    request.setMaxTokens(2000);
+
+                    // 创建系统消息
+                    AIRequest.Message systemMessage = new AIRequest.Message();
+                    systemMessage.setRole("system");
+                    systemMessage.setContent("你是一位专业的小说创作顾问，擅长为作者提供多样化的剧情发展选项。请确保每个选项都有明显的差异，提供真正不同的故事发展方向。");
+                    request.getMessages().add(systemMessage);
 
                     // 创建用户消息
                     AIRequest.Message userMessage = new AIRequest.Message();
@@ -904,11 +959,11 @@ public class NovelAIServiceImpl implements NovelAIService {
                                         .flatMap(provider -> {
                                             // 添加请求日志
                                             log.info("开始向AI模型发送摘要生成请求，用户ID: {}, 模型: {}", userId, aiConfig.getModelName());
-                                            
+
                                             // 使用Mono.fromFuture或unsubscribeOn确保即使订阅被取消，任务也会继续执行
                                             return provider.generateContent(aiRequest)
                                                 .doOnCancel(() -> {
-                                                    log.info("客户端取消了连接，但AI生成会在后台继续完成, 用户: {}, 模型: {}", 
+                                                    log.info("客户端取消了连接，但AI生成会在后台继续完成, 用户: {}, 模型: {}",
                                                             userId, aiConfig.getModelName());
                                                 })
                                                 .timeout(Duration.ofSeconds(600)) // 添加超时设置
@@ -942,12 +997,12 @@ public class NovelAIServiceImpl implements NovelAIService {
         Map<String, String> variables = new HashMap<>();
         variables.put("input", input);
         variables.put("context", context);
-        
+
         // 添加兼容性，支持旧的占位符格式
         variables.put("content", input);
         variables.put("description", input);
         variables.put("instruction", input);
-        
+
         return com.ainovel.server.common.util.PromptUtil.formatPromptTemplate(template, variables);
     }
 
