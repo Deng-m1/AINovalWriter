@@ -342,6 +342,119 @@ public class NovelAIServiceImpl implements NovelAIService {
     }
 
     @Override
+    public Flux<String> generateNextOutlinesStream(String novelId, String startChapterId, String endChapterId, Integer numberOfOptions, String authorGuidance) {
+        log.info("为小说 {} 流式生成下一剧情大纲选项（指定章节范围）, 起始章节: {}, 结束章节: {}", 
+                novelId, startChapterId, endChapterId);
+
+        // 设置默认值
+        int optionsCount = numberOfOptions != null ? numberOfOptions : 3;
+        String guidance = authorGuidance != null ? authorGuidance : "";
+
+        // 创建上下文描述，包含章节范围信息
+        String contextDescription = "";
+        if (startChapterId != null && endChapterId != null) {
+            contextDescription = String.format("从章节%s到章节%s的内容", startChapterId, endChapterId);
+        } else if (startChapterId != null) {
+            contextDescription = String.format("从章节%s开始的内容", startChapterId);
+        } else {
+            contextDescription = "当前内容";
+        }
+
+        return createNextOutlinesGenerationRequestWithChapterRange(novelId, startChapterId, endChapterId, 
+                contextDescription, optionsCount, guidance)
+                .flatMapMany(request -> enrichRequestWithContext(request)
+                .flatMapMany(enrichedRequest -> {
+                    // 获取AI模型提供商并直接调用
+                    return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
+                            .flatMapMany(provider -> {
+                                // 添加请求日志
+                                log.info("开始向AI模型发送流式剧情大纲生成请求（指定章节范围），用户ID: {}, 模型: {}",
+                                        enrichedRequest.getUserId(), enrichedRequest.getModel());
+
+                                // 记录开始时间
+                                final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
+
+                                // 直接使用业务请求调用提供商
+                                return provider.generateContentStream(enrichedRequest)
+                                        .doOnSubscribe(sub -> {
+                                            log.info("流式剧情大纲生成已订阅（指定章节范围），用户ID: {}, 模型: {}",
+                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                        })
+                                        .doOnComplete(() -> {
+                                            long duration = System.currentTimeMillis() - startTime.get();
+                                            log.info("流式剧情大纲生成成功完成（指定章节范围），耗时: {}ms，用户ID: {}, 模型: {}",
+                                                    duration, enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                        })
+                                        .doOnCancel(() -> {
+                                            log.info("流式剧情大纲生成被取消（指定章节范围），但模型会在后台继续生成，用户ID: {}, 模型: {}",
+                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
+                                        });
+                            });
+                }));
+    }
+
+    /**
+     * 创建下一剧情大纲生成请求（指定章节范围）
+     *
+     * @param novelId 小说ID
+     * @param startChapterId 起始章节ID
+     * @param endChapterId 结束章节ID
+     * @param contextDescription 上下文描述
+     * @param numberOfOptions 希望生成的选项数量
+     * @param authorGuidance 作者引导
+     * @return AI请求
+     */
+    private Mono<AIRequest> createNextOutlinesGenerationRequestWithChapterRange(
+            String novelId, String startChapterId, String endChapterId, 
+            String contextDescription, int numberOfOptions, String authorGuidance) {
+        
+        return promptService.getNextOutlinesGenerationPrompt()
+                .map(promptTemplate -> {
+                    // 根据提示词模板替换变量
+                    String prompt = promptTemplate
+                            .replace("{{context}}", contextDescription)
+                            .replace("{{numberOfOptions}}", String.valueOf(numberOfOptions))
+                            .replace("{{authorGuidance}}", authorGuidance.isEmpty() ? "" : "作者引导：" + authorGuidance);
+
+                    AIRequest request = new AIRequest();
+                    request.setNovelId(novelId);
+                    request.setEnableContext(true);
+
+                    // 添加章节范围到元数据
+                    if (request.getMetadata() == null) {
+                        request.setMetadata(new HashMap<>());
+                    }
+                    if (startChapterId != null) {
+                        request.getMetadata().put("startChapterId", startChapterId);
+                    }
+                    if (endChapterId != null) {
+                        request.getMetadata().put("endChapterId", endChapterId);
+                    }
+
+                    // 设置较高的温度以获得多样性
+                    request.setTemperature(0.8);
+                    // 设置较大的最大令牌数，以确保生成足够详细的大纲
+                    request.setMaxTokens(2000);
+
+                    // 创建系统消息
+                    AIRequest.Message systemMessage = new AIRequest.Message();
+                    systemMessage.setRole("system");
+                    systemMessage.setContent("你是一位专业的小说创作顾问，擅长为作者提供多样化的剧情发展选项。" +
+                            "请确保每个选项都有明显的差异，提供真正不同的故事发展方向。" + 
+                            "为每个剧情选项提供一个简洁的标题和详细的内容描述。");
+                    request.getMessages().add(systemMessage);
+
+                    // 创建用户消息
+                    AIRequest.Message userMessage = new AIRequest.Message();
+                    userMessage.setRole("user");
+                    userMessage.setContent(prompt);
+
+                    request.getMessages().add(userMessage);
+                    return request;
+                });
+    }
+
+    @Override
     public Mono<AIResponse> generateChatResponse(String userId, String sessionId, String content, Map<String, Object> metadata) {
         return getAIModelProvider(userId, null)
                 .flatMap(provider -> {

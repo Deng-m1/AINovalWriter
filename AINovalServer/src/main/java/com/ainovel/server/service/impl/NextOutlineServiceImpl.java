@@ -213,34 +213,47 @@ public class NextOutlineServiceImpl implements NextOutlineService {
                     // 查询原始大纲，获取上下文信息
                     return nextOutlineRepository.findById(request.getOptionId())
                             .switchIfEmpty(Mono.error(new RuntimeException("未找到指定的大纲选项")))
-                            .flatMapMany(outline -> {
+                            .flatMap(outline -> {
                                 // 获取用户的AI模型配置
                                 return userAIModelConfigService.getConfigurationById(userId, request.getSelectedConfigId())
                                         .switchIfEmpty(Mono.error(new RuntimeException("未找到指定的模型配置")))
-                                        .flatMapMany(userConfig -> {
+                                        .flatMap(userConfig -> {
+                                            // 先保存上下文，以便后续使用
+                                            final NextOutline outlineToUpdate = outline;
+                                            
                                             // 使用新的模型配置和提示重新生成
                                             return novelAIService.generateNextOutlinesStream(
                                                     novelId,
                                                     outline.getId(), // 使用原大纲ID作为上下文
                                                     1, // 只重新生成一个选项
                                                     request.getRegenerateHint() // 添加新的提示
-                                            );
-                                        })
-                                        .collectList()
-                                        .flatMapMany(contentList -> {
-                                            // 拼接内容
-                                            String fullContent = String.join("", contentList.stream()
-                                                    .map(Object::toString)
-                                                    .toList());
-                                            
-                                            // 更新大纲
-                                            outline.setContent(fullContent);
-                                            
-                                            // 保存到数据库
-                                            return nextOutlineRepository.save(outline)
-                                                    .thenMany(Flux.fromIterable(contentList))
-                                                    .map(Object::toString);
+                                            )
+                                            // 收集所有生成的内容片段
+                                            .collectList()
+                                            .flatMap(contentList -> {
+                                                // 拼接内容
+                                                StringBuilder contentBuilder = new StringBuilder();
+                                                for (Object chunk : contentList) {
+                                                    contentBuilder.append(chunk.toString());
+                                                }
+                                                String fullContent = contentBuilder.toString();
+                                                
+                                                // 更新大纲
+                                                outlineToUpdate.setContent(fullContent);
+                                                outlineToUpdate.setTitle(extractTitle(fullContent)); // 从内容中提取标题
+                                                outlineToUpdate.setConfigId(request.getSelectedConfigId()); // 更新使用的模型配置ID
+                                                
+                                                // 保存到数据库
+                                                return nextOutlineRepository.save(outlineToUpdate)
+                                                        .thenReturn(contentList);
+                                            });
                                         });
+                            })
+                            // 将保存后的结果转换为流
+                            .flatMapMany(contentList -> {
+                                // 转换每个内容片段为字符串流
+                                return Flux.fromIterable(contentList)
+                                        .map(Object::toString);
                             });
                 });
     }
@@ -378,6 +391,7 @@ public class NextOutlineServiceImpl implements NextOutlineService {
                 .title(outline.getTitle())
                 .content(outline.getContent())
                 .isSelected(outline.isSelected())
+                .configId(outline.getConfigId()) // 包含模型配置ID
                 .build();
     }
 
@@ -589,5 +603,28 @@ public class NextOutlineServiceImpl implements NextOutlineService {
                                         .build();
                             });
                 });
+    }
+
+    /**
+     * 从内容中提取标题
+     * 
+     * @param content 内容
+     * @return 提取的标题
+     */
+    private String extractTitle(String content) {
+        // 简单实现：取第一行或前50个字符作为标题
+        if (content == null || content.isEmpty()) {
+            return "剧情选项";
+        }
+        
+        // 尝试获取第一行
+        int firstLineEnd = content.indexOf('\n');
+        if (firstLineEnd > 0 && firstLineEnd < 100) {
+            return content.substring(0, firstLineEnd).trim();
+        }
+        
+        // 如果没有换行或第一行太长，取前50个字符
+        int titleLength = Math.min(content.length(), 50);
+        return content.substring(0, titleLength).trim() + (content.length() > 50 ? "..." : "");
     }
 }

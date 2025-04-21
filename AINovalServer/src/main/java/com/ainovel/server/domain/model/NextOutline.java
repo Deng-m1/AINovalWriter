@@ -38,6 +38,11 @@ public class NextOutline {
     private String content;
 
     /**
+     * 使用的模型配置ID
+     */
+    private String configId;
+
+    /**
      * 主要事件
      */
     private List<String> mainEvents;
