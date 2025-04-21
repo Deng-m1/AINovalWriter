@@ -1,6 +1,7 @@
 package com.ainovel.server.service;
 
 import com.ainovel.server.web.dto.NextOutlineDTO;
+import com.ainovel.server.web.dto.OutlineGenerationChunk;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -23,18 +24,18 @@ public interface NextOutlineService {
      *
      * @param novelId 小说ID
      * @param request 生成请求
-     * @return 流式生成的剧情大纲内容
+     * @return 流式生成的剧情大纲块
      */
-    Flux<String> generateNextOutlinesStream(String novelId, NextOutlineDTO.GenerateRequest request);
+    Flux<OutlineGenerationChunk> generateNextOutlinesStream(String novelId, NextOutlineDTO.GenerateRequest request);
     
     /**
      * 重新生成单个剧情大纲选项
      *
      * @param novelId 小说ID
      * @param request 重新生成请求
-     * @return 流式生成的剧情大纲内容
+     * @return 流式生成的剧情大纲块
      */
-    Flux<String> regenerateOutlineOption(String novelId, NextOutlineDTO.RegenerateOptionRequest request);
+    Flux<OutlineGenerationChunk> regenerateOutlineOption(String novelId, NextOutlineDTO.RegenerateOptionRequest request);
 
     /**
      * 保存选中的剧情大纲

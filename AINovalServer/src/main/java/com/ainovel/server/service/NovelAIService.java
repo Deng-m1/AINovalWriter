@@ -1,5 +1,6 @@
 package com.ainovel.server.service;
 
+import java.util.List;
 import java.util.Map;
 
 import com.ainovel.server.domain.model.AIRequest;
@@ -9,6 +10,7 @@ import com.ainovel.server.web.dto.GenerateSceneFromSummaryRequest;
 import com.ainovel.server.web.dto.GenerateSceneFromSummaryResponse;
 import com.ainovel.server.web.dto.SummarizeSceneRequest;
 import com.ainovel.server.web.dto.SummarizeSceneResponse;
+import com.ainovel.server.web.dto.OutlineGenerationChunk;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -168,27 +170,68 @@ public interface NovelAIService {
     Mono<AIResponse> generateNextOutlines(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance);
 
     /**
-     * 生成下一剧情大纲选项（流式）
+     * 流式生成下一剧情大纲选项
      *
      * @param novelId 小说ID
-     * @param currentContext 当前剧情上下文（可以是最近一个场景ID、章节ID或剧情描述）
-     * @param numberOfOptions 希望生成的大纲选项数量（默认3）
-     * @param authorGuidance 作者希望的剧情引导（可选）
-     * @return 流式生成的剧情大纲内容
+     * @param currentContext 当前上下文
+     * @param numberOfOptions 希望生成的选项数量
+     * @param authorGuidance 作者引导
+     * @return 包含剧情大纲选项块的 Flux 流
      */
-    Flux<String> generateNextOutlinesStream(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance);
+    Flux<OutlineGenerationChunk> generateNextOutlinesStream(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance);
 
     /**
-     * 生成下一剧情大纲选项（流式，指定章节范围）
+     * 流式生成下一剧情大纲选项 (根据章节范围)
      *
      * @param novelId 小说ID
-     * @param startChapterId 上下文开始章节ID
-     * @param endChapterId 上下文结束章节ID
-     * @param numberOfOptions 希望生成的大纲选项数量（默认3）
-     * @param authorGuidance 作者希望的剧情引导（可选）
-     * @return 流式生成的剧情大纲内容
+     * @param startChapterId 起始章节ID
+     * @param endChapterId 结束章节ID
+     * @param numberOfOptions 希望生成的选项数量
+     * @param authorGuidance 作者引导
+     * @return 包含剧情大纲选项块的 Flux 流
      */
-    Flux<String> generateNextOutlinesStream(String novelId, String startChapterId, String endChapterId, Integer numberOfOptions, String authorGuidance);
+    Flux<OutlineGenerationChunk> generateNextOutlinesStream(String novelId, String startChapterId, String endChapterId, Integer numberOfOptions, String authorGuidance);
+
+    /**
+     * 流式生成下一剧情大纲选项 (带模型配置ID列表)
+     *
+     * @param novelId 小说ID
+     * @param currentContext 当前上下文
+     * @param numberOfOptions 希望生成的选项数量
+     * @param authorGuidance 作者引导
+     * @param selectedConfigIds 选定的AI模型配置ID列表
+     * @return 包含剧情大纲选项块的 Flux 流
+     */
+    Flux<OutlineGenerationChunk> generateNextOutlinesStream(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance, List<String> selectedConfigIds);
+
+    /**
+     * 流式生成下一剧情大纲选项 (根据章节范围，带模型配置ID列表)
+     *
+     * @param novelId 小说ID
+     * @param startChapterId 起始章节ID
+     * @param endChapterId 结束章节ID
+     * @param numberOfOptions 希望生成的选项数量
+     * @param authorGuidance 作者引导
+     * @param selectedConfigIds 选定的AI模型配置ID列表
+     * @return 包含剧情大纲选项块的 Flux 流
+     */
+    Flux<OutlineGenerationChunk> generateNextOutlinesStream(String novelId, String startChapterId, String endChapterId, Integer numberOfOptions, String authorGuidance, List<String> selectedConfigIds);
+
+    /**
+     * 重新生成单个剧情大纲选项 (流式)
+     *
+     * @param novelId 小说ID
+     * @param optionId 要重新生成的选项ID
+     * @param userId 用户ID
+     * @param modelConfigId 模型配置ID
+     * @param regenerateHint 重新生成提示
+     * @param originalStartChapterId (可选) 原始生成时的起始章节ID
+     * @param originalEndChapterId (可选) 原始生成时的结束章节ID
+     * @param originalAuthorGuidance (可选) 原始生成时的作者引导
+     * @return 包含剧情大纲选项块的 Flux 流
+     */
+    Flux<OutlineGenerationChunk> regenerateSingleOutlineStream(String novelId, String optionId, String userId, String modelConfigId, String regenerateHint,
+                                                              String originalStartChapterId, String originalEndChapterId, String originalAuthorGuidance);
 
     /**
      * 为指定场景生成摘要

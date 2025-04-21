@@ -114,6 +114,19 @@ public class PromptServiceImpl implements PromptService {
     }
 
     @Override
+    public Mono<String> getSingleOutlineGenerationPrompt() {
+        String prompt = "基于以下上下文信息，为小说生成一个有趣而合理的后续剧情大纲选项。"
+                + "请确保生成的剧情与已有内容保持连贯，符合角色性格，推动情节发展。\n\n"
+                + "当前上下文：\n{{context}}\n\n"
+                + "{{authorGuidance}}\n\n"
+                + "请严格按照以下格式返回你的剧情大纲，先输出标题，再输出内容：\n"
+                + "TITLE: [简洁有力的标题，概括这个剧情走向的核心]\n"
+                + "CONTENT: [详细描述这个剧情大纲，包括关键人物动向、重要事件、情节转折等]";
+        
+        return Mono.just(prompt);
+    }
+
+    @Override
     public Mono<Void> savePromptTemplate(String promptType, String template) {
         log.info("保存提示词模板，类型: {}", promptType);
 

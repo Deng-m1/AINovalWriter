@@ -267,4 +267,14 @@ public interface NovelService {
      * @return 更新后的小说
      */
     Mono<Novel> updateNovelWordCount(String novelId);
+
+    /**
+     * 获取指定章节范围内的场景摘要
+     *
+     * @param novelId 小说ID
+     * @param startChapterId 起始章节ID (null 表示从第一章开始)
+     * @param endChapterId 结束章节ID (null 表示到最后一章)
+     * @return 拼接后的摘要字符串
+     */
+    Mono<String> getChapterRangeSummaries(String novelId, String startChapterId, String endChapterId);
 }

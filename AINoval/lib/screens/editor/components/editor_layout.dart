@@ -1,6 +1,6 @@
 import 'package:ainoval/blocs/editor/editor_bloc.dart' as editor_bloc;
 import 'package:ainoval/blocs/prompt/prompt_bloc.dart';
-import 'package:ainoval/screens/chat/widgets/ai_chat_sidebar.dart';
+import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/screens/editor/components/draggable_divider.dart';
 import 'package:ainoval/screens/editor/components/editor_app_bar.dart';
 import 'package:ainoval/screens/editor/components/editor_main_area.dart';
@@ -11,20 +11,18 @@ import 'package:ainoval/screens/editor/controllers/editor_screen_controller.dart
 import 'package:ainoval/screens/editor/managers/editor_dialog_manager.dart';
 import 'package:ainoval/screens/editor/managers/editor_layout_manager.dart';
 import 'package:ainoval/screens/editor/managers/editor_state_manager.dart';
-import 'package:ainoval/screens/editor/widgets/ai_generation_panel.dart';
-import 'package:ainoval/screens/editor/widgets/ai_summary_panel.dart';
 import 'package:ainoval/screens/editor/widgets/novel_settings_view.dart';
+import 'package:ainoval/screens/next_outline/next_outline_view.dart';
 import 'package:ainoval/screens/settings/settings_panel.dart';
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/api_service/repositories/impl/aliyun_oss_storage_repository.dart';
 import 'package:ainoval/services/api_service/repositories/prompt_repository.dart';
 import 'package:ainoval/services/api_service/repositories/storage_repository.dart';
 import 'package:ainoval/utils/logger.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
-import 'package:ainoval/models/editor_settings.dart';
 
 /// 编辑器布局组件
 /// 负责组织编辑器的整体布局
@@ -52,11 +50,11 @@ class EditorLayout extends StatelessWidget {
             // 智能判断是否需要滚动
             final targetKeyId = '${state.activeActId}_${state.activeChapterId}_${state.activeSceneId}';
             final key = controller.sceneKeys[targetKeyId];
-            
+
             // 记录当前激活的场景ID
             final lastActiveSceneId = controller.lastActiveSceneId;
             final currentActiveSceneId = targetKeyId;
-            
+
             // 只有在以下情况才滚动:
             // 1. 场景ID发生变化（用户手动选择了新场景，而非仅触发焦点变化）
             // 2. 当前焦点不在任何编辑器中
@@ -64,40 +62,40 @@ class EditorLayout extends StatelessWidget {
             bool shouldScroll = false;
             bool isUserInitiated = lastActiveSceneId != currentActiveSceneId;
             bool noEditorHasFocus = !FocusScope.of(context).hasPrimaryFocus;
-            
+
             // 更新控制器中记录的最后活动场景
             controller.lastActiveSceneId = currentActiveSceneId;
-            
+
             // 检查当前场景是否在视图中
             bool isSceneVisible = false;
             if (key?.currentContext != null) {
               // 获取场景组件的位置和尺寸
               final RenderBox renderBox = key!.currentContext!.findRenderObject() as RenderBox;
               final position = renderBox.localToGlobal(Offset.zero);
-              
+
               // 获取视口尺寸
               final viewportHeight = MediaQuery.of(context).size.height;
-              
+
               // 判断场景是否在视图内（或部分在视图内）
-              isSceneVisible = position.dy < viewportHeight && 
+              isSceneVisible = position.dy < viewportHeight &&
                               position.dy + renderBox.size.height > 0;
             }
-            
+
             // 只有在场景不可见 且 满足滚动条件时才滚动
             shouldScroll = !isSceneVisible && (isUserInitiated || noEditorHasFocus);
-            
+
             // 记录滚动决策日志
-            AppLogger.d('EditorLayout', '活动场景滚动决策: 场景=$targetKeyId, 是否滚动=$shouldScroll, 用户发起=${isUserInitiated}, 无焦点=${noEditorHasFocus}, 可见=${isSceneVisible}');
-            
+            AppLogger.d('EditorLayout', '活动场景滚动决策: 场景=$targetKeyId, 是否滚动=$shouldScroll, 用户发起=$isUserInitiated, 无焦点=$noEditorHasFocus, 可见=$isSceneVisible');
+
             // 执行滚动操作
             if (shouldScroll) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 // 等待布局完成后，通过GlobalKey查找EditorMainArea组件
                 try {
                   final editorMainAreaKey = controller.editorMainAreaKey;
-                  if (editorMainAreaKey?.currentState != null) {
+                  if (editorMainAreaKey.currentState != null) {
                     // 调用EditorMainArea的scrollToActiveScene方法滚动到活动场景
-                    editorMainAreaKey!.currentState!.scrollToActiveScene();
+                    editorMainAreaKey.currentState!.scrollToActiveScene();
                     AppLogger.i('EditorLayout', '触发滚动到活动场景: $targetKeyId');
                   } else {
                     AppLogger.w('EditorLayout', '无法找到EditorMainArea组件，无法滚动');
@@ -108,10 +106,10 @@ class EditorLayout extends StatelessWidget {
               });
             }
           }
-          
+
           if (state is editor_bloc.EditorLoaded) {
             // 当生成状态开始或内容更新时，确保流式显示面板打开
-            if (state.isStreamingGeneration && 
+            if (state.isStreamingGeneration &&
                 state.aiSceneGenerationStatus == editor_bloc.AIGenerationStatus.generating) {
               final layoutManager = Provider.of<EditorLayoutManager>(context, listen: false);
               if (!layoutManager.isAISceneGenerationPanelVisible) {
@@ -167,7 +165,7 @@ class EditorLayout extends StatelessWidget {
               int currTotalChapters = 0;
               int prevTotalScenes = 0;
               int currTotalScenes = 0;
-              
+
               // 计算前一个状态的总章节数和场景数
               for (final act in prevLoaded.novel.acts) {
                 prevTotalChapters += act.chapters.length;
@@ -175,7 +173,7 @@ class EditorLayout extends StatelessWidget {
                   prevTotalScenes += chapter.scenes.length;
                 }
               }
-              
+
               // 计算当前状态的总章节数和场景数
               for (final act in currLoaded.novel.acts) {
                 currTotalChapters += act.chapters.length;
@@ -183,11 +181,11 @@ class EditorLayout extends StatelessWidget {
                   currTotalScenes += chapter.scenes.length;
                 }
               }
-              
+
               // 如果章节数量或场景数量有变化，触发重建
-              final structureChanged = prevTotalChapters != currTotalChapters || 
+              final structureChanged = prevTotalChapters != currTotalChapters ||
                                      prevTotalScenes != currTotalScenes;
-                                     
+
               if (structureChanged) {
                 AppLogger.i('EditorLayout', '检测到章节或场景数量变化: 章节 $prevTotalChapters->$currTotalChapters, 场景 $prevTotalScenes->$currTotalScenes');
               }
@@ -202,18 +200,27 @@ class EditorLayout extends StatelessWidget {
                   prevLoaded.activeSceneId != currLoaded.activeSceneId ||
                   // 小说基本结构变化检查
                   prevLoaded.novel.acts.length != currLoaded.novel.acts.length;
-              
+
               // 如果需要重建，记录原因以助调试
               if (shouldRebuild && kDebugMode) {
                 String reason = '';
-                if (structureChanged) reason = '章节或场景数量变化';
-                else if (prevLoaded.isSaving != currLoaded.isSaving) reason = '保存状态变化';
-                else if (prevLoaded.isLoading != currLoaded.isLoading) reason = '加载状态变化';
-                else if (prevLoaded.activeActId != currLoaded.activeActId) reason = '活动Act变化';
-                else if (prevLoaded.activeChapterId != currLoaded.activeChapterId) reason = '活动Chapter变化';
-                else if (prevLoaded.activeSceneId != currLoaded.activeSceneId) reason = '活动Scene变化';
-                else if (prevLoaded.novel.acts.length != currLoaded.novel.acts.length) reason = 'Acts数量变化';
-                
+                if (structureChanged) {
+                  reason = '章节或场景数量变化';
+                } else if (prevLoaded.isSaving != currLoaded.isSaving) {
+                  reason = '保存状态变化';
+                } else if (prevLoaded.isLoading != currLoaded.isLoading) {
+                  reason = '加载状态变化';
+                } else if (prevLoaded.activeActId != currLoaded.activeActId) {
+                  reason = '活动Act变化';
+                } else if (prevLoaded.activeChapterId != currLoaded.activeChapterId) {
+                  reason = '活动Chapter变化';
+                } else if (prevLoaded.activeSceneId != currLoaded.activeSceneId) {
+                  reason = '活动Scene变化';
+                }
+                else if (prevLoaded.novel.acts.length != currLoaded.novel.acts.length) {
+                  reason = 'Acts数量变化';
+                }
+
                 // 使用更低级别的日志记录重建原因，减少日志输出
                 if (prevLoaded.isLoading != currLoaded.isLoading) {
                   // 加载状态变化较常见，可以常规记录
@@ -223,7 +230,7 @@ class EditorLayout extends StatelessWidget {
                   AppLogger.d('EditorLayout', '重建UI，原因: $reason');
                 }
               }
-              
+
               return shouldRebuild;
             }
 
@@ -255,7 +262,7 @@ class EditorLayout extends StatelessWidget {
       builder: (context, layoutState, controllerState, child) {
         final hasVisibleAIPanels = layoutState.visiblePanels.isNotEmpty;
         final isLoadingMore = state.isLoading || controllerState.isLoadingMore;
-        
+
         return Stack(
           children: [
             Row(
@@ -301,10 +308,14 @@ class EditorLayout extends StatelessWidget {
                         isSettingsActive: layoutState.isSettingsPanelVisible,
                         onPlanPressed: controllerState.togglePlanView,
                         isPlanActive: controllerState.isPlanViewActive,
-                        onWritePressed: controllerState.isPlanViewActive ? controllerState.togglePlanView : null,
+                        onWritePressed: (controllerState.isPlanViewActive || controllerState.isNextOutlineViewActive)
+                            ? (controllerState.isPlanViewActive ? controllerState.togglePlanView : controllerState.toggleNextOutlineView)
+                            : null,
+                        onNextOutlinePressed: controllerState.toggleNextOutlineView,
                         onAIGenerationPressed: layoutState.toggleAISceneGenerationPanel,
                         onAISummaryPressed: layoutState.toggleAISummaryPanel,
                         isAIGenerationActive: layoutState.isAISceneGenerationPanelVisible || layoutState.isAISummaryPanelVisible,
+                        isNextOutlineActive: controllerState.isNextOutlineViewActive,
                       ),
                       // 主编辑区域与聊天侧边栏
                       Expanded(
@@ -333,25 +344,31 @@ class EditorLayout extends StatelessWidget {
                                         planBloc: controllerState.planBloc,
                                         onSwitchToWrite: controllerState.togglePlanView,
                                       )
-                                    : Padding(
-                                        padding: const EdgeInsets.only(
-                                            left: 16, right: 16, bottom: 16),
-                                        child: EditorMainArea(
-                                          key: controllerState.editorMainAreaKey,
-                                          novel: state.novel,
-                                          editorBloc: controllerState.editorBloc,
-                                          sceneControllers: controllerState.sceneControllers,
-                                          sceneSummaryControllers:
-                                              controllerState.sceneSummaryControllers,
-                                          activeActId: state.activeActId,
-                                          activeChapterId: state.activeChapterId,
-                                          activeSceneId: state.activeSceneId,
-                                          scrollController: controllerState.scrollController,
-                                          sceneKeys: controllerState.sceneKeys,
+                                    : controllerState.isNextOutlineViewActive
+                                      ? NextOutlineView(
+                                          novelId: controllerState.novel.id,
+                                          novelTitle: controllerState.novel.title,
+                                          onSwitchToWrite: controllerState.toggleNextOutlineView,
+                                        )
+                                      : Padding(
+                                          padding: const EdgeInsets.only(
+                                              left: 16, right: 16, bottom: 16),
+                                          child: EditorMainArea(
+                                            key: controllerState.editorMainAreaKey,
+                                            novel: state.novel,
+                                            editorBloc: controllerState.editorBloc,
+                                            sceneControllers: controllerState.sceneControllers,
+                                            sceneSummaryControllers:
+                                                controllerState.sceneSummaryControllers,
+                                            activeActId: state.activeActId,
+                                            activeChapterId: state.activeChapterId,
+                                            activeSceneId: state.activeSceneId,
+                                            scrollController: controllerState.scrollController,
+                                            sceneKeys: controllerState.sceneKeys,
+                                          ),
                                         ),
-                                      ),
                                 ),
-                                
+
                                 // 右侧多AI面板组件
                                 if (hasVisibleAIPanels) ...[
                                   DraggableDivider(
@@ -504,8 +521,8 @@ class EditorLayout extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.white.withOpacity(0.0),
-              Colors.white.withOpacity(0.8),
+              Colors.white.withAlpha(0),
+              Colors.white.withAlpha(204),
               Colors.white,
             ],
           ),
@@ -518,7 +535,7 @@ class EditorLayout extends StatelessWidget {
               borderRadius: BorderRadius.circular(30),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: Colors.black.withAlpha(25),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),

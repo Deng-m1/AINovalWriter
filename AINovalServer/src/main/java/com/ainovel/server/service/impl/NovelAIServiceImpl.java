@@ -10,6 +10,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.time.LocalDateTime;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.core.context.SecurityContext;
 
 import org.jasypt.encryption.StringEncryptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,8 +43,10 @@ import com.ainovel.server.service.ai.AIModelProvider;
 import com.ainovel.server.service.rag.RagService;
 import com.ainovel.server.web.dto.GenerateSceneFromSummaryRequest;
 import com.ainovel.server.web.dto.GenerateSceneFromSummaryResponse;
+import com.ainovel.server.web.dto.OutlineGenerationChunk;
 import com.ainovel.server.web.dto.SummarizeSceneRequest;
 import com.ainovel.server.web.dto.SummarizeSceneResponse;
+import com.ainovel.server.domain.model.NextOutline; // 导入 NextOutline
 
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.rag.content.Content;
@@ -46,6 +56,7 @@ import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import com.ainovel.server.domain.model.Novel;
 
 /**
  * 小说AI服务实现类 专门处理与小说创作相关的AI功能
@@ -295,163 +306,408 @@ public class NovelAIServiceImpl implements NovelAIService {
     }
 
     @Override
-    public Flux<String> generateNextOutlinesStream(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance) {
-        log.info("为小说 {} 流式生成下一剧情大纲选项", novelId);
+    public Flux<OutlineGenerationChunk> generateNextOutlinesStream(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance) {
+        log.info("为小说 {} 流式生成下一剧情大纲选项 (基于上下文)", novelId);
 
-        // 设置默认值
-        int optionsCount = numberOfOptions != null ? numberOfOptions : 3;
-        String guidance = authorGuidance != null ? authorGuidance : "";
-
-        return createNextOutlinesGenerationRequest(novelId, currentContext, optionsCount, guidance)
-                .flatMapMany(request -> enrichRequestWithContext(request)
-                .flatMapMany(enrichedRequest -> {
-                    // 获取AI模型提供商并直接调用
-                    return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
-                            .flatMapMany(provider -> {
-                                // 添加请求日志
-                                log.info("开始向AI模型发送流式剧情大纲生成请求，用户ID: {}, 模型: {}",
-                                        enrichedRequest.getUserId(), enrichedRequest.getModel());
-
-                                // 记录开始时间和最后活动时间
-                                final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
-                                final AtomicLong lastActivityTime = new AtomicLong(System.currentTimeMillis());
-
-                                // 直接使用业务请求调用提供商
-                                return provider.generateContentStream(enrichedRequest)
-                                        .doOnSubscribe(sub -> {
-                                            log.info("流式剧情大纲生成已订阅，用户ID: {}, 模型: {}",
-                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
-                                        })
-                                        .doOnNext(chunk -> {
-                                            // 只为非心跳消息更新活动时间
-                                            if (!"心跳".equals(chunk) && !"heartbeat".equals(chunk)) {
-                                                lastActivityTime.set(System.currentTimeMillis());
-                                            }
-                                        })
-                                        .doOnComplete(() -> {
-                                            long duration = System.currentTimeMillis() - startTime.get();
-                                            log.info("流式剧情大纲生成成功完成，耗时: {}ms，用户ID: {}, 模型: {}",
-                                                    duration, enrichedRequest.getUserId(), enrichedRequest.getModel());
-                                        })
-                                        .doOnCancel(() -> {
-                                            log.info("流式剧情大纲生成被取消，但模型会在后台继续生成，用户ID: {}, 模型: {}",
-                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
-                                        });
-                            });
-                }));
+        // 使用默认用户配置
+        return getCurrentUserId()
+            .flatMap(userId -> userAIModelConfigService.getValidatedDefaultConfiguration(userId)
+                .map(config -> config.getId())
+                .defaultIfEmpty("default")
+                .map(configId -> List.of(configId)))
+            .flatMapMany(defaultConfigIds -> 
+                generateNextOutlinesStream(novelId, currentContext, numberOfOptions, authorGuidance, defaultConfigIds));
     }
 
     @Override
-    public Flux<String> generateNextOutlinesStream(String novelId, String startChapterId, String endChapterId, Integer numberOfOptions, String authorGuidance) {
-        log.info("为小说 {} 流式生成下一剧情大纲选项（指定章节范围）, 起始章节: {}, 结束章节: {}", 
+    public Flux<OutlineGenerationChunk> generateNextOutlinesStream(String novelId, String startChapterId, String endChapterId, Integer numberOfOptions, String authorGuidance) {
+        log.info("为小说 {} 流式生成下一剧情大纲选项 (指定章节范围), 起始章节: {}, 结束章节: {}",
                 novelId, startChapterId, endChapterId);
 
+        // 使用默认用户配置
+        return getCurrentUserId()
+            .flatMap(userId -> userAIModelConfigService.getValidatedDefaultConfiguration(userId)
+                .map(config -> config.getId())
+                .defaultIfEmpty("default")
+                .map(configId -> List.of(configId)))
+            .flatMapMany(defaultConfigIds -> 
+                generateNextOutlinesStream(novelId, startChapterId, endChapterId, numberOfOptions, authorGuidance, defaultConfigIds));
+    }
+
+    @Override
+    public Flux<OutlineGenerationChunk> generateNextOutlinesStream(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance, List<String> selectedConfigIds) {
+        log.info("为小说 {} 流式生成下一剧情大纲选项 (基于上下文), 选定的配置IDs: {}", novelId, selectedConfigIds);
+
         // 设置默认值
-        int optionsCount = numberOfOptions != null ? numberOfOptions : 3;
-        String guidance = authorGuidance != null ? authorGuidance : "";
+        final int optionsCount = numberOfOptions != null ? numberOfOptions : 3;
+        final String guidance = authorGuidance != null ? authorGuidance : "";
+        final List<String> configIds = (selectedConfigIds != null && !selectedConfigIds.isEmpty()) ? selectedConfigIds : List.of("default");
 
-        // 创建上下文描述，包含章节范围信息
-        String contextDescription = "";
-        if (startChapterId != null && endChapterId != null) {
-            contextDescription = String.format("从章节%s到章节%s的内容", startChapterId, endChapterId);
-        } else if (startChapterId != null) {
-            contextDescription = String.format("从章节%s开始的内容", startChapterId);
-        } else {
-            contextDescription = "当前内容";
-        }
+        // 直接使用传入的 currentContext
+        String contextDescription = currentContext != null ? currentContext : "";
 
-        return createNextOutlinesGenerationRequestWithChapterRange(novelId, startChapterId, endChapterId, 
-                contextDescription, optionsCount, guidance)
-                .flatMapMany(request -> enrichRequestWithContext(request)
-                .flatMapMany(enrichedRequest -> {
-                    // 获取AI模型提供商并直接调用
-                    return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
-                            .flatMapMany(provider -> {
-                                // 添加请求日志
-                                log.info("开始向AI模型发送流式剧情大纲生成请求（指定章节范围），用户ID: {}, 模型: {}",
-                                        enrichedRequest.getUserId(), enrichedRequest.getModel());
+        return getCurrentUserId()
+            .flatMapMany(userId ->
+                Flux.range(0, optionsCount)
+                    .flatMap(index -> {
+                        // 选择对应索引的配置ID，如果索引超出列表长度则循环使用
+                        String configId = configIds.get(index % configIds.size());
+                        // 对于基于上下文的版本，start/end chapterId 为 null
+                        return generateSingleOutlineOptionStream(userId, novelId, contextDescription, guidance, index, null, null, configId);
+                    })
+                    .subscribeOn(Schedulers.parallel())
+            );
+    }
 
-                                // 记录开始时间
-                                final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
+    @Override
+    public Flux<OutlineGenerationChunk> generateNextOutlinesStream(String novelId, String startChapterId, String endChapterId, Integer numberOfOptions, String authorGuidance, List<String> selectedConfigIds) {
+        log.info("为小说 {} 流式生成下一剧情大纲选项 (指定章节范围), 起始章节: {}, 结束章节: {}, 选定的配置IDs: {}",
+                novelId, startChapterId, endChapterId, selectedConfigIds);
 
-                                // 直接使用业务请求调用提供商
-                                return provider.generateContentStream(enrichedRequest)
-                                        .doOnSubscribe(sub -> {
-                                            log.info("流式剧情大纲生成已订阅（指定章节范围），用户ID: {}, 模型: {}",
-                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
-                                        })
-                                        .doOnComplete(() -> {
-                                            long duration = System.currentTimeMillis() - startTime.get();
-                                            log.info("流式剧情大纲生成成功完成（指定章节范围），耗时: {}ms，用户ID: {}, 模型: {}",
-                                                    duration, enrichedRequest.getUserId(), enrichedRequest.getModel());
-                                        })
-                                        .doOnCancel(() -> {
-                                            log.info("流式剧情大纲生成被取消（指定章节范围），但模型会在后台继续生成，用户ID: {}, 模型: {}",
-                                                    enrichedRequest.getUserId(), enrichedRequest.getModel());
-                                        });
-                            });
-                }));
+        // 设置默认值
+        final int optionsCount = numberOfOptions != null ? numberOfOptions : 3;
+        final String guidance = authorGuidance != null ? authorGuidance : "";
+        final List<String> configIds = (selectedConfigIds != null && !selectedConfigIds.isEmpty()) ? selectedConfigIds : List.of("default");
+
+        // 创建上下文描述 (异步)
+        return buildContextDescription(novelId, startChapterId, endChapterId)
+            .flatMapMany(contextDescription -> // 使用 flatMapMany 处理异步上下文
+                getCurrentUserId()
+                    .flatMapMany(userId ->
+                        Flux.range(0, optionsCount)
+                            .flatMap(index -> {
+                                // 选择对应索引的配置ID，如果索引超出列表长度则循环使用
+                                String configId = configIds.get(index % configIds.size());
+                                // 将获取到的 contextDescription 传递给单选项生成流
+                                return generateSingleOutlineOptionStream(userId, novelId, contextDescription, guidance, index, startChapterId, endChapterId, configId);
+                            })
+                            .subscribeOn(Schedulers.parallel()) // 注意：subscribeOn 放在内层 Flux 上可能更合适
+                    )
+            )
+             // 将 subscribeOn 移到外层，确保上下文构建也在合适的线程上执行
+            .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public Flux<OutlineGenerationChunk> regenerateSingleOutlineStream(String novelId, String optionId, String userId, String modelConfigId, String regenerateHint,
+                                                                    String originalStartChapterId, String originalEndChapterId, String originalAuthorGuidance) {
+        log.info("重新生成单个剧情大纲: novelId={}, optionId={}, userId={}, modelConfigId={}, startChap={}, endChap={}, origGuidanceLen={}",
+                novelId, optionId, userId, modelConfigId, originalStartChapterId, originalEndChapterId, originalAuthorGuidance != null ? originalAuthorGuidance.length() : 0);
+
+        return Mono.defer(() -> {
+            String hint = regenerateHint != null ? regenerateHint : "";
+
+            // 基于获取到的原始上下文信息，重新构建上下文描述 (异步)
+            return buildContextDescription(novelId, originalStartChapterId, originalEndChapterId)
+                .map(contextDescription -> {
+                     // 合并原始引导和新的提示
+                     String effectiveGuidance = (originalAuthorGuidance != null ? originalAuthorGuidance : "")
+                                                + (hint.isEmpty() ? "" : "\n\n重新生成提示: " + hint);
+                     // 返回包含上下文和最终引导的 Pair 或自定义对象
+                     return Map.entry(contextDescription, effectiveGuidance);
+                });
+        })
+        .flatMapMany(contextAndGuidance -> {
+            String contextDescription = contextAndGuidance.getKey();
+            String finalGuidance = contextAndGuidance.getValue();
+            int regenerateIndex = 0; // 重新生成总是对应一个选项，索引为0
+
+            // 调用单选项生成逻辑
+            return generateSingleOutlineOptionStream(userId, novelId, contextDescription, finalGuidance, regenerateIndex, originalStartChapterId, originalEndChapterId, modelConfigId)
+                // 确保使用传入的 optionId 而不是生成新的
+                .map(chunk -> {
+                    // 替换 UUID 生成的 optionId 为前端传入的 optionId
+                    return new OutlineGenerationChunk(
+                        optionId,
+                        chunk.getOptionTitle(),
+                        chunk.getTextChunk(),
+                        chunk.isFinalChunk(),
+                        chunk.getError()
+                    );
+                });
+            }
+        )
+        .subscribeOn(Schedulers.boundedElastic()); // 确保数据库查询和上下文构建在 BoundedElastic 上
     }
 
     /**
-     * 创建下一剧情大纲生成请求（指定章节范围）
-     *
-     * @param novelId 小说ID
-     * @param startChapterId 起始章节ID
-     * @param endChapterId 结束章节ID
-     * @param contextDescription 上下文描述
-     * @param numberOfOptions 希望生成的选项数量
-     * @param authorGuidance 作者引导
-     * @return AI请求
+     * 构建章节范围的上下文描述 (返回 Mono<String>)
      */
-    private Mono<AIRequest> createNextOutlinesGenerationRequestWithChapterRange(
-            String novelId, String startChapterId, String endChapterId, 
-            String contextDescription, int numberOfOptions, String authorGuidance) {
-        
-        return promptService.getNextOutlinesGenerationPrompt()
-                .map(promptTemplate -> {
-                    // 根据提示词模板替换变量
-                    String prompt = promptTemplate
-                            .replace("{{context}}", contextDescription)
-                            .replace("{{numberOfOptions}}", String.valueOf(numberOfOptions))
-                            .replace("{{authorGuidance}}", authorGuidance.isEmpty() ? "" : "作者引导：" + authorGuidance);
+    private Mono<String> buildContextDescription(String novelId, String startChapterId, String endChapterId) {
+        // 实际实现应该从数据库获取章节内容或摘要
+        return getNovelService().findNovelById(novelId)
+            .flatMap(novel -> {
+                if (startChapterId == null && endChapterId == null) {
+                    // 如果没有指定章节范围，获取全部章节摘要
+                    return getChapterSummariesAll(novelId, novel.getTitle());
+                } else if (startChapterId != null && endChapterId != null) {
+                    // 获取指定范围的章节摘要
+                    return getChapterSummariesBetween(novelId, novel.getTitle(), startChapterId, endChapterId);
+                } else if (startChapterId != null) {
+                    // 从指定章节开始到结尾的摘要
+                    return getChapterSummariesFrom(novelId, novel.getTitle(), startChapterId);
+                } else { // endChapterId != null
+                    // 从开头到指定章节的摘要
+                    return getChapterSummariesUntil(novelId, novel.getTitle(), endChapterId);
+                }
+            })
+            .onErrorResume(e -> {
+                log.error("获取章节上下文描述出错 for novel {}: {}", novelId, e.getMessage(), e);
+                // 返回一个通用的、不包含具体内容的上下文描述
+                return Mono.just(String.format("基于小说 ID %s 的内容 (获取详细上下文失败)", novelId));
+            })
+            // 如果 findNovelById 返回 empty，也提供一个默认值
+            .switchIfEmpty(Mono.fromSupplier(() -> {
+                 log.warn("无法找到小说 {} 来构建上下文描述", novelId);
+                 return String.format("基于小说 ID %s 的内容 (未找到小说)", novelId);
+            }));
+    }
 
-                    AIRequest request = new AIRequest();
-                    request.setNovelId(novelId);
-                    request.setEnableContext(true);
-
-                    // 添加章节范围到元数据
-                    if (request.getMetadata() == null) {
-                        request.setMetadata(new HashMap<>());
+    /**
+     * 获取指定章节范围内的摘要 (返回 Mono<String>)
+     */
+    private Mono<String> getChapterSummariesBetween(String novelId, String novelTitle, String startChapterId, String endChapterId) {
+        // TODO: 实现从 NovelService/SceneService 获取指定章节范围的场景摘要并拼接
+        log.debug("获取小说 '{}' ({}) 从章节 {} 到 {} 的摘要", novelTitle, novelId, startChapterId, endChapterId);
+        // 示例：调用 novelService (假设存在此方法)
+        return novelService.getChapterRangeSummaries(novelId, startChapterId, endChapterId)
+                .map(summaries -> {
+                    if (summaries == null || summaries.isEmpty()) {
+                        return String.format("基于小说《%s》从章节 %s 到章节 %s 的内容 (无摘要信息)", novelTitle, startChapterId, endChapterId);
                     }
-                    if (startChapterId != null) {
-                        request.getMetadata().put("startChapterId", startChapterId);
+                    return String.format("基于小说《%s》从章节 %s 到章节 %s 的内容:\n%s", novelTitle, startChapterId, endChapterId, summaries);
+                })
+                .defaultIfEmpty(String.format("基于小说《%s》从章节 %s 到章节 %s 的内容 (无摘要信息)", novelTitle, startChapterId, endChapterId));
+    }
+
+    /**
+     * 获取从指定章节开始到结尾的摘要 (返回 Mono<String>)
+     */
+    private Mono<String> getChapterSummariesFrom(String novelId, String novelTitle, String startChapterId) {
+        // TODO: 实现从 NovelService/SceneService 获取从指定章节开始的场景摘要并拼接
+        log.debug("获取小说 '{}' ({}) 从章节 {} 开始的摘要", novelTitle, novelId, startChapterId);
+        // 示例：调用 novelService (假设存在此方法)
+         return novelService.getChapterRangeSummaries(novelId, startChapterId, null) // 假设 null 表示到结尾
+                .map(summaries -> {
+                    if (summaries == null || summaries.isEmpty()) {
+                        return String.format("基于小说《%s》从章节 %s 开始的内容 (无摘要信息)", novelTitle, startChapterId);
                     }
-                    if (endChapterId != null) {
-                        request.getMetadata().put("endChapterId", endChapterId);
+                    return String.format("基于小说《%s》从章节 %s 开始的内容:\n%s", novelTitle, startChapterId, summaries);
+                })
+                .defaultIfEmpty(String.format("基于小说《%s》从章节 %s 开始的内容 (无摘要信息)", novelTitle, startChapterId));
+    }
+
+    /**
+     * 获取从开始到指定章节的摘要 (返回 Mono<String>)
+     */
+    private Mono<String> getChapterSummariesUntil(String novelId, String novelTitle, String endChapterId) {
+        // TODO: 实现从 NovelService/SceneService 获取到指定章节为止的场景摘要并拼接
+        log.debug("获取小说 '{}' ({}) 到章节 {} 为止的摘要", novelTitle, novelId, endChapterId);
+        // 示例：调用 novelService (假设存在此方法)
+         return novelService.getChapterRangeSummaries(novelId, null, endChapterId) // 假设 null 表示从开头
+                .map(summaries -> {
+                    if (summaries == null || summaries.isEmpty()) {
+                        return String.format("基于小说《%s》直到章节 %s 的内容 (无摘要信息)", novelTitle, endChapterId);
                     }
+                    return String.format("基于小说《%s》直到章节 %s 的内容:\n%s", novelTitle, endChapterId, summaries);
+                })
+                .defaultIfEmpty(String.format("基于小说《%s》直到章节 %s 的内容 (无摘要信息)", novelTitle, endChapterId));
+    }
 
-                    // 设置较高的温度以获得多样性
-                    request.setTemperature(0.8);
-                    // 设置较大的最大令牌数，以确保生成足够详细的大纲
-                    request.setMaxTokens(2000);
+     /**
+     * 获取所有章节的摘要 (返回 Mono<String>)
+     */
+    private Mono<String> getChapterSummariesAll(String novelId, String novelTitle) {
+        // TODO: 实现从 NovelService/SceneService 获取所有章节的场景摘要并拼接
+        log.debug("获取小说 '{}' ({}) 的所有章节摘要", novelTitle, novelId);
+        // 示例：调用 novelService (假设存在此方法)
+        return novelService.getChapterRangeSummaries(novelId, null, null) // 假设 null, null 表示全部
+                .map(summaries -> {
+                    if (summaries == null || summaries.isEmpty()) {
+                        return String.format("基于小说《%s》的全部内容 (无摘要信息)", novelTitle);
+                    }
+                    return String.format("基于小说《%s》的全部内容:\n%s", novelTitle, summaries);
+                })
+                .defaultIfEmpty(String.format("基于小说《%s》的全部内容 (无摘要信息)", novelTitle));
+    }
 
-                    // 创建系统消息
-                    AIRequest.Message systemMessage = new AIRequest.Message();
-                    systemMessage.setRole("system");
-                    systemMessage.setContent("你是一位专业的小说创作顾问，擅长为作者提供多样化的剧情发展选项。" +
-                            "请确保每个选项都有明显的差异，提供真正不同的故事发展方向。" + 
-                            "为每个剧情选项提供一个简洁的标题和详细的内容描述。");
-                    request.getMessages().add(systemMessage);
+    /**
+     * 生成单个剧情大纲选项的流 (核心并发逻辑)
+     * 此方法重载用于处理基于章节范围的请求
+     */
+    private Flux<OutlineGenerationChunk> generateSingleOutlineOptionStream(
+        String userId, String novelId, String contextDescription, String authorGuidance, 
+        int optionIndex, String startChapterId, String endChapterId, String configId) {
 
-                    // 创建用户消息
-                    AIRequest.Message userMessage = new AIRequest.Message();
-                    userMessage.setRole("user");
-                    userMessage.setContent(prompt);
+        String optionId = UUID.randomUUID().toString();
+        log.info("开始为小说 {} 生成第 {} 个剧情选项，选项ID: {}, 使用配置ID: {}", 
+                novelId, optionIndex + 1, optionId, configId);
 
-                    request.getMessages().add(userMessage);
-                    return request;
-                });
+        return createSingleOutlineGenerationRequest(novelId, contextDescription, authorGuidance, startChapterId, endChapterId)
+            .flatMap(request -> enrichRequestWithContext(request))
+            .flatMapMany(enrichedRequest ->
+                getAIModelProvider(userId, configId)
+                    .flatMapMany(provider ->
+                        processProviderStream(provider, enrichedRequest, optionId, optionIndex)
+                    )
+                    .onErrorResume(e -> {
+                        log.error("为选项 {} (选项ID: {}) 生成时出错: {}", optionIndex + 1, optionId, e.getMessage(), e);
+                        return Flux.just(new OutlineGenerationChunk(optionId, "错误", "生成失败: " + e.getMessage(), true, e.getMessage()));
+                    })
+            );
+    }
+    
+    /**
+     * 生成单个剧情大纲选项的流 (核心并发逻辑)
+     * 此方法重载用于处理基于普通上下文的请求
+     */
+    private Flux<OutlineGenerationChunk> generateSingleOutlineOptionStream(
+        String userId, String novelId, String currentContext, String authorGuidance, int optionIndex, String configId) {
+
+        String optionId = UUID.randomUUID().toString();
+        log.info("开始为小说 {} 生成第 {} 个剧情选项 (基于上下文)，选项ID: {}, 使用配置ID: {}", 
+                novelId, optionIndex + 1, optionId, configId);
+
+        return createSingleOutlineGenerationRequest(novelId, currentContext, authorGuidance)
+            .flatMap(request -> enrichRequestWithContext(request))
+            .flatMapMany(enrichedRequest ->
+                getAIModelProvider(userId, configId)
+                    .flatMapMany(provider ->
+                        processProviderStream(provider, enrichedRequest, optionId, optionIndex)
+                    )
+                    .onErrorResume(e -> {
+                        log.error("为选项 {} (选项ID: {}) 生成时出错: {}", optionIndex + 1, optionId, e.getMessage(), e);
+                        return Flux.just(new OutlineGenerationChunk(optionId, "错误", "生成失败: " + e.getMessage(), true, e.getMessage()));
+                    })
+            );
+    }
+
+    /**
+     * 处理来自 AI Provider 的流，提取标题并包装成 OutlineGenerationChunk
+     */
+    private Flux<OutlineGenerationChunk> processProviderStream(AIModelProvider provider, AIRequest request, String optionId, int optionIndex) {
+        AtomicReference<String> extractedTitle = new AtomicReference<>(null);
+        AtomicBoolean titleExtracted = new AtomicBoolean(false);
+        StringBuilder buffer = new StringBuilder();
+        final String titlePrefix = "TITLE:";
+        final String contentPrefix = "CONTENT:";
+
+        return provider.generateContentStream(request)
+            .map(String::trim) // 去除首尾空格
+            .filter(chunk -> !chunk.isEmpty() && !"heartbeat".equalsIgnoreCase(chunk)) // 过滤空或心跳
+            .concatMap(chunk -> { // 使用 concatMap 保证顺序处理，处理标题提取
+                if (!titleExtracted.get()) {
+                    buffer.append(chunk);
+                    String bufferedContent = buffer.toString();
+                    int titleStartIndex = bufferedContent.indexOf(titlePrefix);
+                    int contentStartIndex = bufferedContent.indexOf(contentPrefix);
+
+                    if (titleStartIndex != -1 && contentStartIndex != -1 && contentStartIndex > titleStartIndex) {
+                        // 提取标题
+                        String title = bufferedContent.substring(titleStartIndex + titlePrefix.length(), contentStartIndex).trim();
+                        extractedTitle.set(title);
+                        titleExtracted.set(true);
+                        log.info("选项 {} (选项ID: {}) 提取到标题: {}", optionIndex + 1, optionId, title);
+
+                        // 清空 buffer 并处理 content 部分
+                        String remainingContent = bufferedContent.substring(contentStartIndex + contentPrefix.length()).trim();
+                        buffer.setLength(0); // 清空 buffer
+                        if (!remainingContent.isEmpty()) {
+                             // 返回标题后的第一个内容块
+                            return Flux.just(new OutlineGenerationChunk(optionId, title, remainingContent, false, null));
+                        } else {
+                            // 如果 content 部分为空，则跳过，等待下一个 chunk
+                             return Flux.empty();
+                        }
+                    } else if (bufferedContent.length() > 200) { // 如果缓存超过一定长度还没找到标题格式，则认为无标题
+                        log.warn("选项 {} (选项ID: {}) 未能按预期格式提取标题，将使用默认标题", optionIndex + 1, optionId);
+                        extractedTitle.set("剧情选项 " + (optionIndex + 1)); // 使用默认标题
+                        titleExtracted.set(true);
+                        String content = buffer.toString(); // 将整个 buffer 作为内容
+                        buffer.setLength(0);
+                        return Flux.just(new OutlineGenerationChunk(optionId, extractedTitle.get(), content, false, null));
+                    } else {
+                        // 继续缓冲，等待更多内容以提取标题
+                        return Flux.empty();
+                    }
+                } else {
+                    // 标题已提取，直接发送内容块
+                    return Flux.just(new OutlineGenerationChunk(optionId, extractedTitle.get(), chunk, false, null));
+                }
+            })
+            .concatWith(Mono.fromCallable(() -> { // 在流末尾添加 final chunk
+                 log.info("选项 {} (选项ID: {}) 生成完成", optionIndex + 1, optionId);
+                 // 确保即使标题提取失败，也有默认标题
+                String finalTitle = titleExtracted.get() ? extractedTitle.get() : ("剧情选项 " + (optionIndex + 1));
+                if (!titleExtracted.get() && buffer.length() > 0) {
+                     // 如果标题提取失败，且 buffer 中有内容，需要发送最后一个 chunk
+                     return new OutlineGenerationChunk(optionId, finalTitle, buffer.toString(), true, null);
+                } else if (!titleExtracted.get() && buffer.length() == 0) {
+                    // 标题提取失败且buffer为空，发送一个空的final chunk
+                     return new OutlineGenerationChunk(optionId, finalTitle, "", true, null);
+                } else {
+                    // 正常结束，发送空的 final chunk
+                    return new OutlineGenerationChunk(optionId, finalTitle, "", true, null);
+                }
+            }))
+            .timeout(Duration.ofSeconds(600)) // 添加超时
+            .doOnError(e -> log.error("处理选项 {} (选项ID: {}) 的流时出错: {}", optionIndex + 1, optionId, e.getMessage(), e))
+            .onErrorResume(e -> { // 将流处理错误包装成 error chunk
+                String errorTitle = extractedTitle.get() != null ? extractedTitle.get() : ("错误 - 选项 " + (optionIndex + 1));
+                return Flux.just(new OutlineGenerationChunk(optionId, errorTitle, "处理流时出错: " + e.getMessage(), true, e.getMessage()));
+            });
+    }
+
+    /**
+     * 创建单个下一剧情大纲生成请求 (用于并发调用)
+     */
+    private Mono<AIRequest> createSingleOutlineGenerationRequest(String novelId, String context, String authorGuidance, String startChapterId, String endChapterId) {
+        return promptService.getSingleOutlineGenerationPrompt()
+                 .map(promptTemplate -> {
+                     String prompt = promptTemplate
+                             .replace("{{context}}", context)
+                             .replace("{{authorGuidance}}", authorGuidance.isEmpty() ? "" : "作者引导：" + authorGuidance);
+
+                     AIRequest request = new AIRequest();
+                     request.setNovelId(novelId);
+                     request.setEnableContext(true); // Context 由外部传入
+
+                     // 添加章节范围元数据 (如果适用)
+                      if (request.getMetadata() == null) {
+                         request.setMetadata(new HashMap<>());
+                      }
+                     if (startChapterId != null) request.getMetadata().put("startChapterId", startChapterId);
+                     if (endChapterId != null) request.getMetadata().put("endChapterId", endChapterId);
+
+
+                     // 设置参数 (可以根据需要调整)
+                     request.setTemperature(0.75);
+                     request.setMaxTokens(1500); // 单个选项的 token 可以适当减少
+
+                     // 创建系统消息
+                     AIRequest.Message systemMessage = new AIRequest.Message();
+                     systemMessage.setRole("system");
+                     systemMessage.setContent("你是一位专业的小说创作顾问。请根据提供的上下文和引导，生成一个后续剧情大纲选项。"
+                             + "请严格按照以下格式输出，先输出标题，再输出内容："
+                             + "\nTITLE: [这里是剧情选项的简洁标题]"
+                             + "\nCONTENT: [这里是剧情选项的详细内容描述]");
+                     request.getMessages().add(systemMessage);
+
+                     // 创建用户消息
+                     AIRequest.Message userMessage = new AIRequest.Message();
+                     userMessage.setRole("user");
+                     userMessage.setContent(prompt);
+                     request.getMessages().add(userMessage);
+
+                     return request;
+                 });
+    }
+
+    /**
+     * 创建单个下一剧情大纲生成请求 (重载，用于基于 general context)
+     */
+    private Mono<AIRequest> createSingleOutlineGenerationRequest(String novelId, String currentContext, String authorGuidance) {
+        return createSingleOutlineGenerationRequest(novelId, currentContext, authorGuidance, null, null); // 调用章节范围版本，传入null chapter IDs
     }
 
     @Override
@@ -1293,6 +1549,108 @@ public class NovelAIServiceImpl implements NovelAIService {
         return generateSceneFromSummaryStream(userId, novelId, request)
                 .collect(StringBuilder::new, StringBuilder::append)
                 .map(sb -> new GenerateSceneFromSummaryResponse(sb.toString()));
+    }
+
+    /**
+     * 获取当前用户ID
+     */
+    private Mono<String> getCurrentUserId() {
+        return ReactiveSecurityContextHolder.getContext()
+            .map(SecurityContext::getAuthentication)
+            .filter(Authentication::isAuthenticated)
+            .map(Authentication::getPrincipal)
+            .cast(com.ainovel.server.domain.model.User.class)
+            .map(user -> user.getId())
+            .defaultIfEmpty("anonymous") // 给一个默认值，避免空指针
+            .onErrorResume(e -> {
+                log.warn("获取当前用户ID出错: {}", e.getMessage());
+                return Mono.just("anonymous");
+            });
+    }
+
+    /**
+     * 获取 NovelService (避免循环依赖)
+     */
+    private NovelService getNovelService() {
+        return this.novelService;
+    }
+
+    /**
+     * 解析文本格式的AI响应 (添加原始参数)
+     *
+     * @param content AI响应内容
+     * @param novelId 小说ID
+     * @param originalStartChapterId 原始起始章节ID
+     * @param originalEndChapterId 原始结束章节ID
+     * @param originalAuthorGuidance 原始作者引导
+     * @return 大纲列表
+     */
+    private List<NextOutline> parseTextResponse(String content, String novelId,
+                                                String originalStartChapterId, String originalEndChapterId, String originalAuthorGuidance) {
+        List<NextOutline> outlines = new ArrayList<>();
+        // 改进分割逻辑，更灵活地匹配多种可能的选项分隔符
+        // 修正正则表达式转义
+        String[] sections = content.split("(?im)^\\s*(选项|大纲|剧情选项)\\s*\\d+\\s*[:：]\\s*");
+
+        // 提取标题的正则表达式
+        // 修正正则表达式转义
+        Pattern titlePattern = Pattern.compile("^(选项|大纲|剧情选项)\\s*\\d+\\s*[:：]\\s*(.*?)$", Pattern.MULTILINE);
+        Matcher titleMatcher = titlePattern.matcher(content);
+        List<String> titles = new ArrayList<>();
+        while (titleMatcher.find()) {
+             titles.add(titleMatcher.group(2).trim());
+        }
+
+        int titleIndex = 0;
+        for (int i = 0; i < sections.length; i++) {
+            String section = sections[i].trim();
+            // 修正正则表达式转义
+            if (section.isEmpty() || section.matches("^(选项|大纲|剧情选项)\\s*\\d+\\s*[:：]")) {
+                 // 跳过空的或只有标题标记的部分（split可能产生这些）
+                 continue;
+            }
+
+            String title;
+            if (titleIndex < titles.size()) {
+                 title = titles.get(titleIndex++);
+            } else {
+                 // 如果正则没匹配到标题，使用默认标题
+                 title = "剧情选项 " + (outlines.size() + 1);
+                 log.warn("无法为第 {} 个文本大纲选项提取标题，使用默认标题: {}", outlines.size() + 1, title);
+            }
+            String outlineContent = section; // section现在应该是纯内容
+
+            NextOutline outline = NextOutline.builder()
+                    .id(UUID.randomUUID().toString())
+                    .novelId(novelId)
+                    .title(title)
+                    .content(outlineContent)
+                    .createdAt(LocalDateTime.now())
+                    .selected(false)
+                    .originalStartChapterId(originalStartChapterId)
+                    .originalEndChapterId(originalEndChapterId)
+                    .originalAuthorGuidance(originalAuthorGuidance)
+                    .build();
+            outlines.add(outline);
+        }
+
+        // 如果分割后列表为空，但原始内容不为空，则将全部内容作为一个选项
+        if (outlines.isEmpty() && content != null && !content.isBlank()) {
+             log.warn("无法按预期分割文本大纲响应，将整个内容视为单个选项");
+            NextOutline outline = NextOutline.builder()
+                    .id(UUID.randomUUID().toString())
+                    .novelId(novelId)
+                    .title("剧情选项")
+                    .content(content.trim())
+                    .createdAt(LocalDateTime.now())
+                    .selected(false)
+                    .originalStartChapterId(originalStartChapterId)
+                    .originalEndChapterId(originalEndChapterId)
+                    .originalAuthorGuidance(originalAuthorGuidance)
+                    .build();
+            outlines.add(outline);
+        }
+        return outlines;
     }
 
 }

@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -15,11 +17,13 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Document(collection = "next_outlines")
 public class NextOutline {
 
     /**
      * 大纲ID
      */
+    @Id
     private String id;
 
     /**
@@ -66,4 +70,10 @@ public class NextOutline {
      * 是否被选中
      */
     private boolean selected;
+
+    // 新增字段：用于存储原始生成请求的上下文信息
+    private String originalStartChapterId; // 原始请求的起始章节ID
+    private String originalEndChapterId; // 原始请求的结束章节ID
+    private String originalAuthorGuidance; // 原始请求的作者引导
+    // private String originalContext; // (可选) 如果上下文不是基于章节范围，可以存原始上下文文本
 }

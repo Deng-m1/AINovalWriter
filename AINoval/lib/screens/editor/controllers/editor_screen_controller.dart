@@ -54,6 +54,7 @@ class EditorScreenController extends ChangeNotifier {
 
   // 编辑器状态
   bool isPlanViewActive = false;
+  bool isNextOutlineViewActive = false;
   String? currentUserId;
   String? lastActiveSceneId; // 记录最后活动的场景ID，用于判断场景是否发生变化
 
@@ -66,7 +67,7 @@ class EditorScreenController extends ChangeNotifier {
 
   // 标记是否处于初始加载阶段，用于防止组件过早触发加载请求
   bool _initialLoadFlag = false;
-  
+
   // 获取初始加载标志，用于外部组件(如ChapterSection)判断是否应该触发加载
   bool get isInInitialLoading => _initialLoadFlag;
 
@@ -87,7 +88,7 @@ class EditorScreenController extends ChangeNotifier {
   String? _lastDirection;
   String? _lastFromChapterId;
   bool _isLoadingMore = false;
-  
+
   // 公共 getter，用于 UI 访问加载状态
   bool get isLoadingMore => _isLoadingMore;
 
@@ -134,7 +135,7 @@ class EditorScreenController extends ChangeNotifier {
     editorRepository.getNovelWithSceneSummaries(novel.id).then((novelWithSummaries) {
       if (novelWithSummaries != null) {
         AppLogger.i('EditorScreenController', '已加载带摘要的小说结构用于大纲和侧边栏');
-        
+
         // 触发大纲初始化
         planBloc.add(const plan_bloc.LoadPlanContent());
       } else {
@@ -143,11 +144,11 @@ class EditorScreenController extends ChangeNotifier {
     }).catchError((error) {
       AppLogger.e('EditorScreenController', '加载带摘要的小说结构出错', error);
     });
-    
+
     // 2. 主编辑区使用分页加载，仅加载必要的章节场景内容
     String? lastEditedChapterId = novel.lastEditedChapterId;
     AppLogger.i('EditorScreenController', '使用分页加载初始化编辑器，最后编辑章节ID: $lastEditedChapterId');
-    
+
     // 添加延迟以避免初始化同时发送大量请求
     Future.delayed(const Duration(milliseconds: 500), () {
       if (lastEditedChapterId != null && lastEditedChapterId.isNotEmpty) {
@@ -185,7 +186,7 @@ class EditorScreenController extends ChangeNotifier {
       AppLogger.e(
           'EditorScreenController', 'User ID is null. Some features might be limited.');
     }
-    
+
     // 设置性能监控
     _setupPerformanceMonitoring();
   }
@@ -193,7 +194,7 @@ class EditorScreenController extends ChangeNotifier {
   // 添加性能监控
   void _setupPerformanceMonitoring() {
     if (!kDebugMode) return;
-    
+
     // 滚动性能监控
     _scrollPerformanceTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (_scrollPerformanceStats.isNotEmpty) {
@@ -220,7 +221,7 @@ class EditorScreenController extends ChangeNotifier {
       final frameDuration = _scrollStopwatch.elapsedMilliseconds.toDouble();
       _scrollStopwatch.reset();
       _scrollStopwatch.start();
-      
+
       // 只记录16ms以上的帧，减少数组操作
       if (frameDuration > 16) {
         _scrollPerformanceStats.add(frameDuration);
@@ -265,52 +266,52 @@ class EditorScreenController extends ChangeNotifier {
   // 优化版快速滚动检测
   bool _detectRapidScrolling() {
     if (!scrollController.hasClients) return false;
-    
+
     final now = DateTime.now();
     final currentPosition = scrollController.offset;
-    
+
     // 如果是第一次滚动，初始化参数并返回false
     if (_lastScrollTime == null || _lastScrollPosition == null) {
       _lastScrollTime = now;
       _lastScrollPosition = currentPosition;
       return false;
     }
-    
+
     final elapsed = now.difference(_lastScrollTime!).inMilliseconds;
     // 防止除以零或极小值
     if (elapsed < 10) return false;
-    
+
     final distance = (currentPosition - _lastScrollPosition!).abs();
     final speed = distance / elapsed;
-    
+
     // 更新记录
     _lastScrollPosition = currentPosition;
     _lastScrollTime = now;
-    
+
     // 缓存滚动速度用于其他判断
     _currentScrollSpeed = speed;
-    
+
     // 提高阈值到3.0，更积极地判断为快速滚动
-    return speed > 3.0; 
+    return speed > 3.0;
   }
-  
+
   // 检查是否正在缓慢滚动
   bool _isScrollingSlowly() {
     return _currentScrollSpeed != null && _currentScrollSpeed! < 0.8;
   }
-  
+
   // 检查滚动边界并触发加载
   void _checkScrollBoundaries() {
     if (!scrollController.hasClients) return;
-    
+
     final offset = scrollController.offset;
     final maxScroll = scrollController.position.maxScrollExtent;
-    
+
     // 只在调试模式下输出日志，减少日志开销
     if (kDebugMode) {
       AppLogger.d('EditorScreenController', '滚动位置: $offset / $maxScroll, 预加载距离: $_preloadDistance');
     }
-    
+
     // 相比之前的实现，使用更简洁的边界判断
     if (offset >= maxScroll - _preloadDistance) {
       _loadMoreScenes('down');
@@ -318,7 +319,7 @@ class EditorScreenController extends ChangeNotifier {
       _loadMoreScenes('up');
     }
   }
-  
+
   // 检查是否有任何加载正在进行
   bool _isAnyLoading() {
     // 检查编辑器状态
@@ -326,19 +327,19 @@ class EditorScreenController extends ChangeNotifier {
       final state = editorBloc.state as editor_bloc.EditorLoaded;
       if (state.isLoading) return true;
     }
-    
+
     // 检查控制器状态
     if (_isLoadingMore) return true;
-    
+
     // 检查加载冷却时间
-    if (_lastLoadTime != null && 
+    if (_lastLoadTime != null &&
         DateTime.now().difference(_lastLoadTime!).inSeconds < 1) {
       return true;
     }
-    
+
     return false;
   }
-  
+
   // 判断滚动是否已经稳定一段时间
   bool _isScrollStable(int milliseconds) {
     if (_lastScrollTime == null) return false;
@@ -370,15 +371,15 @@ class EditorScreenController extends ChangeNotifier {
 
     // 设置临时标志，避免重复加载
     _isLoadingMore = true;
-    
+
     // 通知UI显示加载状态
     notifyListeners();
-    
+
     AppLogger.i('EditorScreenController', '开始加载 $direction 方向的更多场景');
 
     // 重要优化：检查是否已经加载了足够的内容
     bool alreadyHasEnoughContent = false;
-    
+
     // 下滑检查是否已经到底
     if (direction == 'down' && _findLastLoadedChapterId(state.novel) == _findLastChapterId(state.novel)) {
       alreadyHasEnoughContent = true;
@@ -389,7 +390,7 @@ class EditorScreenController extends ChangeNotifier {
       alreadyHasEnoughContent = true;
       AppLogger.i('EditorScreenController', '已经加载到第一章，不需要继续加载');
     }
-    
+
     if (alreadyHasEnoughContent) {
       _isLoadingMore = false;
       notifyListeners(); // 更新UI状态
@@ -418,7 +419,7 @@ class EditorScreenController extends ChangeNotifier {
             // 实在没有章节可加载，发送请求加载小说结构
             AppLogger.w('EditorScreenController', '没有章节可加载，请求加载小说结构');
             editorBloc.add(editor_bloc.LoadEditorContentPaginated(
-              novelId: novel.id, 
+              novelId: novel.id,
               lastEditedChapterId: novel.lastEditedChapterId
             ));
             _isLoadingMore = false;
@@ -447,13 +448,13 @@ class EditorScreenController extends ChangeNotifier {
 
       // 触发加载更多事件
       editorBloc.add(editor_bloc.LoadMoreScenes(
-        fromChapterId: fromChapterId!, 
+        fromChapterId: fromChapterId!,
         direction: direction,
-        chaptersLimit: 3, 
+        chaptersLimit: 3,
         preventFocusChange: true,  // 防止焦点变化，避免不必要的滚动
         skipIfLoading: true,  // 如果已经在加载，跳过这次请求
       ));
-      
+
       // 延时0.5秒后再通知UI刷新，确保能看到加载指示器
       Future.delayed(const Duration(milliseconds: 500), () {
         notifyListeners();
@@ -470,13 +471,13 @@ class EditorScreenController extends ChangeNotifier {
       });
     }
   }
-  
+
   // 辅助函数：找到小说结构中的第一个章节ID，无论是否有场景
   String? _findFirstChapterId(novel_models.Novel novel) {
     if (novel.acts.isEmpty || novel.acts.first.chapters.isEmpty) return null;
     return novel.acts.first.chapters.first.id;
   }
-  
+
   // 辅助函数：找到小说结构中的最后一个章节ID，无论是否有场景
   String? _findLastChapterId(novel_models.Novel novel) {
     if (novel.acts.isEmpty) return null;
@@ -551,11 +552,11 @@ class EditorScreenController extends ChangeNotifier {
       chaptersLimit: 2, // 增加加载章节数量
     ));
   }
-  
+
   // 为章节目录加载所有场景内容（不分页）
   void loadAllScenesForChapter(String chapterId, {bool disableAutoScroll = true}) {
     AppLogger.i('EditorScreenController', '加载章节的所有场景内容: $chapterId, 禁用自动滚动: $disableAutoScroll');
-    
+
     // 始终禁用自动跳转，通过不传递targetScene相关参数实现
     editorBloc.add(editor_bloc.LoadMoreScenes(
       fromChapterId: chapterId,
@@ -567,14 +568,14 @@ class EditorScreenController extends ChangeNotifier {
   // 预加载章节场景但不改变焦点
   void preloadChapterScenes(String chapterId) {
     AppLogger.i('EditorScreenController', '预加载章节场景: $chapterId');
-    
+
     // 检查当前状态，如果场景已经加载，则不需要再次加载
     final state = editorBloc.state;
     if (state is editor_bloc.EditorLoaded) {
       // 检查目标章节是否已经存在场景
       bool hasScenes = false;
       String? targetActId;
-      
+
       // 先在已加载的Acts中查找章节
       for (final act in state.novel.acts) {
         for (final chapter in act.chapters) {
@@ -586,7 +587,7 @@ class EditorScreenController extends ChangeNotifier {
         }
         if (targetActId != null) break;
       }
-      
+
       // 如果未找到章节所属的Act，则在API中查找或创建一个默认Act
       if (targetActId == null) {
         // 使用第一个Act作为目标Act，如果没有Act则创建一个
@@ -599,13 +600,13 @@ class EditorScreenController extends ChangeNotifier {
           return;
         }
       }
-      
+
       // 如果章节已经有场景，就不需要再次加载
       if (hasScenes) {
         AppLogger.i('EditorScreenController', '章节 $chapterId 已有场景，不需要重新加载');
         return;
       }
-      
+
       // 使用参数preventFocusChange=true确保不会改变焦点
       editorBloc.add(editor_bloc.LoadMoreScenes(
         fromChapterId: chapterId,
@@ -628,6 +629,11 @@ class EditorScreenController extends ChangeNotifier {
     // 切换状态
     isPlanViewActive = !isPlanViewActive;
 
+    // 如果激活Plan视图，关闭剧情推演视图
+    if (isPlanViewActive) {
+      isNextOutlineViewActive = false;
+    }
+
     // 记录日志
     AppLogger.i('EditorScreenController', '切换后的Plan视图状态: $isPlanViewActive');
 
@@ -636,21 +642,30 @@ class EditorScreenController extends ChangeNotifier {
       AppLogger.i('EditorScreenController', '加载Plan数据');
       planBloc.add(const plan_bloc.LoadPlanContent());
     }
-    // 如果从Plan视图切换到Write视图，确保编辑器内容正常显示
+    // 如果从plan视图切换到Write视图，确保编辑器内容正常显示
     else if (isPlanToWrite && currentState is editor_bloc.EditorLoaded) {
       AppLogger.i('EditorScreenController', 'Switched from Plan to Write view. Scroll handled by BlocListener.');
     }
 
-    // 强制触发状态更新
-    editorBloc.add(const editor_bloc.RefreshEditor());
-
-    // 通知监听器状态变化
     notifyListeners();
+  }
 
-    // 延迟再次通知，确保 UI 更新
-    Future.delayed(const Duration(milliseconds: 50), () {
-      notifyListeners();
-    });
+  // 切换剧情推演视图
+  void toggleNextOutlineView() {
+    AppLogger.i('EditorScreenController', '切换剧情推演视图，当前状态: $isNextOutlineViewActive');
+
+    // 切换状态
+    isNextOutlineViewActive = !isNextOutlineViewActive;
+
+    // 如果激活剧情推演视图，关闭Plan视图
+    if (isNextOutlineViewActive) {
+      isPlanViewActive = false;
+    }
+
+    // 记录日志
+    AppLogger.i('EditorScreenController', '切换后的剧情推演视图状态: $isNextOutlineViewActive');
+
+    notifyListeners();
   }
 
   // 获取同步服务并同步当前小说
@@ -715,16 +730,16 @@ class EditorScreenController extends ChangeNotifier {
   // 获取可见场景ID列表
   List<String> _getVisibleSceneIds() {
     if (editorBloc.state is! editor_bloc.EditorLoaded) return [];
-    
+
     final state = editorBloc.state as editor_bloc.EditorLoaded;
     final visibleSceneIds = <String>[];
-    
+
     // 提取所有场景ID
     for (final act in state.novel.acts) {
       for (final chapter in act.chapters) {
         for (final scene in chapter.scenes) {
           final sceneId = '${act.id}_${chapter.id}_${scene.id}';
-          
+
           // 检查该场景是否可见
           final key = sceneKeys[sceneId];
           if (key?.currentContext != null) {
@@ -732,18 +747,18 @@ class EditorScreenController extends ChangeNotifier {
             if (renderBox != null) {
               final scenePosition = renderBox.localToGlobal(Offset.zero);
               final sceneHeight = renderBox.size.height;
-              
+
               // 计算场景的顶部和底部位置
               final sceneTop = scenePosition.dy;
               final sceneBottom = sceneTop + sceneHeight;
-              
+
               // 获取屏幕高度
               final screenHeight = MediaQuery.of(key.currentContext!).size.height;
-              
+
               // 扩展可见区域，预加载前后的场景
               final extendedVisibleTop = -screenHeight;
               final extendedVisibleBottom = screenHeight * 2;
-              
+
               // 判断场景是否在可见区域内
               if (sceneBottom >= extendedVisibleTop && sceneTop <= extendedVisibleBottom) {
                 visibleSceneIds.add(sceneId);
@@ -753,13 +768,13 @@ class EditorScreenController extends ChangeNotifier {
         }
       }
     }
-    
+
     // 如果没有可见场景（可能还在初始加载），添加活动场景
-    if (visibleSceneIds.isEmpty && state.activeActId != null && 
+    if (visibleSceneIds.isEmpty && state.activeActId != null &&
         state.activeChapterId != null && state.activeSceneId != null) {
       visibleSceneIds.add('${state.activeActId}_${state.activeChapterId}_${state.activeSceneId}');
     }
-    
+
     return visibleSceneIds;
   }
 
@@ -775,10 +790,10 @@ class EditorScreenController extends ChangeNotifier {
   // 检查可见场景并优化控制器，增加日志控制参数
   void _checkVisibleScenes({bool logEnabled = true}) {
     final visibleSceneIds = _getVisibleSceneIds();
-    
+
     // 检查是否需要清理不可见场景的控制器
     _cleanupUnusedControllers(visibleSceneIds);
-    
+
     // 只有在明确启用日志且可见场景少于3个时才记录日志
     if (logEnabled && visibleSceneIds.length < 3 && kDebugMode) {
       AppLogger.d('EditorScreenController', '当前可见场景: ${visibleSceneIds.length}个');
@@ -789,12 +804,12 @@ class EditorScreenController extends ChangeNotifier {
   void _cleanupUnusedControllers(List<String> visibleSceneIds) {
     // 如果场景控制器数量低于阈值，不执行清理
     if (sceneControllers.length < 30) return; // 提高阈值到30，减少清理频率
-    
+
     final controllersToRemove = <String>[];
-    
+
     // 保留所有可见控制器
     final keysToKeep = <String>{...visibleSceneIds};
-    
+
     // 添加活动场景控制器(如果有)
     if (editorBloc.state is editor_bloc.EditorLoaded) {
       final state = editorBloc.state as editor_bloc.EditorLoaded;
@@ -802,19 +817,19 @@ class EditorScreenController extends ChangeNotifier {
         keysToKeep.add('${state.activeActId}_${state.activeChapterId}_${state.activeSceneId}');
       }
     }
-    
+
     // 在保持可见控制器的基础上，如果总数过多，移除最旧的
     if (sceneControllers.length > 60) { // 维持最多60个控制器，提高阈值
       final keysToConsider = sceneControllers.keys.toList()
         ..removeWhere((key) => keysToKeep.contains(key));
-        
+
       // 只保留25个最近使用的，增加保留数量
       if (keysToConsider.length > 35) { // 如果超过35个不可见控制器
         final keysToRemove = keysToConsider.sublist(0, keysToConsider.length - 25);
         controllersToRemove.addAll(keysToRemove);
       }
     }
-    
+
     // 安全释放资源
     for (final id in controllersToRemove) {
       try {
@@ -828,7 +843,7 @@ class EditorScreenController extends ChangeNotifier {
         }
       }
     }
-    
+
     // 只有在清理了大量控制器时才记录日志
     if (controllersToRemove.length > 10 && kDebugMode) {
       AppLogger.i('EditorScreenController', '已清理 ${controllersToRemove.length} 个不可见场景控制器，当前控制器数: ${sceneControllers.length}');
@@ -839,16 +854,16 @@ class EditorScreenController extends ChangeNotifier {
   void ensureControllersForNovel(novel_models.Novel novel) {
     // 获取并处理当前可见场景
     final visibleSceneIds = _getVisibleSceneIds();
-    
+
     // 仅为可见场景创建控制器
     bool controllersCreated = false;
-    
+
     // 遍历当前加载的小说数据
     for (final act in novel.acts) {
       for (final chapter in act.chapters) {
         for (final scene in chapter.scenes) {
           final sceneId = '${act.id}_${chapter.id}_${scene.id}';
-          
+
           // 如果是可见场景，且控制器不存在，则创建
           if (visibleSceneIds.contains(sceneId) && !sceneControllers.containsKey(sceneId)) {
             _createControllerForScene(act.id, chapter.id, scene);
@@ -857,7 +872,7 @@ class EditorScreenController extends ChangeNotifier {
         }
       }
     }
-    
+
     // 只在创建了新控制器时输出日志
     if (controllersCreated) {
       AppLogger.d('EditorScreenController', '已为可见场景创建控制器，当前控制器数: ${sceneControllers.length}');
@@ -867,30 +882,30 @@ class EditorScreenController extends ChangeNotifier {
   // 为单个场景创建控制器
   void _createControllerForScene(String actId, String chapterId, novel_models.Scene scene) {
     final sceneId = '${actId}_${chapterId}_${scene.id}';
-    
+
     try {
       // 创建QuillController
       final controller = QuillController(
         document: _parseDocumentSafely(scene.content),
         selection: const TextSelection.collapsed(offset: 0),
       );
-      
+
       // 创建摘要控制器
       final summaryController = TextEditingController(
         text: scene.summary.content,
       );
-      
+
       // 存储控制器
       sceneControllers[sceneId] = controller;
       sceneSummaryControllers[sceneId] = summaryController;
-      
+
       // 创建GlobalKey
       if (!sceneKeys.containsKey(sceneId)) {
         sceneKeys[sceneId] = GlobalKey();
       }
     } catch (e) {
       AppLogger.e('EditorScreenController', '为场景创建控制器失败: $sceneId', e);
-      
+
       // 创建默认控制器
       sceneControllers[sceneId] = QuillController(
         document: Document.fromJson([{'insert': '\n'}]),
@@ -906,9 +921,9 @@ class EditorScreenController extends ChangeNotifier {
       if (content.isEmpty) {
         return Document.fromJson([{'insert': '\n'}]);
       }
-      
+
       final dynamic decodedContent = jsonDecode(content);
-      
+
       // 处理不同的内容格式
       if (decodedContent is List) {
         // 如果直接是List，验证格式后使用
@@ -958,32 +973,32 @@ class EditorScreenController extends ChangeNotifier {
     // 停止性能监控
     _scrollPerformanceTimer?.cancel();
     _scrollStopwatch.stop();
-    
+
     // 清理滚动相关资源
     _visibleScenesDebounceTimer?.cancel();
-    
+
     // 释放所有控制器
     for (final controller in sceneControllers.values) {
       controller.dispose();
     }
     sceneControllers.clear();
-    
+
     // 释放其他控制器
     for (final controller in sceneSummaryControllers.values) {
       controller.dispose();
     }
     sceneSummaryControllers.clear();
-    
+
     // 移除滚动监听
     scrollController.removeListener(_onScroll);
     scrollController.dispose();
-    
+
     // 释放TabController
     tabController.dispose();
-    
+
     // 释放FocusNode
     focusNode.dispose();
-    
+
     // 尝试同步当前小说数据
     syncCurrentNovel();
 
@@ -1002,12 +1017,12 @@ class EditorScreenController extends ChangeNotifier {
   // 加载所有场景摘要
   void loadAllSceneSummaries() {
     AppLogger.i('EditorScreenController', '加载所有场景摘要');
-    
+
     // 使用带有场景摘要的API直接加载完整小说数据
     editorRepository.getNovelWithSceneSummaries(novel.id).then((novelWithSummaries) {
       if (novelWithSummaries != null) {
         AppLogger.i('EditorScreenController', '已加载所有场景摘要');
-        
+
         // 更新编辑器状态
         editorBloc.add(editor_bloc.LoadEditorContentPaginated(
           novelId: novel.id,
