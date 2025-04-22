@@ -1,7 +1,8 @@
-import 'package:ainoval/models/editor/chapter.dart';
-import 'package:ainoval/models/user_ai_model_config.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
+
+import '../../models/novel_structure.dart';
+import '../../models/user_ai_model_config_model.dart';
 
 /// 剧情推演状态
 class NextOutlineState extends Equatable {
@@ -12,7 +13,7 @@ class NextOutlineState extends Equatable {
   final List<Chapter> chapters;
   
   /// AI模型配置列表
-  final List<UserAIModelConfig> aiModelConfigs;
+  final List<UserAIModelConfigModel> aiModelConfigs;
   
   /// 当前选中的上下文开始章节ID
   final String? startChapterId;
@@ -63,7 +64,7 @@ class NextOutlineState extends Equatable {
   NextOutlineState copyWith({
     String? novelId,
     List<Chapter>? chapters,
-    List<UserAIModelConfig>? aiModelConfigs,
+    List<UserAIModelConfigModel>? aiModelConfigs,
     String? startChapterId,
     String? endChapterId,
     GenerationStatus? generationStatus,

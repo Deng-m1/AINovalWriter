@@ -2,14 +2,14 @@ import 'dart:async';
 
 import 'package:ainoval/blocs/next_outline/next_outline_event.dart';
 import 'package:ainoval/blocs/next_outline/next_outline_state.dart';
-import 'package:ainoval/models/editor/chapter.dart';
+
 import 'package:ainoval/models/next_outline/next_outline_dto.dart';
 import 'package:ainoval/models/next_outline/outline_generation_chunk.dart';
-import 'package:ainoval/models/user_ai_model_config.dart';
+import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/api_service/repositories/next_outline_repository.dart';
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
-import 'package:ainoval/utils/app_logger.dart';
+import 'package:ainoval/utils/logger.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 /// 剧情推演BLoC
@@ -67,12 +67,20 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
         clearError: true,
       ));
 
-      final chapters = await _editorRepository.getChapters(event.novelId);
-
-      // 默认选择第一章和最后一章
+      // 获取小说数据，从中提取章节列表
+      final novel = await _editorRepository.getNovel(event.novelId);
+      List<novel_models.Chapter> chapters = [];
       String? startChapterId;
       String? endChapterId;
 
+      if (novel != null) {
+        // 提取所有章节
+        for (final act in novel.acts) {
+          chapters.addAll(act.chapters);
+        }
+      }
+
+      // 默认选择第一章和最后一章
       if (chapters.isNotEmpty) {
         startChapterId = chapters.first.id;
         endChapterId = chapters.last.id;
@@ -103,7 +111,7 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
         generationStatus: GenerationStatus.loadingModels,
       ));
 
-      final configs = await _userAIModelConfigRepository.getUserAIModelConfigs();
+      final configs = await _userAIModelConfigRepository.listConfigurations(userId: "current");
 
       emit(state.copyWith(
         aiModelConfigs: configs,
@@ -123,10 +131,40 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
     UpdateChapterRangeRequested event,
     Emitter<NextOutlineState> emit,
   ) {
+    // 验证章节顺序
+    String? errorMessage;
+    
+    if (event.startChapterId != null && event.endChapterId != null && state.chapters.isNotEmpty) {
+      // 查找章节索引
+      int? startIndex;
+      int? endIndex;
+      
+      for (int i = 0; i < state.chapters.length; i++) {
+        if (state.chapters[i].id == event.startChapterId) {
+          startIndex = i;
+        }
+        if (state.chapters[i].id == event.endChapterId) {
+          endIndex = i;
+        }
+        
+        // 如果两个索引都找到了，可以提前结束循环
+        if (startIndex != null && endIndex != null) {
+          break;
+        }
+      }
+      
+      // 检查有效性
+      if (startIndex != null && endIndex != null && startIndex > endIndex) {
+        errorMessage = '起始章节不能晚于结束章节';
+        AppLogger.w(_tag, errorMessage);
+      }
+    }
+
     emit(state.copyWith(
       startChapterId: event.startChapterId,
       endChapterId: event.endChapterId,
-      clearError: true,
+      errorMessage: errorMessage,
+      clearError: errorMessage == null,
     ));
   }
 
@@ -203,22 +241,26 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
     Emitter<NextOutlineState> emit,
   ) async {
     try {
-      // 构建请求
+      // 构建重新生成请求
       final request = GenerateNextOutlinesRequest(
         startChapterId: state.startChapterId,
         endChapterId: state.endChapterId,
         numOptions: state.numOptions,
         authorGuidance: state.authorGuidance,
         regenerateHint: event.regenerateHint,
+        selectedConfigIds: state.aiModelConfigs
+            .take(state.numOptions)
+            .map((config) => config.id)
+            .toList(),
       );
 
       // 调用生成事件
       add(GenerateNextOutlinesRequested(request: request));
     } catch (e) {
-      AppLogger.e(_tag, '重新生成全部剧情大纲失败', e);
+      AppLogger.e(_tag, '重新生成所有剧情大纲失败', e);
       emit(state.copyWith(
         generationStatus: GenerationStatus.error,
-        errorMessage: '重新生成全部剧情大纲失败: $e',
+        errorMessage: '重新生成所有剧情大纲失败: $e',
       ));
     }
   }
@@ -229,13 +271,12 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
     Emitter<NextOutlineState> emit,
   ) async {
     try {
-      // 查找选项索引
-      final optionIndex = state.outlineOptions.indexWhere(
-        (option) => option.optionId == event.request.optionId
-      );
+      // 找到要重新生成的选项
+      final optionIndex = state.outlineOptions
+          .indexWhere((option) => option.optionId == event.request.optionId);
 
       if (optionIndex == -1) {
-        throw Exception('找不到选项ID: ${event.request.optionId}');
+        throw Exception('未找到指定的剧情选项');
       }
 
       // 更新选项状态为生成中
@@ -243,7 +284,6 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
       updatedOptions[optionIndex] = updatedOptions[optionIndex].copyWith(
         isGenerating: true,
         isComplete: false,
-        content: '',
       );
 
       emit(state.copyWith(
@@ -251,9 +291,6 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
         generationStatus: GenerationStatus.generatingSingle,
         clearError: true,
       ));
-
-      // 取消该选项的现有订阅
-      _cancelSubscription(event.request.optionId);
 
       // 订阅流式响应
       final stream = _nextOutlineRepository.regenerateOutlineOption(
@@ -283,7 +320,8 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
       );
 
       // 存储订阅
-      _activeSubscriptions[event.request.optionId] = subscription;
+      final subKey = 'regenerate_${event.request.optionId}';
+      _activeSubscriptions[subKey] = subscription;
     } catch (e) {
       AppLogger.e(_tag, '重新生成单个剧情大纲失败', e);
       emit(state.copyWith(
@@ -315,19 +353,17 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
         clearError: true,
       ));
 
+      // 调用保存API
       final response = await _nextOutlineRepository.saveNextOutline(
         state.novelId,
         event.request,
       );
 
-      if (response.success) {
-        AppLogger.i(_tag, '保存剧情大纲成功: ${response.outlineId}');
-
-        // 重新加载章节列表
-        add(LoadChaptersRequested(novelId: state.novelId));
-      } else {
-        throw Exception('保存剧情大纲失败');
-      }
+      // 保存成功
+      AppLogger.i(_tag, '剧情大纲保存成功');
+      emit(state.copyWith(
+        generationStatus: GenerationStatus.idle,
+      ));
     } catch (e) {
       AppLogger.e(_tag, '保存剧情大纲失败', e);
       emit(state.copyWith(
@@ -337,44 +373,51 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
     }
   }
 
-  /// 接收到大纲生成块
+  /// 处理生成块接收事件
   void _onOutlineGenerationChunkReceived(
     OutlineGenerationChunkReceived event,
     Emitter<NextOutlineState> emit,
   ) {
     try {
-      // 查找选项索引
-      final optionIndex = state.outlineOptions.indexWhere(
-        (option) => option.optionId == event.optionId
-      );
+      // 找到对应的选项
+      final optionIndex = state.outlineOptions
+          .indexWhere((option) => option.optionId == event.optionId);
 
       if (optionIndex == -1) {
-        AppLogger.w(_tag, '找不到选项ID: ${event.optionId}');
+        // 找不到对应选项，可能是新的选项或ID不匹配
+        AppLogger.w(_tag, '找不到对应的剧情选项 (${event.optionId})，忽略生成块');
         return;
       }
 
-      // 更新选项状态
+      // 更新选项内容
       final updatedOptions = List<OutlineOptionState>.from(state.outlineOptions);
-      final currentOption = updatedOptions[optionIndex];
+      updatedOptions[optionIndex] = updatedOptions[optionIndex].addContent(event.textChunk);
 
-      updatedOptions[optionIndex] = currentOption.addContent(event.textChunk).copyWith(
-        title: event.optionTitle ?? currentOption.title,
-        isGenerating: !event.isFinalChunk,
-        isComplete: event.isFinalChunk,
-      );
-
-      emit(state.copyWith(outlineOptions: updatedOptions));
-
-      // 如果是最终块，检查是否所有选项都已完成
-      if (event.isFinalChunk) {
-        _checkAllOptionsComplete(emit);
+      // 如果有标题，更新标题
+      if (event.optionTitle != null && event.optionTitle!.isNotEmpty) {
+        updatedOptions[optionIndex] = updatedOptions[optionIndex].copyWith(
+          title: event.optionTitle,
+        );
       }
+
+      // 如果是最后一个块，标记为完成
+      if (event.isFinalChunk) {
+        updatedOptions[optionIndex] = updatedOptions[optionIndex].copyWith(
+          isGenerating: false,
+          isComplete: true,
+        );
+      }
+
+      emit(state.copyWith(
+        outlineOptions: updatedOptions,
+      ));
     } catch (e) {
-      AppLogger.e(_tag, '处理大纲生成块失败', e);
+      AppLogger.e(_tag, '处理生成块失败', e);
+      // 不会因为处理单个块失败而更新状态，避免影响其他选项
     }
   }
 
-  /// 生成错误
+  /// 处理生成错误事件
   void _onGenerationErrorOccurred(
     GenerationErrorOccurred event,
     Emitter<NextOutlineState> emit,
@@ -385,31 +428,22 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
     ));
   }
 
-  /// 检查是否所有选项都已完成
+  /// 检查所有选项是否已完成生成
   void _checkAllOptionsComplete(Emitter<NextOutlineState> emit) {
-    final allComplete = state.outlineOptions.every((option) => option.isComplete);
-
-    if (allComplete) {
+    if (state.outlineOptions.every((option) => option.isComplete)) {
+      // 所有选项都已完成生成
       emit(state.copyWith(
         generationStatus: GenerationStatus.idle,
       ));
     }
   }
 
-  /// 取消所有流订阅
+  /// 取消所有活跃的流订阅
   void _cancelAllSubscriptions() {
-    for (final subscription in _activeSubscriptions.values) {
+    _activeSubscriptions.forEach((key, subscription) {
       subscription.cancel();
-    }
+    });
     _activeSubscriptions.clear();
-  }
-
-  /// 取消特定选项的流订阅
-  void _cancelSubscription(String optionId) {
-    if (_activeSubscriptions.containsKey(optionId)) {
-      _activeSubscriptions[optionId]?.cancel();
-      _activeSubscriptions.remove(optionId);
-    }
   }
 
   @override

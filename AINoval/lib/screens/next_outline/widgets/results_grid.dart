@@ -1,5 +1,6 @@
 import 'package:ainoval/blocs/next_outline/next_outline_state.dart';
-import 'package:ainoval/models/user_ai_model_config.dart';
+import '../../../models/novel_structure.dart';
+import '../../../models/user_ai_model_config_model.dart';
 import 'package:ainoval/screens/next_outline/widgets/result_card.dart';
 import 'package:ainoval/widgets/common/empty_state_placeholder.dart';
 import 'package:ainoval/widgets/common/loading_indicator.dart';
@@ -14,7 +15,7 @@ class ResultsGrid extends StatefulWidget {
   final String? selectedOptionId;
 
   /// AI模型配置列表
-  final List<UserAIModelConfig> aiModelConfigs;
+  final List<UserAIModelConfigModel> aiModelConfigs;
 
   /// 是否正在生成
   final bool isGenerating;

@@ -1,10 +1,7 @@
 import 'package:json_annotation/json_annotation.dart';
 
-part 'outline_generation_chunk.g.dart';
-
 /// 剧情大纲生成的数据块
 /// 用于流式传输生成的剧情大纲选项
-@JsonSerializable()
 class OutlineGenerationChunk {
   /// 选项ID，用于唯一标识一个剧情选项
   final String optionId;
@@ -29,8 +26,23 @@ class OutlineGenerationChunk {
     this.error,
   });
 
-  factory OutlineGenerationChunk.fromJson(Map<String, dynamic> json) => 
-      _$OutlineGenerationChunkFromJson(json);
+  factory OutlineGenerationChunk.fromJson(Map<String, dynamic> json) {
+    return OutlineGenerationChunk(
+      optionId: json['optionId'] as String,
+      optionTitle: json['optionTitle'] as String?,
+      textChunk: json['textChunk'] as String,
+      isFinalChunk: json['isFinalChunk'] as bool,
+      error: json['error'] as String?,
+    );
+  }
 
-  Map<String, dynamic> toJson() => _$OutlineGenerationChunkToJson(this);
+  Map<String, dynamic> toJson() {
+    return {
+      'optionId': optionId,
+      if (optionTitle != null) 'optionTitle': optionTitle,
+      'textChunk': textChunk,
+      'isFinalChunk': isFinalChunk,
+      if (error != null) 'error': error,
+    };
+  }
 }

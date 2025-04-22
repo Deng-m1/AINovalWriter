@@ -17,6 +17,9 @@ class UserAIModelConfigModel extends Equatable {
   final DateTime updatedAt;
   final String? apiKey; // 添加apiKey字段，存储解密后的API密钥
 
+  /// 获取模型名称，用于显示
+  String get name => alias.isNotEmpty ? alias : modelName;
+
   const UserAIModelConfigModel({
     required this.id,
     required this.userId,

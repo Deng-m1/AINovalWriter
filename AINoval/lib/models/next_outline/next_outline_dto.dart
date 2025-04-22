@@ -1,9 +1,6 @@
 import 'package:json_annotation/json_annotation.dart';
 
-part 'next_outline_dto.g.dart';
-
 /// 生成剧情大纲请求
-@JsonSerializable()
 class GenerateNextOutlinesRequest {
   /// 上下文开始章节ID
   final String? startChapterId;
@@ -32,14 +29,30 @@ class GenerateNextOutlinesRequest {
     this.regenerateHint,
   });
 
-  factory GenerateNextOutlinesRequest.fromJson(Map<String, dynamic> json) =>
-      _$GenerateNextOutlinesRequestFromJson(json);
+  factory GenerateNextOutlinesRequest.fromJson(Map<String, dynamic> json) {
+    return GenerateNextOutlinesRequest(
+      startChapterId: json['startChapterId'] as String?,
+      endChapterId: json['endChapterId'] as String?,
+      numOptions: json['numOptions'] as int? ?? 3,
+      authorGuidance: json['authorGuidance'] as String?,
+      selectedConfigIds: (json['selectedConfigIds'] as List<dynamic>?)?.map((e) => e as String).toList(),
+      regenerateHint: json['regenerateHint'] as String?,
+    );
+  }
 
-  Map<String, dynamic> toJson() => _$GenerateNextOutlinesRequestToJson(this);
+  Map<String, dynamic> toJson() {
+    return {
+      if (startChapterId != null) 'startChapterId': startChapterId,
+      if (endChapterId != null) 'endChapterId': endChapterId,
+      'numOptions': numOptions,
+      if (authorGuidance != null) 'authorGuidance': authorGuidance,
+      if (selectedConfigIds != null) 'selectedConfigIds': selectedConfigIds,
+      if (regenerateHint != null) 'regenerateHint': regenerateHint,
+    };
+  }
 }
 
 /// 生成剧情大纲响应
-@JsonSerializable()
 class GenerateNextOutlinesResponse {
   /// 生成的大纲列表
   final List<OutlineItem> outlines;
@@ -52,14 +65,24 @@ class GenerateNextOutlinesResponse {
     required this.generationTimeMs,
   });
 
-  factory GenerateNextOutlinesResponse.fromJson(Map<String, dynamic> json) =>
-      _$GenerateNextOutlinesResponseFromJson(json);
+  factory GenerateNextOutlinesResponse.fromJson(Map<String, dynamic> json) {
+    return GenerateNextOutlinesResponse(
+      outlines: (json['outlines'] as List<dynamic>)
+          .map((e) => OutlineItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      generationTimeMs: json['generationTimeMs'] as int,
+    );
+  }
 
-  Map<String, dynamic> toJson() => _$GenerateNextOutlinesResponseToJson(this);
+  Map<String, dynamic> toJson() {
+    return {
+      'outlines': outlines.map((e) => e.toJson()).toList(),
+      'generationTimeMs': generationTimeMs,
+    };
+  }
 }
 
 /// 大纲项
-@JsonSerializable()
 class OutlineItem {
   /// 大纲ID
   final String id;
@@ -84,14 +107,28 @@ class OutlineItem {
     this.configId,
   });
 
-  factory OutlineItem.fromJson(Map<String, dynamic> json) =>
-      _$OutlineItemFromJson(json);
+  factory OutlineItem.fromJson(Map<String, dynamic> json) {
+    return OutlineItem(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      content: json['content'] as String,
+      isSelected: json['isSelected'] as bool,
+      configId: json['configId'] as String?,
+    );
+  }
 
-  Map<String, dynamic> toJson() => _$OutlineItemToJson(this);
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'content': content,
+      'isSelected': isSelected,
+      if (configId != null) 'configId': configId,
+    };
+  }
 }
 
 /// 重新生成单个剧情大纲请求
-@JsonSerializable()
 class RegenerateOptionRequest {
   /// 选项ID
   final String optionId;
@@ -108,14 +145,24 @@ class RegenerateOptionRequest {
     this.regenerateHint,
   });
 
-  factory RegenerateOptionRequest.fromJson(Map<String, dynamic> json) =>
-      _$RegenerateOptionRequestFromJson(json);
+  factory RegenerateOptionRequest.fromJson(Map<String, dynamic> json) {
+    return RegenerateOptionRequest(
+      optionId: json['optionId'] as String,
+      selectedConfigId: json['selectedConfigId'] as String,
+      regenerateHint: json['regenerateHint'] as String?,
+    );
+  }
 
-  Map<String, dynamic> toJson() => _$RegenerateOptionRequestToJson(this);
+  Map<String, dynamic> toJson() {
+    return {
+      'optionId': optionId,
+      'selectedConfigId': selectedConfigId,
+      if (regenerateHint != null) 'regenerateHint': regenerateHint,
+    };
+  }
 }
 
 /// 保存剧情大纲请求
-@JsonSerializable()
 class SaveNextOutlineRequest {
   /// 大纲ID
   final String outlineId;
@@ -144,14 +191,28 @@ class SaveNextOutlineRequest {
     this.createNewScene = true,
   });
 
-  factory SaveNextOutlineRequest.fromJson(Map<String, dynamic> json) =>
-      _$SaveNextOutlineRequestFromJson(json);
+  factory SaveNextOutlineRequest.fromJson(Map<String, dynamic> json) {
+    return SaveNextOutlineRequest(
+      outlineId: json['outlineId'] as String,
+      insertType: json['insertType'] as String? ?? 'NEW_CHAPTER',
+      targetChapterId: json['targetChapterId'] as String?,
+      targetSceneId: json['targetSceneId'] as String?,
+      createNewScene: json['createNewScene'] as bool? ?? true,
+    );
+  }
 
-  Map<String, dynamic> toJson() => _$SaveNextOutlineRequestToJson(this);
+  Map<String, dynamic> toJson() {
+    return {
+      'outlineId': outlineId,
+      'insertType': insertType,
+      if (targetChapterId != null) 'targetChapterId': targetChapterId,
+      if (targetSceneId != null) 'targetSceneId': targetSceneId,
+      'createNewScene': createNewScene,
+    };
+  }
 }
 
 /// 保存剧情大纲响应
-@JsonSerializable()
 class SaveNextOutlineResponse {
   /// 是否成功
   final bool success;
@@ -188,8 +249,29 @@ class SaveNextOutlineResponse {
     required this.outlineTitle,
   });
 
-  factory SaveNextOutlineResponse.fromJson(Map<String, dynamic> json) =>
-      _$SaveNextOutlineResponseFromJson(json);
+  factory SaveNextOutlineResponse.fromJson(Map<String, dynamic> json) {
+    return SaveNextOutlineResponse(
+      success: json['success'] as bool,
+      outlineId: json['outlineId'] as String,
+      newChapterId: json['newChapterId'] as String?,
+      newSceneId: json['newSceneId'] as String?,
+      targetChapterId: json['targetChapterId'] as String?,
+      targetSceneId: json['targetSceneId'] as String?,
+      insertType: json['insertType'] as String,
+      outlineTitle: json['outlineTitle'] as String,
+    );
+  }
 
-  Map<String, dynamic> toJson() => _$SaveNextOutlineResponseToJson(this);
+  Map<String, dynamic> toJson() {
+    return {
+      'success': success,
+      'outlineId': outlineId,
+      if (newChapterId != null) 'newChapterId': newChapterId,
+      if (newSceneId != null) 'newSceneId': newSceneId,
+      if (targetChapterId != null) 'targetChapterId': targetChapterId,
+      if (targetSceneId != null) 'targetSceneId': targetSceneId,
+      'insertType': insertType,
+      'outlineTitle': outlineTitle,
+    };
+  }
 }

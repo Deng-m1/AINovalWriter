@@ -4,12 +4,14 @@ import 'package:ainoval/blocs/next_outline/next_outline_state.dart';
 import 'package:ainoval/models/next_outline/next_outline_dto.dart';
 import 'package:ainoval/screens/next_outline/widgets/outline_generation_config_card.dart';
 import 'package:ainoval/screens/next_outline/widgets/results_grid.dart';
+import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
+import 'package:ainoval/services/api_service/repositories/impl/editor_repository_impl.dart';
 import 'package:ainoval/services/api_service/repositories/impl/next_outline_repository_impl.dart';
 import 'package:ainoval/services/api_service/repositories/impl/user_ai_model_config_repository_impl.dart';
 import 'package:ainoval/services/api_service/repositories/next_outline_repository.dart';
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
-import 'package:ainoval/services/service_locator.dart';
+
 import 'package:ainoval/widgets/common/loading_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -30,23 +32,26 @@ class NextOutlineScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final apiClient = ApiClient();
+    final editorRepository = EditorRepositoryImpl(apiClient: apiClient);
+    
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider<NextOutlineRepository>(
           create: (context) => NextOutlineRepositoryImpl(
-            apiClient: ServiceLocator.get(),
+            apiClient: apiClient,
           ),
         ),
         RepositoryProvider<UserAIModelConfigRepository>(
           create: (context) => UserAIModelConfigRepositoryImpl(
-            apiClient: ServiceLocator.get(),
+            apiClient: apiClient,
           ),
         ),
       ],
       child: BlocProvider(
         create: (context) => NextOutlineBloc(
           nextOutlineRepository: context.read<NextOutlineRepository>(),
-          editorRepository: ServiceLocator.get<EditorRepository>(),
+          editorRepository: editorRepository,
           userAIModelConfigRepository: context.read<UserAIModelConfigRepository>(),
         )..add(NextOutlineInitialized(novelId: novelId)),
         child: _NextOutlineScreenContent(

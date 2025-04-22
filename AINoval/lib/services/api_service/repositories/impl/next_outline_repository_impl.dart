@@ -6,7 +6,10 @@ import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/services/api_service/base/sse_client.dart';
 import 'package:ainoval/services/api_service/repositories/next_outline_repository.dart';
-import 'package:ainoval/utils/app_logger.dart';
+import 'package:flutter_client_sse/constants/sse_request_type_enum.dart';
+
+import '../../../../utils/logger.dart';
+
 
 /// 剧情推演仓库实现
 class NextOutlineRepositoryImpl implements NextOutlineRepository {
@@ -83,7 +86,7 @@ class NextOutlineRepositoryImpl implements NextOutlineRepository {
     try {
       final response = await apiClient.post(
         '/novels/$novelId/ai/save-outline',
-        body: request.toJson(),
+        data: request.toJson(),
       );
       
       return SaveNextOutlineResponse.fromJson(response);

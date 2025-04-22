@@ -1,5 +1,6 @@
 import 'package:ainoval/blocs/next_outline/next_outline_state.dart';
-import 'package:ainoval/models/user_ai_model_config.dart';
+import '../../../models/novel_structure.dart';
+import '../../../models/user_ai_model_config_model.dart';
 import 'package:flutter/material.dart';
 
 /// 结果卡片
@@ -11,7 +12,7 @@ class ResultCard extends StatefulWidget {
   final bool isSelected;
 
   /// AI模型配置列表
-  final List<UserAIModelConfig> aiModelConfigs;
+  final List<UserAIModelConfigModel> aiModelConfigs;
 
   /// 选中回调
   final VoidCallback onSelected;
