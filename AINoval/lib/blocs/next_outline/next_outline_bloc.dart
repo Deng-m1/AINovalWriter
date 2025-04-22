@@ -11,6 +11,7 @@ import 'package:ainoval/services/api_service/repositories/next_outline_repositor
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:ainoval/config/app_config.dart';
 
 /// 剧情推演BLoC
 class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
@@ -111,11 +112,14 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
         generationStatus: GenerationStatus.loadingModels,
       ));
 
-      final configs = await _userAIModelConfigRepository.listConfigurations(userId: "current");
+      // 从AppConfig获取当前用户ID，而不是使用硬编码的"current"
+      final String userId = AppConfig.userId ?? '';
+      final configs = await _userAIModelConfigRepository.listConfigurations(userId: userId);
 
       emit(state.copyWith(
         aiModelConfigs: configs,
         generationStatus: GenerationStatus.idle,
+        clearError: true,
       ));
     } catch (e) {
       AppLogger.e(_tag, '加载AI模型配置失败', e);
@@ -215,7 +219,30 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
         },
         onError: (error) {
           AppLogger.e(_tag, '生成剧情大纲流错误', error);
-          add(GenerationErrorOccurred(error: error.toString()));
+          
+          // 尝试找到对应的选项
+          int affectedOptionIndex = -1;
+          if (error is Map && error.containsKey('optionId')) {
+            final String optionId = error['optionId'];
+            affectedOptionIndex = state.outlineOptions
+                .indexWhere((option) => option.optionId == optionId);
+          }
+          
+          if (affectedOptionIndex != -1) {
+            // 更新特定选项的错误状态
+            final updatedOptions = List<OutlineOptionState>.from(state.outlineOptions);
+            updatedOptions[affectedOptionIndex] = updatedOptions[affectedOptionIndex].copyWith(
+              isGenerating: false,
+              errorMessage: error.toString(),
+            );
+            
+            emit(state.copyWith(
+              outlineOptions: updatedOptions,
+            ));
+          } else {
+            // 全局错误
+            add(GenerationErrorOccurred(error: error.toString()));
+          }
         },
         onDone: () {
           AppLogger.i(_tag, '生成剧情大纲流完成');
@@ -279,6 +306,13 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
         throw Exception('未找到指定的剧情选项');
       }
 
+      // 取消该选项的现有订阅
+      final subKey = 'regenerate_${event.request.optionId}';
+      if (_activeSubscriptions.containsKey(subKey)) {
+        _activeSubscriptions[subKey]?.cancel();
+        _activeSubscriptions.remove(subKey);
+      }
+
       // 更新选项状态为生成中
       final updatedOptions = List<OutlineOptionState>.from(state.outlineOptions);
       updatedOptions[optionIndex] = updatedOptions[optionIndex].copyWith(
@@ -310,7 +344,26 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
         },
         onError: (error) {
           AppLogger.e(_tag, '重新生成单个剧情大纲流错误', error);
-          add(GenerationErrorOccurred(error: error.toString()));
+          
+          // 更新对应选项的错误状态，而不是全局错误
+          final errorOptionIndex = state.outlineOptions
+              .indexWhere((option) => option.optionId == event.request.optionId);
+            
+          if (errorOptionIndex != -1) {
+            final updatedErrorOptions = List<OutlineOptionState>.from(state.outlineOptions);
+            updatedErrorOptions[errorOptionIndex] = updatedErrorOptions[errorOptionIndex].copyWith(
+              isGenerating: false,
+              isComplete: false,
+              errorMessage: error.toString(),
+            );
+            
+            emit(state.copyWith(
+              outlineOptions: updatedErrorOptions,
+            ));
+          } else {
+            // 如果找不到选项，回退到全局错误
+            add(GenerationErrorOccurred(error: error.toString()));
+          }
         },
         onDone: () {
           AppLogger.i(_tag, '重新生成单个剧情大纲流完成');
@@ -320,7 +373,6 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
       );
 
       // 存储订阅
-      final subKey = 'regenerate_${event.request.optionId}';
       _activeSubscriptions[subKey] = subscription;
     } catch (e) {
       AppLogger.e(_tag, '重新生成单个剧情大纲失败', e);

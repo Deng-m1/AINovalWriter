@@ -28,7 +28,7 @@ class NextOutlineRepositoryImpl implements NextOutlineRepository {
     AppLogger.i(_tag, '流式生成剧情大纲: novelId=$novelId, startChapter=${request.startChapterId}, endChapter=${request.endChapterId}, numOptions=${request.numOptions}');
     
     return SseClient().streamEvents<OutlineGenerationChunk>(
-      path: '/novels/$novelId/ai/generate-next-outlines',
+      path: '/api/v1/novels/$novelId/next-outlines/generate-stream',
       method: SSERequestType.POST,
       body: request.toJson(),
       parser: (json) {
@@ -56,7 +56,7 @@ class NextOutlineRepositoryImpl implements NextOutlineRepository {
     AppLogger.i(_tag, '重新生成单个剧情大纲选项: novelId=$novelId, optionId=${request.optionId}, configId=${request.selectedConfigId}');
     
     return SseClient().streamEvents<OutlineGenerationChunk>(
-      path: '/novels/$novelId/ai/regenerate-outline-option',
+      path: '/api/v1/novels/$novelId/next-outlines/regenerate-outline-option',
       method: SSERequestType.POST,
       body: request.toJson(),
       parser: (json) {
@@ -85,7 +85,7 @@ class NextOutlineRepositoryImpl implements NextOutlineRepository {
     
     try {
       final response = await apiClient.post(
-        '/novels/$novelId/ai/save-outline',
+        '/api/v1/novels/$novelId/next-outlines/save-outline',
         data: request.toJson(),
       );
       

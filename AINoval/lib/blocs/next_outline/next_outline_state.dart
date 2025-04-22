@@ -141,14 +141,18 @@ class OutlineOptionState extends Equatable {
   
   /// 内容流控制器
   final ValueNotifier<String> contentStreamController;
+  
+  /// 错误信息
+  final String? errorMessage;
 
   OutlineOptionState({
     required this.optionId,
-    this.title,
+    this.title = '',
     this.content = '',
-    this.isGenerating = true,
+    this.isGenerating = false,
     this.isComplete = false,
     this.configId,
+    this.errorMessage,
   }) : contentStreamController = ValueNotifier<String>(content);
 
   /// 复制并修改状态
@@ -159,6 +163,7 @@ class OutlineOptionState extends Equatable {
     bool? isGenerating,
     bool? isComplete,
     String? configId,
+    String? errorMessage,
   }) {
     final newContent = content ?? this.content;
     final result = OutlineOptionState(
@@ -168,6 +173,7 @@ class OutlineOptionState extends Equatable {
       isGenerating: isGenerating ?? this.isGenerating,
       isComplete: isComplete ?? this.isComplete,
       configId: configId ?? this.configId,
+      errorMessage: errorMessage ?? this.errorMessage,
     );
     
     // 更新内容流
@@ -199,5 +205,6 @@ class OutlineOptionState extends Equatable {
     isGenerating,
     isComplete,
     configId,
+    errorMessage,
   ];
 }
