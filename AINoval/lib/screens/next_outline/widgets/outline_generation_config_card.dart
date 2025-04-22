@@ -1,5 +1,6 @@
-
 import 'package:flutter/material.dart';
+import 'package:flutter_lucide/flutter_lucide.dart';
+
 
 import '../../../models/novel_structure.dart';
 import '../../../models/user_ai_model_config_model.dart';
@@ -242,7 +243,7 @@ class _OutlineGenerationConfigCardState extends State<OutlineGenerationConfigCar
                           strokeWidth: 2,
                         ),
                       )
-                    : const Icon(Icons.auto_awesome),
+                    : const Icon(LucideIcons.brain_circuit, size: 20),
                 label: Text(widget.isGenerating ? '生成中...' : '生成剧情大纲'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -465,7 +466,7 @@ class _OutlineGenerationConfigCardState extends State<OutlineGenerationConfigCar
                     },
               avatar: isSelected
                   ? Icon(
-                      Icons.check,
+                      LucideIcons.check,
                       size: 16,
                       color: Theme.of(context).colorScheme.onPrimary,
                     )

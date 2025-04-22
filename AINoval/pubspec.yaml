@@ -10,6 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_client_sse: ^2.0.3
+  flutter_lucide: ^1.6.2
+  animated_text_kit: ^4.2.2
   cupertino_icons: ^1.0.2
   get_it: ^7.6.7 # 使用最新版本
 

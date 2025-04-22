@@ -2,6 +2,7 @@ import 'package:ainoval/blocs/next_outline/next_outline_state.dart';
 import '../../../models/novel_structure.dart';
 import '../../../models/user_ai_model_config_model.dart';
 import 'package:flutter/material.dart';
+import 'package:animated_text_kit/animated_text_kit.dart';
 
 /// 结果卡片
 class ResultCard extends StatefulWidget {
@@ -103,13 +104,28 @@ class _ResultCardState extends State<ResultCard> {
                             child: ValueListenableBuilder<String>(
                               valueListenable: widget.option.contentStreamController,
                               builder: (context, content, child) {
-                                return SingleChildScrollView(
-                                  child: Text(
-                                    content.isEmpty ? '正在生成内容...' : content,
+                                if (content.isEmpty && widget.option.isGenerating) {
+                                  return Text(
+                                    '正在生成内容...',
                                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                       height: 1.5,
+                                      color: Colors.grey,
                                     ),
-                                  ),
+                                  );
+                                }
+                                return SingleChildScrollView(
+                                  child: AnimatedTextKit(
+                                    animatedTexts: [
+                                      TypewriterAnimatedText(
+                                        content,
+                                        textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.5),
+                                        speed: const Duration(milliseconds: 50),
+                                      ),
+                                    ],
+                                    isRepeatingAnimation: false,
+                                    displayFullTextOnTap: true,
+                                    key: ValueKey(widget.option.optionId + content),
+                                  )
                                 );
                               },
                             ),
