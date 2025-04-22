@@ -6,6 +6,7 @@ import 'package:ainoval/blocs/next_outline/next_outline_state.dart';
 import 'package:ainoval/models/next_outline/next_outline_dto.dart';
 import 'package:ainoval/models/next_outline/outline_generation_chunk.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
+import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/api_service/repositories/next_outline_repository.dart';
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
@@ -219,30 +220,12 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
         },
         onError: (error) {
           AppLogger.e(_tag, '生成剧情大纲流错误', error);
-          
-          // 尝试找到对应的选项
-          int affectedOptionIndex = -1;
-          if (error is Map && error.containsKey('optionId')) {
-            final String optionId = error['optionId'];
-            affectedOptionIndex = state.outlineOptions
-                .indexWhere((option) => option.optionId == optionId);
+          String errorMessage = error.toString();
+          if (error is ApiException) {
+             errorMessage = error.message;
           }
-          
-          if (affectedOptionIndex != -1) {
-            // 更新特定选项的错误状态
-            final updatedOptions = List<OutlineOptionState>.from(state.outlineOptions);
-            updatedOptions[affectedOptionIndex] = updatedOptions[affectedOptionIndex].copyWith(
-              isGenerating: false,
-              errorMessage: error.toString(),
-            );
-            
-            emit(state.copyWith(
-              outlineOptions: updatedOptions,
-            ));
-          } else {
-            // 全局错误
-            add(GenerationErrorOccurred(error: error.toString()));
-          }
+          // 不再尝试关联特定选项，直接触发全局错误处理
+          add(GenerationErrorOccurred(error: errorMessage));
         },
         onDone: () {
           AppLogger.i(_tag, '生成剧情大纲流完成');
@@ -344,25 +327,30 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
         },
         onError: (error) {
           AppLogger.e(_tag, '重新生成单个剧情大纲流错误', error);
-          
+          String errorMessage = error.toString();
+          if (error is ApiException) {
+              errorMessage = error.message;
+          }
+
           // 更新对应选项的错误状态，而不是全局错误
           final errorOptionIndex = state.outlineOptions
               .indexWhere((option) => option.optionId == event.request.optionId);
-            
+
           if (errorOptionIndex != -1) {
             final updatedErrorOptions = List<OutlineOptionState>.from(state.outlineOptions);
             updatedErrorOptions[errorOptionIndex] = updatedErrorOptions[errorOptionIndex].copyWith(
               isGenerating: false,
-              isComplete: false,
-              errorMessage: error.toString(),
+              isComplete: true,
+              errorMessage: errorMessage,
             );
-            
+
             emit(state.copyWith(
               outlineOptions: updatedErrorOptions,
             ));
+             _checkAllOptionsComplete(emit);
           } else {
             // 如果找不到选项，回退到全局错误
-            add(GenerationErrorOccurred(error: error.toString()));
+            add(GenerationErrorOccurred(error: errorMessage));
           }
         },
         onDone: () {
@@ -474,9 +462,24 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
     GenerationErrorOccurred event,
     Emitter<NextOutlineState> emit,
   ) {
+    AppLogger.e(_tag, '全局生成错误: ${event.error}');
+
+    // 停止所有仍在进行的生成，并标记错误
+    final updatedOptions = state.outlineOptions.map((option) {
+      if (option.isGenerating) { // 只处理还在生成中的选项
+        return option.copyWith(
+          isGenerating: false,
+          isComplete: true, // 标记为完成（即使是失败）
+          errorMessage: event.error,
+        );
+      }
+      return option; // 其他选项保持不变
+    }).toList();
+
     emit(state.copyWith(
-      generationStatus: GenerationStatus.error,
+      generationStatus: GenerationStatus.error, // 设置全局状态为错误
       errorMessage: event.error,
+      outlineOptions: updatedOptions, // 更新选项列表
     ));
   }
 

@@ -13,52 +13,33 @@ class NextOutlineView extends StatelessWidget {
   /// 切换到写作模式回调
   final VoidCallback onSwitchToWrite;
 
+  /// 跳转到添加模型页面的回调
+  final VoidCallback? onNavigateToAddModel;
+
+  /// 跳转到配置特定模型页面的回调
+  final Function(String configId)? onConfigureModel;
+
   const NextOutlineView({
     Key? key,
     required this.novelId,
     required this.novelTitle,
     required this.onSwitchToWrite,
+    this.onNavigateToAddModel,
+    this.onConfigureModel,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // 顶部操作栏
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border(
-              bottom: BorderSide(
-                color: Theme.of(context).dividerColor,
-                width: 1,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              Text(
-                '剧情推演',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                icon: const Icon(Icons.edit),
-                label: const Text('返回写作'),
-                onPressed: onSwitchToWrite,
-              ),
-            ],
-          ),
-        ),
-        
         // 主内容区域
         Expanded(
           child: NextOutlineScreen(
             novelId: novelId,
             novelTitle: novelTitle,
+            onSwitchToWrite: onSwitchToWrite,
+            onNavigateToAddModel: onNavigateToAddModel,
+            onConfigureModel: onConfigureModel,
           ),
         ),
       ],
