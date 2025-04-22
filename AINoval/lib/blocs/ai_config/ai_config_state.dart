@@ -17,6 +17,8 @@ class AiConfigState extends Equatable {
     this.errorMessage,
     this.actionErrorMessage,
     this.loadingConfigId, // <<< 添加此行
+    this.modelGroups = const {},
+    this.providerDefaultConfigs = const {},
   });
   final AiConfigStatus status; // 主要加载状态
   final AiConfigActionStatus actionStatus; // 操作状态 (添加/更新/删除/验证/设置默认)
@@ -27,6 +29,8 @@ class AiConfigState extends Equatable {
   final String? errorMessage;
   final String? actionErrorMessage; // 操作的特定错误消息
   final String? loadingConfigId;
+  final Map<String, AIModelGroup> modelGroups; // 按提供商分组的模型
+  final Map<String, UserAIModelConfigModel> providerDefaultConfigs; // 每个提供商的默认配置
 
   // 获取已验证的配置，用于选择器
   List<UserAIModelConfigModel> get validatedConfigs =>
@@ -35,6 +39,11 @@ class AiConfigState extends Equatable {
   // 获取默认配置
   UserAIModelConfigModel? get defaultConfig =>
       configs.firstWhereOrNull((c) => c.isDefault);
+      
+  // 获取特定提供商的默认配置
+  UserAIModelConfigModel? getProviderDefaultConfig(String provider) {
+    return providerDefaultConfigs[provider];
+  }
 
   AiConfigState copyWith({
     AiConfigStatus? status,
@@ -48,6 +57,8 @@ class AiConfigState extends Equatable {
     ValueGetter<String?>? actionErrorMessage,
     bool clearModels = false, // 添加标志以清除模型列表
     String? loadingConfigId, // <<< 添加此行
+    Map<String, AIModelGroup>? modelGroups,
+    Map<String, UserAIModelConfigModel>? providerDefaultConfigs,
   }) {
     return AiConfigState(
       status: status ?? this.status,
@@ -64,6 +75,8 @@ class AiConfigState extends Equatable {
           ? actionErrorMessage()
           : this.actionErrorMessage,
       loadingConfigId: loadingConfigId ?? this.loadingConfigId, // <<< 添加此行
+      modelGroups: modelGroups ?? this.modelGroups,
+      providerDefaultConfigs: providerDefaultConfigs ?? this.providerDefaultConfigs,
     );
   }
 
@@ -78,5 +91,7 @@ class AiConfigState extends Equatable {
         errorMessage,
         actionErrorMessage,
         loadingConfigId, // <<< 添加此行
+        modelGroups,
+        providerDefaultConfigs,
       ];
 }

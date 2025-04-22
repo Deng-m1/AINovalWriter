@@ -20,6 +20,7 @@ import javax.net.ssl.X509TrustManager;
 import com.ainovel.server.config.ProxyConfig;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
+import com.ainovel.server.domain.model.ModelInfo;
 import com.ainovel.server.service.ai.AIModelProvider;
 
 import dev.langchain4j.data.message.AiMessage;
@@ -186,27 +187,77 @@ public abstract class LangChain4jModelProvider implements AIModelProvider {
     @Override
     public Mono<AIResponse> generateContent(AIRequest request) {
         if (isApiKeyEmpty()) {
-            return Mono.just(createErrorResponse("API密钥未配置", request));
+            return Mono.error(new RuntimeException("API密钥未配置"));
         }
 
         if (chatModel == null) {
-            return Mono.just(createErrorResponse("模型未初始化", request));
+            return Mono.error(new RuntimeException("模型未初始化"));
         }
 
-        try {
-            // 转换请求为LangChain4j格式
-            List<ChatMessage> messages = convertToLangChain4jMessages(request);
+        // 使用defer延迟执行
+        return Mono.defer(() -> {
+            // 创建一个临时对象作为锁
+            final Object syncLock = new Object();
+            final AIResponse[] responseHolder = new AIResponse[1];
+            final Throwable[] errorHolder = new Throwable[1];
 
-            // 调用LangChain4j模型
-            ChatResponse response = chatModel.chat(messages);
-            AiMessage aiMessage = response.aiMessage();
+            log.info("开始生成内容, 模型: {}, userId: {}", modelName, request.getUserId());
 
-            // 转换响应
-            return Mono.just(convertToAIResponse(response, request));
-        } catch (Exception e) {
-            log.error("生成内容时出错", e);
-            return Mono.just(createErrorResponse("生成内容时出错: " + e.getMessage(), request));
-        }
+            // 记录开始时间
+            final long startTime = System.currentTimeMillis();
+
+            try {
+                // 使用同步块保证完整执行
+                synchronized (syncLock) {
+                    // 转换请求为LangChain4j格式
+                    List<ChatMessage> messages = convertToLangChain4jMessages(request);
+
+                    // 调用LangChain4j模型 - 这是阻塞调用
+                    ChatResponse response = chatModel.chat(messages);
+
+                    // 转换响应并保存到holder
+                    responseHolder[0] = convertToAIResponse(response, request);
+                }
+
+                // 记录完成时间
+                log.info("内容生成完成, 耗时: {}ms, 模型: {}, userId: {}",
+                        System.currentTimeMillis() - startTime, modelName, request.getUserId());
+
+                // 返回结果
+                return Mono.justOrEmpty(responseHolder[0])
+                        .switchIfEmpty(Mono.error(new RuntimeException("生成的响应为空")));
+
+            } catch (Exception e) {
+                log.error("生成内容时出错, 模型: {}, userId: {}, 错误: {}",
+                        modelName, request.getUserId(), e.getMessage(), e);
+                // 保存错误
+                errorHolder[0] = e;
+                return Mono.error(new RuntimeException("生成内容时出错: " + e.getMessage(), e));
+            }
+        })
+        .doOnCancel(() -> {
+            // 请求被取消时的处理
+            log.warn("AI内容生成请求被取消, 模型: {}, userId: {}, 但模型可能仍在后台继续生成",
+                    modelName, request.getUserId());
+        })
+        .timeout(Duration.ofSeconds(120)) // 添加2分钟超时
+        .retryWhen(Retry.backoff(2, Duration.ofSeconds(1))
+                .filter(throwable -> !(throwable instanceof RuntimeException &&
+                        throwable.getMessage() != null &&
+                        throwable.getMessage().contains("API密钥未配置"))))
+        .onErrorResume(e -> {
+            // 处理所有剩余错误，返回包含错误信息的响应
+            AIResponse errorResponse = new AIResponse();
+            errorResponse.setContent("生成内容时出错: " + e.getMessage());
+            // 通过反射设置status属性，因为AIResponse可能没有直接的setStatus方法
+            try {
+                errorResponse.getClass().getMethod("setStatus", String.class)
+                    .invoke(errorResponse, "error");
+            } catch (Exception ex) {
+                log.warn("无法设置AIResponse的status属性", ex);
+            }
+            return Mono.just(errorResponse);
+        });
     }
 
     @Override
@@ -403,6 +454,69 @@ public abstract class LangChain4jModelProvider implements AIModelProvider {
     }
 
     /**
+     * 获取提供商支持的模型列表
+     * 这是基类的默认实现，子类可以根据需要覆盖此方法
+     *
+     * @return 模型信息列表
+     */
+    @Override
+    public Flux<ModelInfo> listModels() {
+        // 默认实现返回一个包含当前模型的列表
+        // 这适用于不需要API密钥就能获取模型列表的提供商
+        return Flux.just(createDefaultModelInfo());
+    }
+
+    /**
+     * 使用API密钥获取提供商支持的模型列表
+     * 这是基类的默认实现，子类可以根据需要覆盖此方法
+     *
+     * @param apiKey API密钥
+     * @param apiEndpoint 可选的API端点
+     * @return 模型信息列表
+     */
+    @Override
+    public Flux<ModelInfo> listModelsWithApiKey(String apiKey, String apiEndpoint) {
+        // 默认实现返回一个包含当前模型的列表
+        // 这适用于需要API密钥才能获取模型列表的提供商
+        if (isApiKeyEmpty(apiKey)) {
+            return Flux.error(new RuntimeException("API密钥不能为空"));
+        }
+
+        return Flux.just(createDefaultModelInfo());
+    }
+
+    /**
+     * 创建默认的模型信息对象
+     *
+     * @return 模型信息对象
+     */
+    protected ModelInfo createDefaultModelInfo() {
+        return ModelInfo.basic(modelName, modelName, providerName)
+                .withDescription("LangChain4j模型")
+                .withMaxTokens(4096) // 默认值，子类应该覆盖
+                .withUnifiedPrice(0.001); // 默认价格，子类应该覆盖
+    }
+
+    /**
+     * 检查当前API密钥是否为空
+     *
+     * @return 是否为空
+     */
+    protected boolean isApiKeyEmpty() {
+        return apiKey == null || apiKey.trim().isEmpty();
+    }
+
+    /**
+     * 检查指定API密钥是否为空
+     *
+     * @param apiKey API密钥
+     * @return 是否为空
+     */
+    protected boolean isApiKeyEmpty(String apiKey) {
+        return apiKey == null || apiKey.trim().isEmpty();
+    }
+
+    /**
      * 将AIRequest转换为LangChain4j消息列表
      *
      * @param request AI请求
@@ -492,14 +606,7 @@ public abstract class LangChain4jModelProvider implements AIModelProvider {
         return response;
     }
 
-    /**
-     * 检查API密钥是否为空
-     *
-     * @return 是否为空
-     */
-    protected boolean isApiKeyEmpty() {
-        return apiKey == null || apiKey.trim().isEmpty();
-    }
+
 
     /**
      * 获取API端点

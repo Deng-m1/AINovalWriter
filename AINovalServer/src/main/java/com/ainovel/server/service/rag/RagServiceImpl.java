@@ -125,6 +125,7 @@ public class RagServiceImpl implements RagService {
     private Mono<String> performVectorSearch(String queryText, String novelId) {
         return Mono.fromCallable(() -> {
             try {
+                // 使用LangChain4j的ContentRetriever进行向量搜索
                 List<Content> relevantContents = contentRetriever.retrieve(Query.from(queryText));
 
                 if (relevantContents.isEmpty()) {
@@ -143,20 +144,20 @@ public class RagServiceImpl implements RagService {
                 return "";
             }
         })
-                .subscribeOn(Schedulers.boundedElastic())
-                .switchIfEmpty(Mono.defer(()
-                        -> // 如果向量搜索失败，回退到传统检索
-                        knowledgeService.semanticSearch(queryText, novelId, retrievalK)
-                        .map(KnowledgeChunk::getContent)
-                        .collectList()
-                        .map(contents -> {
-                            if (contents.isEmpty()) {
-                                return "";
-                            }
-                            return String.join("\n\n", contents);
-                        })
-                        .defaultIfEmpty("")
-                ));
+        .subscribeOn(Schedulers.boundedElastic())
+        .switchIfEmpty(Mono.defer(() -> 
+            // 如果向量搜索失败，回退到传统检索
+            knowledgeService.semanticSearch(queryText, novelId, retrievalK)
+            .map(KnowledgeChunk::getContent)
+            .collectList()
+            .map(contents -> {
+                if (contents.isEmpty()) {
+                    return "";
+                }
+                return String.join("\n\n", contents);
+            })
+            .defaultIfEmpty("")
+        ));
     }
 
     /**
@@ -211,8 +212,8 @@ public class RagServiceImpl implements RagService {
                             return Mono.just(""); // 未找到章节
                         })
                         .defaultIfEmpty("")
-                        .flatMap(chapterInfo
-                                -> novelInfoMono.map(novelInfo -> novelInfo + chapterInfo)
+                        .flatMap(chapterInfo -> 
+                            novelInfoMono.map(novelInfo -> novelInfo + chapterInfo)
                         );
             }
 

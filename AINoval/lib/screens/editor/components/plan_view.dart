@@ -361,17 +361,29 @@ class _PlanViewState extends State<PlanView> {
                 editorBloc.add(editor.LoadMoreScenes(
                   fromChapterId: chapterId,
                   direction: 'center', // 保持 'center'，目标是加载并聚焦
-                  chaptersLimit: 2, // 加载目标章节及其前后少量章节以提供上下文
+                  chaptersLimit: 5, // 增加加载章节数量，确保加载足够的内容
                   targetActId: actId,
                   targetChapterId: chapterId,
                   targetSceneId: scene.id
                 ));
                 
+                // 确保场景被设置为活动状态
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  // 主动设置当前场景为活动场景
+                  editorBloc.add(editor.SetActiveScene(
+                    actId: actId,
+                    chapterId: chapterId,
+                    sceneId: scene.id,
+                  ));
+                  
+                  AppLogger.i('PlanView -> onTap', '主动设置活动场景: $actId - $chapterId - ${scene.id}');
+                });
+                
                 // --- 原有日志保持 ---
                 AppLogger.i('PlanView', '点击场景准备跳转: $actId - $chapterId - ${scene.id}');
 
                 // 等待场景加载完成后切换视图
-                Future.delayed(const Duration(milliseconds: 100), () {
+                Future.delayed(const Duration(milliseconds: 300), () {
                   // 切换到编辑视图
                   if (widget.onSwitchToWrite != null) {
                     // --- 添加日志 ---

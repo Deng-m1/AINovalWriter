@@ -6,6 +6,7 @@ import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart'; // Import uuid package
+import 'package:hive/hive.dart';
 
 import '../models/chat_models.dart';
 
@@ -40,12 +41,12 @@ class LocalStorageService {
   Future<List<novel_models.Novel>> getNovels() async {
     final prefs = await _ensureInitialized();
     final novelsJson = prefs.getStringList(_novelsKey) ?? [];
-    AppLogger.d('LocalStorageService',
+/*     AppLogger.d('LocalStorageService',
         'getNovels: Raw JSON list from prefs: $novelsJson');
-
+ */
     try {
       final novels = novelsJson.map((json) {
-        AppLogger.v('LocalStorageService', 'getNovels: Parsing JSON: $json');
+        // AppLogger.v('LocalStorageService', 'getNovels: Parsing JSON: $json');
         final novel = novel_models.Novel.fromJson(jsonDecode(json));
         AppLogger.v('LocalStorageService',
             'getNovels: Parsed Novel: ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}');
@@ -73,13 +74,13 @@ class LocalStorageService {
         return jsonString;
       }).toList();
 
-      AppLogger.d('LocalStorageService',
-          'saveNovels: Saving JSON list to prefs: $novelsJson');
+/*       AppLogger.d('LocalStorageService',
+          'saveNovels: Saving JSON list to prefs: $novelsJson'); */
       await prefs.setStringList(_novelsKey, novelsJson);
       AppLogger.i('LocalStorageService',
           'saveNovels: Successfully saved ${novels.length} novels.');
     } catch (e, stackTrace) {
-      AppLogger.e('LocalStorageService', 'saveNovels: Failed to save novels.',
+      AppLogger.e('LocalStorageService', 'saveNovels: Failed to save  novels.',
           e, stackTrace);
     }
   }
@@ -697,6 +698,33 @@ class LocalStorageService {
     for (final session in sessionsToRemove) {
       await clearSyncFlagByType('chat_session', session.id);
       AppLogger.i('LocalStorageService', '已清理聊天会话同步标记: ${session.id}，小说ID: $novelId');
+    }
+  }
+
+  /// 获取指定章节的所有场景键
+  Future<List<String>> getSceneKeysForChapter(
+    String novelId,
+    String actId,
+    String chapterId,
+  ) async {
+    try {
+      final box = await Hive.openBox('scenes');
+      final prefix = '${novelId}_${actId}_${chapterId}_';
+      
+      // 过滤出所有属于该章节的场景键
+      final List<String> sceneKeys = [];
+      for (final key in box.keys) {
+        if (key is String && key.startsWith(prefix)) {
+          // 从键中提取场景ID
+          final sceneId = key.substring(prefix.length);
+          sceneKeys.add(sceneId);
+        }
+      }
+      
+      return sceneKeys;
+    } catch (e) {
+      AppLogger.e('LocalStorageService', '获取章节场景键失败', e);
+      return [];
     }
   }
 }

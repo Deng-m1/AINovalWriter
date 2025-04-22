@@ -45,6 +45,14 @@ public interface PromptService {
     Mono<String> getNextOutlinesGenerationPrompt();
     
     /**
+     * 获取单个剧情大纲生成的提示模板
+     * 用于生成单个大纲选项，并要求按特定格式输出
+     *
+     * @return 单个大纲生成的提示模板
+     */
+    Mono<String> getSingleOutlineGenerationPrompt();
+    
+    /**
      * 保存提示词模板
      * @param promptType 提示词类型
      * @param template 模板内容

@@ -18,13 +18,15 @@ class LoadEditorContentPaginated extends EditorEvent {
     required this.novelId,
     this.lastEditedChapterId,
     this.chaptersLimit = 5,
+    this.loadAllSummaries = false,
   });
   final String novelId;
   final String? lastEditedChapterId;
   final int chaptersLimit;
+  final bool loadAllSummaries;
 
   @override
-  List<Object?> get props => [novelId, lastEditedChapterId, chaptersLimit];
+  List<Object?> get props => [novelId, lastEditedChapterId, chaptersLimit, loadAllSummaries];
 }
 
 /// 加载更多场景事件
@@ -33,10 +35,14 @@ class LoadMoreScenes extends EditorEvent {
   const LoadMoreScenes({
     required this.fromChapterId,
     required this.direction,
-    this.chaptersLimit = 5,
+    this.chaptersLimit = 3,
     this.targetActId,
     this.targetChapterId,
     this.targetSceneId,
+    this.preventFocusChange = false,
+    this.loadFromLocalOnly = false,
+    this.skipIfLoading = false,
+    this.skipAPIFallback = false,
   });
   final String fromChapterId;
   final String direction; // "up" 或 "down" 或 "center"
@@ -44,6 +50,10 @@ class LoadMoreScenes extends EditorEvent {
   final String? targetActId;
   final String? targetChapterId;
   final String? targetSceneId;
+  final bool preventFocusChange;
+  final bool loadFromLocalOnly; // 是否只从本地加载，避免网络请求
+  final bool skipIfLoading; // 如果已经有加载任务，是否跳过此次加载
+  final bool skipAPIFallback; // 当loadFromLocalOnly为true且本地加载失败时，是否跳过API回退
 
   @override
   List<Object?> get props => [
@@ -52,7 +62,11 @@ class LoadMoreScenes extends EditorEvent {
     chaptersLimit,
     targetActId,
     targetChapterId,
-    targetSceneId
+    targetSceneId,
+    preventFocusChange,
+    loadFromLocalOnly,
+    skipIfLoading,
+    skipAPIFallback,
   ];
 }
 
@@ -116,12 +130,14 @@ class SetActiveChapter extends EditorEvent {
   const SetActiveChapter({
     required this.actId,
     required this.chapterId,
+    this.shouldScroll = true,
   });
   final String actId;
   final String chapterId;
+  final bool shouldScroll;
 
   @override
-  List<Object?> get props => [actId, chapterId];
+  List<Object?> get props => [actId, chapterId, shouldScroll];
 }
 
 class ToggleEditorSettings extends EditorEvent {
@@ -209,13 +225,15 @@ class SetActiveScene extends EditorEvent {
     required this.actId,
     required this.chapterId,
     required this.sceneId,
+    this.shouldScroll = true,
   });
   final String actId;
   final String chapterId;
   final String sceneId;
+  final bool shouldScroll;
 
   @override
-  List<Object?> get props => [actId, chapterId, sceneId];
+  List<Object?> get props => [actId, chapterId, sceneId, shouldScroll];
 }
 
 // 删除场景事件 (New Event)

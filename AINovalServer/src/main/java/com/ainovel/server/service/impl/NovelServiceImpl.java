@@ -22,6 +22,7 @@ import com.ainovel.server.repository.NovelRepository;
 import com.ainovel.server.repository.SceneRepository;
 import com.ainovel.server.service.NovelService;
 import com.ainovel.server.service.StorageService;
+import com.ainovel.server.service.SceneService;
 import com.ainovel.server.web.dto.NovelWithScenesDto;
 import com.ainovel.server.web.dto.NovelWithSummariesDto;
 import com.ainovel.server.web.dto.SceneSummaryDto;
@@ -30,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * 小说服务实现类
@@ -43,6 +45,7 @@ public class NovelServiceImpl implements NovelService {
     private final NovelRepository novelRepository;
     private final SceneRepository sceneRepository;
     private final StorageService storageService;
+    private final SceneService sceneService;
 
     @Override
     public Mono<Novel> createNovel(Novel novel) {
@@ -939,38 +942,121 @@ public class NovelServiceImpl implements NovelService {
      */
     @Override
     public Mono<Novel> updateNovelWordCount(String novelId) {
-        log.info("计算并更新小说总字数: {}", novelId);
-        return novelRepository.findById(novelId)
-                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+        return findNovelById(novelId)
                 .flatMap(novel -> {
-                    // 获取小说的所有场景
+                    // 使用 SceneRepository 获取所有关联的场景
                     return sceneRepository.findByNovelId(novelId)
-                            .collectList()
-                            .flatMap(scenes -> {
-                                // 计算总字数
-                                int totalWordCount = scenes.stream()
-                                        .mapToInt(scene -> scene.getWordCount() != null ? scene.getWordCount() : 0)
-                                        .sum();
-
+                            .flatMap(scene -> {
+                                                                // 更新小说元数据
+                                                                if (novel.getMetadata() == null) {
+                                                                    novel.setMetadata(Novel.Metadata.builder().build());
+                                                                }
+                                // 计算每个场景的字数
+                                return Mono.fromCallable(() -> calculateWordCount(scene.getContent()))
+                                        .subscribeOn(Schedulers.boundedElastic()); // 将计算放在弹性线程池
+                            })
+                            .reduce(0, Integer::sum) // 累加所有场景的字数
+                            .flatMap(totalWordCount -> {
                                 // 计算估计阅读时间 (假设每分钟阅读300字)
                                 int readTime = totalWordCount / 300;
                                 if (readTime < 1 && totalWordCount > 0) {
                                     readTime = 1; // 最小阅读时间为1分钟
                                 }
-
-                                // 更新小说元数据
-                                if (novel.getMetadata() == null) {
-                                    novel.setMetadata(Novel.Metadata.builder().build());
-                                }
-
                                 novel.getMetadata().setWordCount(totalWordCount);
                                 novel.getMetadata().setReadTime(readTime);
                                 novel.setUpdatedAt(LocalDateTime.now());
-
                                 return novelRepository.save(novel);
                             });
                 })
-                .doOnSuccess(updated -> log.info("小说总字数更新成功: {}, 总字数: {}", novelId,
-                updated.getMetadata() != null ? updated.getMetadata().getWordCount() : 0));
+                .doOnSuccess(updatedNovel -> log.info("小说 {} 字数更新为: {}", novelId, updatedNovel.getMetadata().getWordCount()))
+                .onErrorResume(e -> {
+                    log.error("更新小说 {} 字数失败: {}", novelId, e.getMessage(), e);
+                    return Mono.error(e);
+                });
+    }
+
+    @Override
+    public Mono<String> getChapterRangeSummaries(String novelId, String startChapterId, String endChapterId) {
+        return findNovelById(novelId)
+            .<String>flatMap(novel -> { // 显式指定 flatMap 返回类型为 Mono<String>
+                Structure structure = novel.getStructure();
+                if (structure == null || structure.getActs() == null || structure.getActs().isEmpty()) {
+                    log.warn("小说 {} 没有有效的结构或章节信息，无法获取摘要范围", novelId);
+                    return Mono.just(""); // 或者返回特定错误信息
+                }
+
+                // 获取所有章节的扁平列表，方便查找索引
+                List<Chapter> allChapters = structure.getActs().stream()
+                    .flatMap(act -> act.getChapters().stream())
+                    .collect(Collectors.toList());
+
+                if (allChapters.isEmpty()) {
+                     log.warn("小说 {} 结构中没有章节，无法获取摘要范围", novelId);
+                    return Mono.just("");
+                }
+
+                int startIndex = 0;
+                int endIndex = allChapters.size() - 1;
+
+                // 确定起始索引
+                if (startChapterId != null) {
+                    boolean foundStart = false;
+                    for (int i = 0; i < allChapters.size(); i++) {
+                        if (allChapters.get(i).getId().equals(startChapterId)) {
+                            startIndex = i;
+                            foundStart = true;
+                            break;
+                        }
+                    }
+                    if (!foundStart) {
+                         log.warn("未找到起始章节ID: {}, 将从第一章开始", startChapterId);
+                    }
+                }
+
+                // 确定结束索引
+                if (endChapterId != null) {
+                     boolean foundEnd = false;
+                    for (int i = 0; i < allChapters.size(); i++) {
+                        if (allChapters.get(i).getId().equals(endChapterId)) {
+                            endIndex = i;
+                            foundEnd = true;
+                            break;
+                        }
+                    }
+                     if (!foundEnd) {
+                         log.warn("未找到结束章节ID: {}, 将到最后一章结束", endChapterId);
+                         endIndex = allChapters.size() - 1; // 确保 endIndex 有效
+                    }
+                }
+
+                // 确保索引有效且 startIndex <= endIndex
+                if (startIndex > endIndex) {
+                    log.warn("起始章节索引 ({}) 大于结束章节索引 ({}), 无法获取摘要范围", startIndex, endIndex);
+                    return Mono.just("");
+                }
+
+                // 获取指定范围内的章节ID列表
+                List<String> targetChapterIds = allChapters.subList(startIndex, endIndex + 1).stream()
+                    .map(Chapter::getId)
+                    .collect(Collectors.toList());
+
+                 log.debug("获取小说 {} 从索引 {} 到 {} 的章节摘要, 章节ID列表: {}", novelId, startIndex, endIndex, targetChapterIds);
+
+                // 并行获取所有目标章节的场景，然后串行处理拼接（保证顺序）
+                return Flux.fromIterable(targetChapterIds)
+                    .<String>concatMap(chapterId -> sceneService.findSceneByChapterId(chapterId) // 使用注入的 SceneService
+                        .filter(scene -> scene.getSummary() != null && !scene.getSummary().isBlank())
+                        .map(Scene::getSummary)
+                        .collect(Collectors.joining("\n\n")) // 拼接单个章节内的摘要
+                    )
+                    .filter(chapterSummary -> !chapterSummary.isEmpty())
+                    .collect(Collectors.joining("\n\n---\n\n")) // 拼接不同章节的摘要，用分隔符区分
+                    .defaultIfEmpty(""); // 如果没有找到任何摘要，返回空字符串
+            })
+            .onErrorResume(e -> {
+                log.error("获取小说 {} 章节范围摘要时出错: {}", novelId, e.getMessage(), e);
+                // 可以返回一个错误提示字符串，或者空字符串，或者重新抛出异常
+                return Mono.just("获取章节摘要时发生错误。");
+            });
     }
 }

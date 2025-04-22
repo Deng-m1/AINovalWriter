@@ -253,4 +253,27 @@ public class UserAIModelConfigServiceImpl implements UserAIModelConfigService {
                     return configRepository.save(config);
                 });
     }
+
+    @Override
+    public Mono<String> getDecryptedApiKey(String userId, String configId) {
+        log.debug("获取解密的API密钥: userId={}, configId={}", userId, configId);
+        return getConfigurationById(userId, configId)
+            .flatMap(config -> {
+                try {
+                    String decryptedApiKey = null;
+                    // 检查配置中是否有API密钥
+                    if (config.getApiKey() != null && !config.getApiKey().isEmpty()) {
+                        decryptedApiKey = encryptor.decrypt(config.getApiKey());
+                    } else {
+                        log.warn("配置没有API密钥: userId={}, configId={}", userId, configId);
+                        return Mono.empty();
+                    }
+                    return Mono.just(decryptedApiKey);
+                } catch (Exception e) {
+                    log.error("解密API密钥失败: userId={}, configId={}", userId, configId, e);
+                    return Mono.error(new RuntimeException("解密API密钥失败: " + e.getMessage(), e));
+                }
+            })
+            .switchIfEmpty(Mono.error(new RuntimeException("找不到配置或API密钥为空: userId=" + userId + ", configId=" + configId)));
+    }
 }

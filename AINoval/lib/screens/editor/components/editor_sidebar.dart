@@ -1,10 +1,12 @@
-import 'package:ainoval/models/novel_summary.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
-import 'package:ainoval/utils/logger.dart';
+import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/screens/editor/widgets/ai_generation_panel.dart';
+import 'package:ainoval/utils/logger.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:provider/provider.dart';
+import 'package:ainoval/screens/editor/controllers/editor_screen_controller.dart';
 
 class EditorSidebar extends StatefulWidget {
   const EditorSidebar({
@@ -240,6 +242,11 @@ class _EditorSidebarState extends State<EditorSidebar> {
           Tab(
             icon: Icon(Icons.menu_outlined, size: 18), // 更改为目录图标
             text: '章节目录', // 更改为"章节目录"
+            height: 48, // 减小高度
+          ),
+          Tab(
+            icon: Icon(Icons.auto_awesome, size: 18), // AI生成图标
+            text: 'AI生成',
             height: 48, // 减小高度
           ),
         ],
@@ -639,11 +646,14 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
   String _searchText = '';
   int? _selectedChapterNumber;
   final Map<String, bool> _expandedChapters = {};
+  late EditorScreenController _editorController;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
+    // 获取EditorScreenController实例
+    _editorController = Provider.of<EditorScreenController>(context, listen: false);
     // 默认第一个章节展开
     _initExpandedChapters();
   }
@@ -678,8 +688,18 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
   }
 
   void _toggleChapter(String chapterId) {
+    final isCurrentlyExpanded = _expandedChapters[chapterId] ?? false;
+    
+    // 如果要展开章节并且该章节的场景可能是空的，加载所有场景
+    if (!isCurrentlyExpanded) {
+      // 使用控制器中的方法预加载场景，使用preventFocusChange=true确保不会导致跳转或改变焦点
+      AppLogger.i('ChapterDirectoryTab', '展开章节，预加载场景: $chapterId');
+      _editorController.preloadChapterScenes(chapterId);
+    }
+    
+    // 直接切换展开状态
     setState(() {
-      _expandedChapters[chapterId] = !(_expandedChapters[chapterId] ?? false);
+      _expandedChapters[chapterId] = !isCurrentlyExpanded;
     });
   }
 
@@ -770,13 +790,34 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
     editorBloc.add(LoadMoreScenes(
       fromChapterId: chapterId,
       direction: 'center',
-      chaptersLimit: 2, // 增加加载章节数量，确保足够内容
+      chaptersLimit: 5, // 增加加载章节数量，确保足够加载所有内容
       targetActId: actId,
       targetChapterId: chapterId,
-      targetSceneId: sceneId
+      targetSceneId: sceneId,
+      preventFocusChange: false // 确保设置为false，允许改变焦点
     ));
     
+    // 直接设置活动场景，不需要再延迟
+    editorBloc.add(SetActiveScene(
+      actId: actId,
+      chapterId: chapterId,
+      sceneId: sceneId,
+    ));
+    
+    // 主动滚动到活动场景
+    _scrollToActiveScene(actId, chapterId, sceneId);
+    
     AppLogger.i('ChapterDirectoryTab', '已发送场景跳转请求: $actId - $chapterId - $sceneId');
+  }
+  
+  // 滚动到活动场景的辅助方法
+  void _scrollToActiveScene(String actId, String chapterId, String sceneId) {
+    // 延迟500ms确保UI已经更新
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (_editorController.editorMainAreaKey.currentState != null) {
+        _editorController.editorMainAreaKey.currentState!.scrollToActiveScene();
+      }
+    });
   }
 
   @override

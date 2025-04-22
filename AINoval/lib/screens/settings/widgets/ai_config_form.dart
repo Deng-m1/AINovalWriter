@@ -1,7 +1,12 @@
 import 'package:ainoval/blocs/ai_config/ai_config_bloc.dart';
+import 'package:ainoval/models/ai_model_group.dart';
 import 'package:ainoval/models/user_ai_model_config_model.dart';
+import 'package:ainoval/screens/settings/widgets/model_group_list.dart';
+import 'package:ainoval/screens/settings/widgets/provider_list.dart';
+import 'package:ainoval/screens/settings/widgets/searchable_model_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/foundation.dart';
 // Placeholder for localization, replace with your actual import
 // import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
@@ -36,6 +41,7 @@ class _AiConfigFormState extends State<AiConfigForm> {
   bool _isLoadingProviders = false;
   bool _isLoadingModels = false;
   bool _isSaving = false; // Track internal saving state
+  bool _showApiKey = false; // 控制API Key是否显示
 
   List<String> _providers = [];
   List<String> _models = [];
@@ -138,6 +144,12 @@ class _AiConfigFormState extends State<AiConfigForm> {
       });
       final bloc = context.read<AiConfigBloc>();
 
+      // 处理API密钥
+      String? apiKey = _apiKeyController.text.trim();
+      if (apiKey.isEmpty) {
+        apiKey = null;
+      }
+
       if (_isEditMode) {
         bloc.add(UpdateAiConfig(
           userId: widget.userId,
@@ -145,9 +157,7 @@ class _AiConfigFormState extends State<AiConfigForm> {
           alias: _aliasController.text.trim().isEmpty
               ? null
               : _aliasController.text.trim(),
-          apiKey: _apiKeyController.text.trim().isEmpty
-              ? null
-              : _apiKeyController.text.trim(),
+          apiKey: apiKey,
           apiEndpoint:
               _apiEndpointController.text.trim(), // Send empty string to clear
         ));
@@ -156,7 +166,7 @@ class _AiConfigFormState extends State<AiConfigForm> {
           userId: widget.userId,
           provider: _selectedProvider!,
           modelName: _selectedModel!,
-          apiKey: _apiKeyController.text.trim(),
+          apiKey: apiKey ?? "", // 如果为null，传递空字符串
           alias: _aliasController.text.trim().isEmpty
               ? _selectedModel
               : _aliasController.text.trim(),
@@ -167,11 +177,58 @@ class _AiConfigFormState extends State<AiConfigForm> {
     }
   }
 
+  // 处理模型选择
+  void _handleModelSelected(String model) {
+    setState(() {
+      _selectedModel = model;
+      // 设置别名默认为模型名称
+      if (_aliasController.text.isEmpty) {
+        _aliasController.text = model;
+      }
+    });
+  }
+
+  // 处理提供商选择
+  void _handleProviderSelected(String provider) {
+    print('⚠️ 处理提供商选择，从${_selectedProvider}切换到$provider');
+    
+    if (provider != _selectedProvider) {
+      setState(() {
+        _selectedProvider = provider;
+        _selectedModel = null;
+        // 清空之前可能填充的API信息，以确保使用新提供商的信息
+        if (!_isEditMode) {
+          _apiEndpointController.text = '';
+          _apiKeyController.text = '';
+        }
+      });
+      
+      // 加载新提供商的模型
+      _loadModels(provider);
+      
+      // 自动填充该提供商的API信息
+      // 这里不直接填充，而是通过Bloc事件和BlocListener来处理
+      _autoFillApiInfo(provider);
+    }
+  }
+
+  // 切换API Key的显示/隐藏
+  void _toggleApiKeyVisibility() {
+    setState(() {
+      _showApiKey = !_showApiKey;
+    });
+  }
+
+  // 自动填充API信息
+  void _autoFillApiInfo(String provider) {
+    // 发送获取该提供商默认配置的事件
+    // 实际的填充操作会在BlocListener中根据状态变化处理
+    print('⚠️ 调用_autoFillApiInfo，provider=$provider');
+    context.read<AiConfigBloc>().add(GetProviderDefaultConfig(provider: provider));
+  }
+
   @override
   Widget build(BuildContext context) {
-    // final l10n = AppLocalizations.of(context)!; // Use if available
-
-    // Use BlocListener to update local state based on Bloc changes
     return BlocListener<AiConfigBloc, AiConfigState>(
       listener: (context, state) {
         if (!mounted) return; // Ensure widget is still mounted
@@ -179,7 +236,6 @@ class _AiConfigFormState extends State<AiConfigForm> {
         bool needsSetState = false;
 
         // --- Provider Loading & List Update ---
-        // Stop loading if providers are loaded OR if there's a general error message (potential load failure)
         if (_isLoadingProviders &&
             (state.availableProviders.isNotEmpty ||
                 state.errorMessage != null)) {
@@ -192,7 +248,6 @@ class _AiConfigFormState extends State<AiConfigForm> {
         }
 
         // --- Model Loading & List Update ---
-        // Stop loading if models for the selected provider are loaded OR if there's a general error message
         if (state.selectedProviderForModels == _selectedProvider) {
           if (_isLoadingModels &&
               (state.modelsForProvider.isNotEmpty ||
@@ -208,20 +263,43 @@ class _AiConfigFormState extends State<AiConfigForm> {
             needsSetState = true;
           }
         } else if (_isLoadingModels) {
-          // If we were loading models, but state is for a different provider or error
           _isLoadingModels = false;
           needsSetState = true;
         }
+        
+        // --- 检测默认配置变化并填充API信息 ---
+        if (_selectedProvider != null) {
+          print('⚠️ BlocListener检测配置，provider=$_selectedProvider, 是否有配置=${state.providerDefaultConfigs.containsKey(_selectedProvider!)}');
+          
+          if (state.providerDefaultConfigs.containsKey(_selectedProvider!)) {
+            final defaultConfig = state.providerDefaultConfigs[_selectedProvider!];
+            print('⚠️ 找到配置：${defaultConfig?.id}，apiEndpoint=${defaultConfig?.apiEndpoint}，hasApiKey=${defaultConfig?.apiKey != null}');
+            
+            if (defaultConfig != null && defaultConfig.id.isNotEmpty) {
+              // 仅在非编辑模式下自动填充
+              if (!_isEditMode) {
+                if (_apiEndpointController.text.isEmpty && defaultConfig.apiEndpoint.isNotEmpty) {
+                  print('⚠️ 填充API Endpoint: ${defaultConfig.apiEndpoint}');
+                  _apiEndpointController.text = defaultConfig.apiEndpoint;
+                  needsSetState = true;
+                }
+                
+                if (_apiKeyController.text.isEmpty && defaultConfig.apiKey != null) {
+                  print('⚠️ 填充API Key: ${defaultConfig.apiKey!.substring(0, 3)}...');
+                  _apiKeyController.text = defaultConfig.apiKey!;
+                  _showApiKey = true; // 让用户看到API密钥以便确认
+                  needsSetState = true;
+                }
+              }
+            }
+          }
+        }
 
         // --- Saving State Update ---
-        // Stop saving indicator if action is no longer loading (success or error)
         if (_isSaving && state.actionStatus != AiConfigActionStatus.loading) {
-          // <<< Check if the action that just finished was a success >>>
           if (state.actionStatus == AiConfigActionStatus.success) {
-            // If *this form* was saving and it succeeded, trigger the cancel callback to close it.
             widget.onCancel();
           }
-          // Always reset _isSaving regardless of success/error
           _isSaving = false;
           needsSetState = true;
         }
@@ -230,190 +308,506 @@ class _AiConfigFormState extends State<AiConfigForm> {
           setState(() {});
         }
       },
-      child: SingleChildScrollView(
-        // Allows scrolling if content overflows
-        padding: const EdgeInsets.symmetric(
-            vertical: 8.0, horizontal: 4.0), // Add some padding
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         child: Form(
           key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min, // Take minimum vertical space
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              // --- Provider Dropdown ---
-              _buildDropdownFormField(
-                value: _selectedProvider,
-                hintText: '选择提供商', // Placeholder
-                labelText: '提供商', // Placeholder
-                items: _providers,
-                isLoading: _isLoadingProviders,
-                onChanged: _isEditMode
-                    ? null
-                    : (String? newValue) {
-                        if (newValue != null && newValue != _selectedProvider) {
-                          setState(() {
-                            _selectedProvider = newValue;
-                            _selectedModel = null; // Reset model
-                            _models = []; // Clear models
-                          });
-                          _loadModels(newValue);
-                        }
-                      },
-                validator: (value) =>
-                    value == null ? '请选择提供商' : null, // Placeholder
-                disabledHintValue:
-                    _selectedProvider, // Show value when disabled
-              ),
-              const SizedBox(height: 16),
-
-              // --- Model Dropdown ---
-              _buildDropdownFormField(
-                value: _selectedModel,
-                hintText: '选择模型', // Placeholder
-                labelText: '模型', // Placeholder
-                items: _models,
-                isLoading: _isLoadingModels,
-                // Disable if editing, or no provider selected, or models loading, or no models available
-                onChanged: (_isEditMode ||
-                        _selectedProvider == null ||
-                        _isLoadingModels ||
-                        _models.isEmpty)
-                    ? null
-                    : (String? newValue) {
-                        if (newValue != null) {
-                          setState(() {
-                            _selectedModel = newValue;
-                          });
-                        }
-                      },
-                validator: (value) =>
-                    value == null ? '请选择模型' : null, // Placeholder
-                disabledHintValue: _selectedModel, // Show value when disabled
-              ),
-              const SizedBox(height: 16),
-
-              // --- Alias ---
-              TextFormField(
-                controller: _aliasController,
-                decoration: InputDecoration(
-                  labelText: '别名 (可选)', // Placeholder
-                  hintText: '例如：我的 ${_selectedModel ?? '模型'}', // Placeholder
-                  border: const OutlineInputBorder(),
-                  contentPadding: const EdgeInsets.symmetric(
-                      vertical: 12.0, horizontal: 12.0), // Adjust padding
-                ),
-                // No validator, alias is optional
-              ),
-              const SizedBox(height: 16),
-
-              // --- API Key ---
-              TextFormField(
-                controller: _apiKeyController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: 'API Key', // Placeholder
-                  hintText: _isEditMode ? '留空则不更新' : null, // Placeholder
-                  border: const OutlineInputBorder(),
-                  contentPadding: const EdgeInsets.symmetric(
-                      vertical: 12.0, horizontal: 12.0),
-                ),
-                validator: (value) {
-                  if (!_isEditMode && (value == null || value.trim().isEmpty)) {
-                    return 'API Key 不能为空'; // Placeholder
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // --- API Endpoint ---
-              TextFormField(
-                controller: _apiEndpointController,
-                decoration: const InputDecoration(
-                  labelText: 'API Endpoint (可选)', // Placeholder
-                  hintText: '例如： https://api.openai.com/v1', // Placeholder
-                  border: OutlineInputBorder(),
-                  contentPadding:
-                      EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0),
-                ),
-                // No validator, endpoint is optional
-              ),
-              const SizedBox(height: 24), // Space before buttons
-
-              // --- Action Buttons ---
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: _isSaving ? null : widget.onCancel,
-                    child: const Text('取消'), // Placeholder
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+              // 标题
+                Text(
+                  _isEditMode ? '编辑模型服务' : '添加新模型服务',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: _isSaving ? null : _submitForm,
-                    child: _isSaving
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
-                        : Text(_isEditMode ? '保存更改' : '添加'), // Placeholder
+                ),
+                const SizedBox(height: 16),
+
+                // 主要内容区域 - 左右布局
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 左侧提供商列表
+                      if (!_isEditMode) // 在编辑模式下不显示左侧列表
+                        SizedBox(
+                          width: 180,
+                          child: ProviderList(
+                            providers: _providers,
+                            selectedProvider: _selectedProvider,
+                            onProviderSelected: _handleProviderSelected,
+                          ),
+                        ),
+                      
+                      if (!_isEditMode)
+                        const SizedBox(width: 16),
+                      
+                      // 右侧配置区域
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Provider显示（仅编辑模式）
+                            if (_isEditMode && _selectedProvider != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: Text(
+                                  '提供商: $_selectedProvider',
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+
+                            // 模型搜索框（仅添加模式）
+                            if (!_isEditMode && _selectedProvider != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '选择模型',
+                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w500,
+                                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    SizedBox(
+                                      height: 36,
+                                      child: SearchableModelDropdown(
+                                        models: _models,
+                                        onModelSelected: _handleModelSelected,
+                                        hintText: '搜索可用模型',
+                                      ),
+                    ),
+                  ],
+                ),
+                              ),
+
+                            // 已选模型显示（仅添加模式）
+                            if (!_isEditMode && _selectedModel != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: Text(
+                                  '已选模型: $_selectedModel',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            
+                            // 模型显示（仅编辑模式）
+                            if (_isEditMode && _selectedModel != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: Text(
+                                  '模型: $_selectedModel',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+
+                            // 别名输入框
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '别名 (可选)',
+                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w500,
+                                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  SizedBox(
+                                    height: 36,
+                child: TextFormField(
+                  controller: _aliasController,
+                                      style: Theme.of(context).textTheme.bodyMedium,
+                  decoration: InputDecoration(
+                                        hintText: '例如：我的 ${_selectedModel ?? '模型'}',
+                                        hintStyle: TextStyle(
+                                          fontSize: 13,
+                                          color: Theme.of(context).hintColor.withOpacity(0.7),
+                                        ),
+                    border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                                            color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                        width: 1.0,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                                            color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                        width: 1.0,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 1.5,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                                          horizontal: 12, 
+                                          vertical: 0
+                                        ),
+                    filled: true,
+                    fillColor: Theme.of(context).brightness == Brightness.dark
+                                          ? Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3)
+                                          : Theme.of(context).colorScheme.surfaceContainerLowest.withOpacity(0.7),
+                                      ),
+                                    ),
+                    ),
+                  ],
+                ),
+                            ),
+
+                            // API Key输入框
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'API Key',
+                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w500,
+                                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: SizedBox(
+                                          height: 36,
+                child: TextFormField(
+                  controller: _apiKeyController,
+                                            obscureText: !_showApiKey,
+                                            style: Theme.of(context).textTheme.bodyMedium,
+                  decoration: InputDecoration(
+                                              hintText: _isEditMode ? '留空则不更新' : '输入您的API密钥',
+                                              hintStyle: TextStyle(
+                                                fontSize: 13,
+                                                color: Theme.of(context).hintColor.withOpacity(0.7),
+                                              ),
+                    border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                                                  color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                        width: 1.0,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                                                  color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                        width: 1.0,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 1.5,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                                                horizontal: 12, 
+                                                vertical: 0
+                                              ),
+                    filled: true,
+                    fillColor: Theme.of(context).brightness == Brightness.dark
+                                                ? Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3)
+                                                : Theme.of(context).colorScheme.surfaceContainerLowest.withOpacity(0.7),
+                                              suffixIcon: IconButton(
+                                                icon: Icon(
+                                                  _showApiKey ? Icons.visibility_off : Icons.visibility,
+                                                  size: 18,
+                                                ),
+                                                onPressed: _toggleApiKeyVisibility,
+                                              ),
                   ),
-                ],
+                  validator: (value) {
+                    if (!_isEditMode && (value == null || value.trim().isEmpty)) {
+                                                return 'API Key 不能为空';
+                    }
+                    return null;
+                  },
+                ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  
+                                  // 如果有该提供商的已配置密钥，显示提示
+                                  if (!_isEditMode && _selectedProvider != null)
+                                    BlocBuilder<AiConfigBloc, AiConfigState>(
+                                      builder: (context, state) {
+                                        final defaultConfig = state.getProviderDefaultConfig(_selectedProvider!);
+                                        final hasFilledApiKey = _apiKeyController.text.isNotEmpty;
+                                        
+                                        if (defaultConfig != null && defaultConfig.id.isNotEmpty && hasFilledApiKey) {
+                                          return Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.check_circle_outline,
+                                                  size: 14,
+                                                  color: Colors.green,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Expanded(
+                                                  child: Text(
+                                                    '已填充该提供商的API密钥，请确认或修改',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: Colors.green,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }
+                                        return const SizedBox.shrink();
+                                      },
+                                    ),
+                  ],
+                ),
+                            ),
+
+                            // API Endpoint输入框
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'API Endpoint (可选)',
+                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w500,
+                                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: SizedBox(
+                                          height: 36,
+                child: TextFormField(
+                  controller: _apiEndpointController,
+                                            style: Theme.of(context).textTheme.bodyMedium,
+                  decoration: InputDecoration(
+                                              hintText: '例如：https://api.openai.com/v1',
+                                              hintStyle: TextStyle(
+                                                fontSize: 13,
+                                                color: Theme.of(context).hintColor.withOpacity(0.7),
+                                              ),
+                    border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                                                  color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                        width: 1.0,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                                                  color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                        width: 1.0,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 1.5,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                                                horizontal: 12, 
+                                                vertical: 0
+                                              ),
+                    filled: true,
+                    fillColor: Theme.of(context).brightness == Brightness.dark
+                                                ? Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3)
+                                                : Theme.of(context).colorScheme.surfaceContainerLowest.withOpacity(0.7),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  
+                                  // 如果有该提供商的已配置API地址，显示提示
+                                  if (!_isEditMode && _selectedProvider != null)
+                                    BlocBuilder<AiConfigBloc, AiConfigState>(
+                                      builder: (context, state) {
+                                        final defaultConfig = state.getProviderDefaultConfig(_selectedProvider!);
+                                        if (defaultConfig != null && defaultConfig.id.isNotEmpty && defaultConfig.apiEndpoint.isNotEmpty) {
+                                          return Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.info_outline,
+                                                  size: 14,
+                                                  color: Theme.of(context).colorScheme.primary,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Expanded(
+                                                  child: Text(
+                                                    '已使用该提供商的API地址: ${defaultConfig.apiEndpoint}',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: Theme.of(context).colorScheme.primary,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }
+                                        return const SizedBox.shrink();
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
+
+                            // 模型分组列表（仅在选择了提供商时显示）
+                            if (!_isEditMode && _selectedProvider != null && !_isLoadingModels)
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '可用模型',
+                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w500,
+                                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Expanded(
+                                      child: BlocBuilder<AiConfigBloc, AiConfigState>(
+                                        builder: (context, state) {
+                                          final modelGroup = state.modelGroups[_selectedProvider];
+                                          if (modelGroup == null) {
+                                            return const Center(
+                                              child: Text('没有可用的模型', style: TextStyle(fontSize: 13)),
+                                            );
+                                          }
+                                          return SingleChildScrollView(
+                                            child: Padding(
+                                              padding: const EdgeInsets.only(top: 4),
+                                              child: ModelGroupList(
+                                                modelGroup: modelGroup,
+                                                onModelSelected: _handleModelSelected,
+                                                selectedModel: _selectedModel,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            
+                            // 加载中提示
+                            if (_isLoadingModels)
+                              const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 底部按钮区域
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // 调试按钮
+                    if (!kReleaseMode) // 只在调试模式显示
+                      TextButton(
+                        onPressed: () {
+                          final configs = context.read<AiConfigBloc>().state.providerDefaultConfigs;
+                          print('⚠️ 当前所有提供商默认配置:');
+                          configs.forEach((provider, config) {
+                            print('⚠️ 提供商=$provider, configId=${config.id}, hasApiKey=${config.apiKey != null}');
+                          });
+                        },
+                        child: const Text('打印配置', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      ),
+                      
+                    const Spacer(),
+                      
+                    OutlinedButton(
+                      onPressed: _isSaving ? null : widget.onCancel,
+                      style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                        ),
+                        side: BorderSide(
+                            color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                            width: 1.0,
+                          ),
+                        ),
+                        child: const Text('取消', style: TextStyle(fontSize: 13)),
+                      ),
+                      const SizedBox(width: 12),
+                    ElevatedButton(
+                        onPressed: _isSaving || (_selectedModel == null && !_isEditMode) ? null : _submitForm,
+                      style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                          elevation: 1,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                      ),
+                      child: _isSaving
+                          ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                            : Text(_isEditMode ? '保存更改' : '添加', style: const TextStyle(fontSize: 13)),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  // Helper to build consistent dropdowns
-  Widget _buildDropdownFormField({
-    required String? value,
-    required String hintText,
-    required String labelText,
-    required List<String> items,
-    required bool isLoading,
-    required ValueChanged<String?>? onChanged,
-    required FormFieldValidator<String>? validator,
-    required String? disabledHintValue,
-  }) {
-    return DropdownButtonFormField<String>(
-      value:
-          items.contains(value) ? value : null, // Ensure value exists in items
-      hint: Text(hintText),
-      isExpanded: true,
-      onChanged: onChanged,
-      items: items.map<DropdownMenuItem<String>>((String itemValue) {
-        return DropdownMenuItem<String>(
-          value: itemValue,
-          child: Text(itemValue, overflow: TextOverflow.ellipsis),
-        );
-      }).toList(),
-      validator: validator,
-      decoration: InputDecoration(
-        labelText: labelText,
-        border: const OutlineInputBorder(),
-        contentPadding: const EdgeInsets.symmetric(
-            vertical: 12.0, horizontal: 12.0), // Adjust padding
-        suffixIcon: isLoading
-            ? const Padding(
-                padding: EdgeInsets.all(10.0),
-                child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2)))
-            : null,
       ),
-      disabledHint: disabledHintValue != null
-          ? Text(disabledHintValue,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: Theme.of(context).disabledColor))
-          : null,
-      style: onChanged == null
-          ? TextStyle(color: Theme.of(context).disabledColor)
-          : null,
     );
   }
 }

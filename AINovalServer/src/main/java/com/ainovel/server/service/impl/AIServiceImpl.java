@@ -1,5 +1,6 @@
 package com.ainovel.server.service.impl;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 import com.ainovel.server.config.ProxyConfig;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
+import com.ainovel.server.domain.model.ModelInfo;
 import com.ainovel.server.service.AIService;
 import com.ainovel.server.service.ai.AIModelProvider;
 import com.ainovel.server.service.ai.AnthropicModelProvider;
@@ -20,6 +22,7 @@ import com.ainovel.server.service.ai.SiliconFlowModelProvider;
 import com.ainovel.server.service.ai.langchain4j.AnthropicLangChain4jModelProvider;
 import com.ainovel.server.service.ai.langchain4j.GeminiLangChain4jModelProvider;
 import com.ainovel.server.service.ai.langchain4j.OpenAILangChain4jModelProvider;
+import com.ainovel.server.service.ai.langchain4j.OpenRouterLangChain4jModelProvider;
 import com.ainovel.server.service.ai.langchain4j.SiliconFlowLangChain4jModelProvider;
 
 import lombok.extern.slf4j.Slf4j;
@@ -79,6 +82,20 @@ public class AIServiceImpl implements AIService {
                 "google/gemma-2-9b-it",
                 "meta-llama/Meta-Llama-3.1-70B-Instruct",
                 "meta-llama/Meta-Llama-3.1-70B-Instruct"
+        ));
+
+        modelGroups.put("openrouter", List.of(
+                "openai/gpt-3.5-turbo",
+                "openai/gpt-4",
+                "openai/gpt-4-turbo",
+                "openai/gpt-4o",
+                "anthropic/claude-3-opus",
+                "anthropic/claude-3-sonnet",
+                "anthropic/claude-3-haiku",
+                "google/gemini-pro",
+                "google/gemini-1.5-pro",
+                "meta-llama/llama-3-70b-instruct",
+                "meta-llama/llama-3-8b-instruct"
         ));
     }
 
@@ -217,6 +234,81 @@ public class AIServiceImpl implements AIService {
     }
 
     @Override
+    public Flux<ModelInfo> getModelInfosForProvider(String provider) {
+        if (!StringUtils.isNotBlank(provider)) {
+            return Flux.error(new IllegalArgumentException("提供商名称不能为空"));
+        }
+
+        String lowerCaseProvider = provider.toLowerCase();
+        if (!modelGroups.containsKey(lowerCaseProvider)) {
+            log.warn("请求未知的提供商 '{}'", provider);
+            return Flux.error(new IllegalArgumentException("未知的提供商: " + provider));
+        }
+
+        // 创建一个临时的提供商实例来获取模型列表
+        // 对于不需要API密钥的提供商，可以直接获取模型列表
+        try {
+            if (lowerCaseProvider.equals("openrouter")) {
+                // OpenRouter不需要API密钥就能获取模型列表
+                AIModelProvider provider1 = createAIModelProvider(lowerCaseProvider,
+                        modelGroups.get(lowerCaseProvider).get(0),
+                        "dummy-key", null);
+                if (provider1 != null) {
+                    return provider1.listModels();
+                }
+            }
+
+            // 对于其他提供商，创建一个空的模型列表，并根据模型分组信息填充
+            List<ModelInfo> models = new ArrayList<>();
+            List<String> modelNames = modelGroups.get(lowerCaseProvider);
+
+            for (String modelName : modelNames) {
+                models.add(ModelInfo.basic(modelName, modelName, lowerCaseProvider)
+                        .withDescription(lowerCaseProvider + "的" + modelName + "模型")
+                        .withMaxTokens(8192) // 默认值
+                        .withUnifiedPrice(0.001)); // 默认价格
+            }
+
+            return Flux.fromIterable(models);
+        } catch (Exception e) {
+            log.error("获取提供商模型信息时出错: {}", e.getMessage(), e);
+            return Flux.empty();
+        }
+    }
+
+    @Override
+    public Flux<ModelInfo> getModelInfosForProviderWithApiKey(String provider, String apiKey, String apiEndpoint) {
+        if (!StringUtils.isNotBlank(provider)) {
+            return Flux.error(new IllegalArgumentException("提供商名称不能为空"));
+        }
+
+        if (!StringUtils.isNotBlank(apiKey)) {
+            return Flux.error(new IllegalArgumentException("API密钥不能为空"));
+        }
+
+        String lowerCaseProvider = provider.toLowerCase();
+        if (!modelGroups.containsKey(lowerCaseProvider)) {
+            log.warn("请求未知的提供商 '{}'", provider);
+            return Flux.error(new IllegalArgumentException("未知的提供商: " + provider));
+        }
+
+        // 创建一个临时的提供商实例来获取模型列表
+        try {
+            AIModelProvider provider1 = createAIModelProvider(lowerCaseProvider,
+                    modelGroups.get(lowerCaseProvider).get(0),
+                    apiKey, apiEndpoint);
+            if (provider1 != null) {
+                return provider1.listModelsWithApiKey(apiKey, apiEndpoint);
+            }
+
+            return Flux.empty();
+        } catch (Exception e) {
+            log.error("获取提供商模型信息时出错: {}", e.getMessage(), e);
+            return Flux.empty();
+        }
+    }
+
+    @Override
     public AIModelProvider createAIModelProvider(String provider, String modelName, String apiKey, String apiEndpoint) {
         String lowerCaseProvider = provider.toLowerCase();
         if (!StringUtils.isNotBlank(apiKey)) {
@@ -249,6 +341,8 @@ public class AIServiceImpl implements AIService {
                         new GeminiLangChain4jModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
                     case "siliconflow" ->
                         new SiliconFlowLangChain4jModelProvider(modelName, apiKey, apiEndpoint);
+                    case "openrouter" ->
+                        new OpenRouterLangChain4jModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
                     default -> {
                         log.error("LangChain4j 模式下不支持的提供商: {}", lowerCaseProvider);
                         yield null;
@@ -264,6 +358,9 @@ public class AIServiceImpl implements AIService {
                         new GeminiModelProvider(modelName, apiKey, apiEndpoint);
                     case "siliconflow" ->
                         new SiliconFlowModelProvider(modelName, apiKey, apiEndpoint);
+                    case "openrouter" ->
+                        // 对于非LangChain4j模式，我们可以使用OpenAI的实现，因为OpenRouter兼容OpenAI的API
+                        new OpenAIModelProvider(modelName, apiKey, apiEndpoint != null ? apiEndpoint : "https://openrouter.ai/api/v1");
                     default -> {
                         log.error("原始模式下不支持的提供商: {}", lowerCaseProvider);
                         yield null;

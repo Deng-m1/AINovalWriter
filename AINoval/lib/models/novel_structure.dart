@@ -465,12 +465,45 @@ class Scene {
 
   /// 从JSON创建Scene实例
   factory Scene.fromJson(Map<String, dynamic> json) {
+    // 创建安全的Summary对象
+    Summary summaryObj;
+    try {
+      if (json.containsKey('summary') && json['summary'] is Map<String, dynamic>) {
+        summaryObj = Summary.fromJson(json['summary'] as Map<String, dynamic>);
+      } else {
+        // 创建默认Summary
+        final sceneId = json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString();
+        summaryObj = Summary(
+          id: '${sceneId}_summary',
+          content: '',
+        );
+        AppLogger.w('Scene.fromJson', '场景 $sceneId 的摘要字段格式不正确，已创建默认摘要');
+      }
+    } catch (e) {
+      // 处理任何异常，创建默认Summary
+      final sceneId = json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString();
+      summaryObj = Summary(
+        id: '${sceneId}_summary',
+        content: '',
+      );
+      AppLogger.e('Scene.fromJson', '解析场景 $sceneId 的摘要时出错', e);
+    }
+    
+    // 安全解析lastEdited字段
+    DateTime lastEditedDate;
+    try {
+      lastEditedDate = DateTime.parse(json['lastEdited'] as String);
+    } catch (e) {
+      lastEditedDate = DateTime.now();
+      AppLogger.w('Scene.fromJson', '解析场景 ${json['id']} 的lastEdited字段失败，使用当前时间');
+    }
+    
     return Scene(
-      id: json['id'],
+      id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
       content: json['content'] ?? '',
       wordCount: json['wordCount'] ?? 0,
-      summary: Summary.fromJson(json['summary'] as Map<String, dynamic>),
-      lastEdited: DateTime.parse(json['lastEdited'] as String),
+      summary: summaryObj,
+      lastEdited: lastEditedDate,
       title: json['title'] ?? '',
       actId: json['actId'] ?? '',
       chapterId: json['chapterId'] ?? '',
@@ -555,14 +588,15 @@ class Scene {
 
   /// 创建一个默认的场景
   static Scene createDefault(String sceneIdBase) {
-    const defaultContent = '{"ops":[{"insert":"\\n"}]}'; // <-- 确保是这个值
+    // 使用正确Quill Delta格式包含ops对象的内容
+    const defaultContent = '{"ops":[{"insert":"\\n"}]}';
     final now = DateTime.now();
     return Scene(
       id: sceneIdBase,
       content: defaultContent,
       wordCount: 0,
       summary: Summary(
-        id: '${DateTime.now().millisecondsSinceEpoch}_summary',
+        id: '${sceneIdBase}_summary',
         content: '',
       ),
       lastEdited: now,

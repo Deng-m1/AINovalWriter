@@ -283,6 +283,36 @@ public class UserAIModelConfigController {
         return configsFlux.map(UserAIModelConfigResponse::fromEntity).collectList();
     }
 
+    @PostMapping("/users/{userId}/list-with-api-keys")
+    @Operation(summary = "列出用户所有的AI模型配置(包含解密后的API密钥)")
+    public Mono<List<UserAIModelConfigResponse>> listConfigurationsWithApiKeys(
+            @Parameter(description = "用户ID", required = true) @PathVariable String userId,
+            @RequestBody(required = false) ListUserConfigsRequest request) {
+        boolean validatedOnly = request != null && request.validatedOnly() != null && request.validatedOnly();
+        log.debug("Request to list configs with API keys for user {}: validatedOnly={}", userId, validatedOnly);
+        Flux<UserAIModelConfig> configsFlux = validatedOnly
+                ? configService.listValidatedConfigurations(userId)
+                : configService.listConfigurations(userId);
+                
+        return configsFlux
+                .flatMap(config -> {
+                    // 获取解密后的API密钥
+                    return configService.getDecryptedApiKey(userId, config.getId())
+                            .map(decryptedKey -> {
+                                // 创建包含解密API密钥的响应
+                                UserAIModelConfigResponse response = UserAIModelConfigResponse.fromEntity(config);
+                                // 在这里添加解密后的API密钥到响应中
+                                return response.withApiKey(decryptedKey);
+                            })
+                            .onErrorResume(e -> {
+                                log.warn("无法解密API密钥 for config {}: {}", config.getId(), e.getMessage());
+                                // 如果解密失败，仍然返回配置，但不包含API密钥
+                                return Mono.just(UserAIModelConfigResponse.fromEntity(config));
+                            });
+                })
+                .collectList();
+    }
+
     @PostMapping("/users/{userId}/get/{configId}")
     @Operation(summary = "获取指定ID的用户AI模型配置")
     public Mono<ResponseEntity<UserAIModelConfigResponse>> getConfigurationById(

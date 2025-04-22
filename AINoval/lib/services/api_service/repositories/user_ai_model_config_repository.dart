@@ -18,7 +18,7 @@ abstract interface class UserAIModelConfigRepository {
     String? apiEndpoint,
   });
 
-  /// 列出用户所有的AI模型配置
+  /// 列出用户所有的AI模型配置，包含解密后的API密钥
   /// [validatedOnly] 为 true 时，只返回已验证的配置
   Future<List<UserAIModelConfigModel>> listConfigurations({
     required String userId,

@@ -99,8 +99,6 @@ void main() async {
 
   AppLogger.i('Main', '应用程序初始化完成，准备启动界面');
 
-  AppLogger.i('Main', '应用程序初始化完成，准备启动界面');
-
   runApp(
     MultiRepositoryProvider(
       providers: [
@@ -130,7 +128,7 @@ void main() async {
           BlocProvider<NovelListBloc>(
             create: (context) => NovelListBloc(
               repository: context.read<NovelRepository>(),
-            )..add(LoadNovels()),
+            ),
           ),
           BlocProvider<AiConfigBloc>(
             create: (context) => AiConfigBloc(

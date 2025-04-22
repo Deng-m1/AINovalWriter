@@ -19,7 +19,9 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
     this.onWritePressed, // 新增可选参数
     this.onAIGenerationPressed,
     this.onAISummaryPressed,
+    this.onNextOutlinePressed,
     this.isAIGenerationActive = false,
+    this.isNextOutlineActive = false,
   });
   final String novelTitle;
   final int wordCount;
@@ -35,7 +37,9 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
   final VoidCallback? onWritePressed;
   final VoidCallback? onAIGenerationPressed;
   final VoidCallback? onAISummaryPressed;
+  final VoidCallback? onNextOutlinePressed;
   final bool isAIGenerationActive;
+  final bool isNextOutlineActive;
 
   @override
   Widget build(BuildContext context) {
@@ -171,6 +175,15 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
                     onPressed: null, // 由 PopupMenuButton 处理点击事件
                   ),
                 ),
+              ),
+
+              // 剧情推演按钮
+              _buildNavButton(
+                context: context,
+                icon: Icons.psychology_outlined,
+                label: '剧情推演',
+                isActive: isNextOutlineActive,
+                onPressed: onNextOutlinePressed ?? () {},
               ),
 
               // 聊天按钮

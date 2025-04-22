@@ -7,6 +7,7 @@ import 'package:ainoval/services/api_service/repositories/impl/editor_repository
 import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/utils/word_count_analyzer.dart';
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 part 'editor_event.dart';
@@ -188,8 +189,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     }
 
     // 如果已经在加载中，直接返回以防重复加载
-    if (currentState.isLoading) {
-      AppLogger.d('Blocs/editor/editor_bloc', '已有加载任务正在进行，忽略此次加载请求');
+    if (currentState.isLoading && event.skipIfLoading) {
+      AppLogger.d('Blocs/editor/editor_bloc', '已有加载任务正在进行且标记为跳过，忽略此次加载请求');
       return;
     }
 
@@ -202,58 +203,172 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     }
     _lastLoadRequestTime = now;
 
-    // 标记为正在加载更多
-    emit(currentState.copyWith(isLoading: true));
+    // 对于滚动触发的加载，不更新UI状态
+    // 标记为正在加载更多, 但如果是滚动触发的加载且要求防止焦点变化，则不发送加载状态，避免UI重建
+    final bool isScrollTriggered = event.direction == 'up' || event.direction == 'down';
+    final bool shouldSkipLoadingState = isScrollTriggered && event.preventFocusChange;
+    
+    if (!shouldSkipLoadingState) {
+      emit(currentState.copyWith(isLoading: true));
+    }
 
     try {
+      // 记录详细的加载请求日志
       AppLogger.i('Blocs/editor/editor_bloc',
-          '开始加载更多场景: 章节=${event.fromChapterId}, 方向=${event.direction}, 限制=${event.chaptersLimit}');
+          '开始加载更多场景: 章节ID=${event.fromChapterId}, 方向=${event.direction}, 章节限制=${event.chaptersLimit}, 防止焦点变化=${event.preventFocusChange}');
+      
+      // 特殊处理center方向，记录更明确的信息
+      if (event.direction == 'center') {
+        AppLogger.i('Blocs/editor/editor_bloc', '以章节 ${event.fromChapterId} 为中心加载场景');
+        
+        // 尝试查找章节信息
+        String chapterTitle = '未知章节';
+        String actTitle = '未知Act';
+        for (final act in currentState.novel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == event.fromChapterId) {
+              chapterTitle = chapter.title;
+              actTitle = act.title;
+              break;
+            }
+          }
+        }
+        
+        AppLogger.i('Blocs/editor/editor_bloc', '目标章节: "$chapterTitle" (在 "$actTitle" 中)');
+      }
 
-      // 调用加载更多场景的API
-      final newScenes = await repository.loadMoreScenes(
-        novelId,
-        event.fromChapterId,
-        event.direction,
-        chaptersLimit: event.chaptersLimit,
-      );
+      // 根据loadFromLocalOnly参数决定是从API加载还是从本地加载
+      Map<String, List<novel_models.Scene>> newScenes;
+      if (event.loadFromLocalOnly) {
+        // 尝试从本地加载场景
+        newScenes = await _loadScenesFromLocal(
+          event.fromChapterId, 
+          event.direction,
+          chaptersLimit: event.chaptersLimit,
+        );
+        
+        if (newScenes.isEmpty) {
+          AppLogger.i('Blocs/editor/editor_bloc', '本地没有可加载的场景，需要从API加载');
+          
+          // 如果本地没有场景且不阻止API加载，则从API加载
+          if (!event.skipAPIFallback) {
+            AppLogger.i('Blocs/editor/editor_bloc', '从API加载章节 ${event.fromChapterId} 的场景');
+            newScenes = await repository.loadMoreScenes(
+              novelId,
+              event.fromChapterId,
+              event.direction,
+              chaptersLimit: event.chaptersLimit,
+            );
+          } else {
+            // 仅当之前更新了加载状态时才发送状态更新
+            if (!shouldSkipLoadingState) {
+              emit(currentState.copyWith(isLoading: false));
+            }
+            return;
+          }
+        } else {
+          AppLogger.i('Blocs/editor/editor_bloc', '成功从本地加载场景: ${newScenes.length}个章节');
+        }
+      } else {
+        // 调用加载更多场景的API
+        AppLogger.i('Blocs/editor/editor_bloc', '从API加载章节 ${event.fromChapterId} 的场景 (方向=${event.direction})');
+        newScenes = await repository.loadMoreScenes(
+          novelId,
+          event.fromChapterId,
+          event.direction,
+          chaptersLimit: event.chaptersLimit,
+        );
+      }
 
       if (newScenes.isEmpty) {
         // 没有更多场景可加载，恢复原状态，但标记加载已结束
-        AppLogger.i('Blocs/editor/editor_bloc', '没有更多场景可加载');
-        emit(currentState.copyWith(isLoading: false));
+        AppLogger.i('Blocs/editor/editor_bloc', '没有更多场景可加载，API返回为空');
+        // 仅当之前更新了加载状态时才发送状态更新
+        if (!shouldSkipLoadingState) {
+          emit(currentState.copyWith(isLoading: false));
+        }
         return;
       }
 
       // 将新加载的场景合并到当前小说结构中
       final updatedNovel = _mergeNewScenes(currentState.novel, newScenes);
 
+      // 记录详细的加载结果
+      int totalScenes = 0;
+      StringBuffer loadedChapters = StringBuffer();
+      int i = 0;
+      for (final chapterId in newScenes.keys) {
+        final sceneCount = newScenes[chapterId]?.length ?? 0;
+        totalScenes += sceneCount;
+        
+        // 查找章节标题
+        String chapterTitle = chapterId;
+        for (final act in updatedNovel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == chapterId) {
+              chapterTitle = chapter.title;
+              break;
+            }
+          }
+        }
+        
+        if (i > 0) loadedChapters.write(', ');
+        loadedChapters.write('"$chapterTitle" (${sceneCount}个场景)');
+        i++;
+      }
+      
       AppLogger.i('Blocs/editor/editor_bloc',
-          '成功加载更多场景: ${newScenes.keys.length}个章节, ${newScenes.values.fold(0, (sum, scenes) => sum + scenes.length)}个场景');
+          '成功加载更多场景: ${newScenes.keys.length}个章节, 共$totalScenes个场景');
+      AppLogger.i('Blocs/editor/editor_bloc',
+          '加载的章节: ${loadedChapters.toString()}');
 
-      // 如果是中心加载并且指定了章节，将活动章节设置为该章节
+      // 确定活动章节和场景
       String? newActiveChapterId = currentState.activeChapterId;
       String? newActiveActId = currentState.activeActId;
       String? newActiveSceneId = currentState.activeSceneId;
 
-      if (event.direction == 'center') {
-        // 查找包含该章节的Act
+      // 只有明确提供了targetSceneId时才设置活动场景，且preventFocusChange为false
+      if (!event.preventFocusChange && event.targetSceneId != null && 
+          event.targetActId != null && event.targetChapterId != null) {
+        // 先检查目标场景是否存在于更新后的小说结构中
+        bool sceneExists = false;
+        
+        // 遍历确认目标场景是否存在
         for (final act in updatedNovel.acts) {
-          for (final chapter in act.chapters) {
-            if (chapter.id == event.fromChapterId && chapter.scenes.isNotEmpty) {
-              newActiveChapterId = chapter.id;
-              newActiveActId = act.id;
-              newActiveSceneId = chapter.scenes.first.id;
-              break;
+          if (act.id == event.targetActId) {
+            for (final chapter in act.chapters) {
+              if (chapter.id == event.targetChapterId) {
+                for (final scene in chapter.scenes) {
+                  if (scene.id == event.targetSceneId) {
+                    sceneExists = true;
+                    break;
+                  }
+                }
+                break;
+              }
             }
+            break;
           }
-          if (newActiveChapterId == event.fromChapterId) break;
         }
+        
+        if (sceneExists) {
+          AppLogger.i('Blocs/editor/editor_bloc', 
+            '找到目标场景，设置为活动场景: actId=${event.targetActId}, chapterId=${event.targetChapterId}, sceneId=${event.targetSceneId}');
+          newActiveActId = event.targetActId;
+          newActiveChapterId = event.targetChapterId;
+          newActiveSceneId = event.targetSceneId;
+        } else {
+          AppLogger.w('Blocs/editor/editor_bloc', 
+            '未找到目标场景: actId=${event.targetActId}, chapterId=${event.targetChapterId}, sceneId=${event.targetSceneId}');
+        }
+      } else if (event.preventFocusChange) {
+        AppLogger.d('Blocs/editor/editor_bloc', '预加载场景，不改变活动场景');
       }
 
       emit(currentState.copyWith(
         novel: updatedNovel,
         isLoading: false,
-        // 如果center模式找到对应章节，更新活动状态
+        // 更新活动状态
         activeChapterId: newActiveChapterId,
         activeActId: newActiveActId,
         activeSceneId: newActiveSceneId,
@@ -261,12 +376,94 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     } catch (e) {
       AppLogger.e('Blocs/editor/editor_bloc', '加载更多场景失败', e);
 
-      // 出错时恢复原状态，但标记加载已结束
-      emit(currentState.copyWith(
-        isLoading: false,
-        errorMessage: '加载更多场景失败: ${e.toString()}',
-      ));
+      // 仅当之前更新了加载状态时才发送错误状态
+      if (!shouldSkipLoadingState) {
+        // 出错时恢复原状态，但标记加载已结束
+        emit(currentState.copyWith(
+          isLoading: false,
+          errorMessage: '加载更多场景失败: ${e.toString()}',
+        ));
+      }
     }
+  }
+
+  // 从本地加载场景数据（不触发网络请求）
+  Future<Map<String, List<novel_models.Scene>>> _loadScenesFromLocal(
+    String fromChapterId,
+    String direction, {
+    int chaptersLimit = 3,
+  }) async {
+    // 获取当前小说结构
+    final novel = (state as EditorLoaded).novel;
+    
+    // 查找所有章节
+    List<novel_models.Chapter> allChapters = [];
+    String? targetActId;
+    
+    // 收集所有章节并找到目标章节的Act
+    for (final act in novel.acts) {
+      for (final chapter in act.chapters) {
+        allChapters.add(chapter);
+        if (chapter.id == fromChapterId) {
+          targetActId = act.id;
+        }
+      }
+    }
+    
+    // 如果找不到目标Act，返回空结果
+    if (targetActId == null) {
+      AppLogger.w('Blocs/editor/editor_bloc', '找不到章节 $fromChapterId 所属的Act，无法从本地加载场景');
+      return {};
+    }
+    
+    // 按顺序排序章节
+    allChapters.sort((a, b) => a.order.compareTo(b.order));
+    
+    // 找到目标章节的索引
+    final targetIndex = allChapters.indexWhere((chapter) => chapter.id == fromChapterId);
+    if (targetIndex == -1) {
+      AppLogger.w('Blocs/editor/editor_bloc', '在排序后的章节列表中找不到目标章节 $fromChapterId');
+      return {};
+    }
+    
+    // 确定要加载的章节范围
+    List<novel_models.Chapter> chaptersToLoad = [];
+    
+    if (direction == 'up') {
+      // 向上加载
+      final startIndex = (targetIndex - chaptersLimit).clamp(0, allChapters.length - 1);
+      chaptersToLoad = allChapters.sublist(startIndex, targetIndex + 1);
+    } else if (direction == 'down') {
+      // 向下加载
+      final endIndex = (targetIndex + chaptersLimit).clamp(0, allChapters.length - 1);
+      chaptersToLoad = allChapters.sublist(targetIndex, endIndex + 1);
+    } else { // center
+      // 以目标章节为中心加载
+      final startIndex = (targetIndex - (chaptersLimit ~/ 2)).clamp(0, allChapters.length - 1);
+      final endIndex = (targetIndex + (chaptersLimit ~/ 2)).clamp(0, allChapters.length - 1);
+      chaptersToLoad = allChapters.sublist(startIndex, endIndex + 1);
+    }
+    
+    // 创建结果集，保持原始接口返回格式
+    final result = <String, List<novel_models.Scene>>{};
+    for (final chapter in chaptersToLoad) {
+      if (chapter.scenes.isEmpty) {
+        // 对于空场景的章节，查询本地存储尝试加载场景
+        try {
+          final scenes = await repository.getLocalScenesForChapter(novelId, targetActId, chapter.id);
+          if (scenes.isNotEmpty) {
+            result[chapter.id] = scenes;
+          }
+        } catch (e) {
+          AppLogger.e('Blocs/editor/editor_bloc', '从本地存储加载章节 ${chapter.id} 的场景失败', e);
+        }
+      } else {
+        // 对于已经有场景的章节，直接加入结果集
+        result[chapter.id] = chapter.scenes;
+      }
+    }
+    
+    return result;
   }
 
   Future<void> _onUpdateContent(
@@ -1508,17 +1705,50 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
                 .where((scene) => !existingSceneIds.contains(scene.id))
                 .toList();
 
+            // 如果没有新场景但存在场景内容为空的情况，使用新加载的场景覆盖
+            final List<novel_models.Scene> scenesToUpdate = [];
             if (newUniqueScenesForChapter.isEmpty) {
+              // 检查是否有内容为空的场景需要更新
+              for (final existingScene in chapter.scenes) {
+                final matchingNewScene = scenes.firstWhere(
+                  (newScene) => newScene.id == existingScene.id,
+                  orElse: () => existingScene,
+                );
+                
+                // 如果现有场景内容为空但新场景有内容，或者摘要为空但新场景有摘要，则需要更新
+                if ((existingScene.content.isEmpty && matchingNewScene.content.isNotEmpty) ||
+                    (existingScene.summary.content.isEmpty && matchingNewScene.summary.content.isNotEmpty)) {
+                  scenesToUpdate.add(matchingNewScene);
+                  AppLogger.i('Blocs/editor/editor_bloc', 
+                      '将使用新加载的场景内容更新场景: ${matchingNewScene.id}');
+                }
+              }
+            }
+
+            if (newUniqueScenesForChapter.isEmpty && scenesToUpdate.isEmpty) {
               AppLogger.i('Blocs/editor/editor_bloc',
-                  '章节 $chapterId 没有新的场景需要添加');
+                  '章节 $chapterId 没有新的场景需要添加或更新');
               break;
             }
 
-            // 添加新场景
-            final List<novel_models.Scene> mergedScenes = [
-              ...chapter.scenes,
-              ...newUniqueScenesForChapter
-            ];
+            // 更新场景列表
+            List<novel_models.Scene> mergedScenes;
+            if (scenesToUpdate.isNotEmpty) {
+              // 如果有场景需要更新，则创建新列表并替换需要更新的场景
+              mergedScenes = chapter.scenes.map((existingScene) {
+                final updateScene = scenesToUpdate.firstWhere(
+                  (s) => s.id == existingScene.id,
+                  orElse: () => existingScene,
+                );
+                return updateScene.id == existingScene.id ? updateScene : existingScene;
+              }).toList();
+              
+              // 然后添加所有新场景
+              mergedScenes.addAll(newUniqueScenesForChapter);
+            } else {
+              // 如果没有需要更新的场景，直接添加新场景
+              mergedScenes = [...chapter.scenes, ...newUniqueScenesForChapter];
+            }
 
             // 按场景ID排序，确保顺序一致
             mergedScenes.sort((a, b) => a.id.compareTo(b.id));
@@ -1531,7 +1761,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
             updatedActs[actIndex] = act.copyWith(chapters: updatedChapters);
 
             AppLogger.i('Blocs/editor/editor_bloc',
-                '已将 ${newUniqueScenesForChapter.length} 个新场景合并到章节 $chapterId，现在总共有 ${mergedScenes.length} 个场景');
+                '已处理章节 $chapterId, 添加了 ${newUniqueScenesForChapter.length} 个新场景，更新了 ${scenesToUpdate.length} 个场景，现在总共有 ${mergedScenes.length} 个场景');
             break;
           }
         }

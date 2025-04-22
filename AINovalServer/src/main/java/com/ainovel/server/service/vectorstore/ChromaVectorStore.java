@@ -18,6 +18,8 @@ import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -28,6 +30,7 @@ import reactor.util.retry.Retry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.HashMap;
 
 /**
  * Chroma向量存储实现 基于LangChain4j的ChromaEmbeddingStore
@@ -317,8 +320,14 @@ public class ChromaVectorStore implements VectorStore {
                 // 创建查询嵌入
                 Embedding queryEmbedding = Embedding.from(adjustedVector);
 
-                // 执行搜索
-                List<EmbeddingMatch<TextSegment>> matches = embeddingStore.findRelevant(queryEmbedding, limit);
+                // 执行搜索 - 使用新的搜索API
+                EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
+                        .queryEmbedding(queryEmbedding)
+                        .maxResults(limit)
+                        .build();
+                
+                EmbeddingSearchResult<TextSegment> searchResult = embeddingStore.search(searchRequest);
+                List<EmbeddingMatch<TextSegment>> matches = searchResult.matches();
 
                 // 转换结果
                 List<SearchResult> results = matches.stream()
@@ -330,13 +339,12 @@ public class ChromaVectorStore implements VectorStore {
                             // 提取元数据
                             Metadata metadata = match.embedded().metadata();
                             if (metadata != null) {
-                                Map<String, Object> resultMetadata = metadata.asMap().entrySet().stream()
-                                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                                Map<String, Object> resultMetadata = metadata.toMap();
                                 result.setMetadata(resultMetadata);
 
                                 // 设置ID（如果存在）
-                                if (metadata.get("id") != null) {
-                                    result.setId(metadata.get("id").toString());
+                                if (resultMetadata.containsKey("id")) {
+                                    result.setId(String.valueOf(resultMetadata.get("id")));
                                 }
                             }
 

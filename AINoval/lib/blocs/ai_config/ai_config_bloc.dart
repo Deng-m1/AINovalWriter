@@ -1,4 +1,5 @@
 import 'package:ainoval/models/user_ai_model_config_model.dart';
+import 'package:ainoval/models/ai_model_group.dart';
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:bloc/bloc.dart';
@@ -22,6 +23,8 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
     on<ValidateAiConfig>(_onValidateAiConfig);
     on<SetDefaultAiConfig>(_onSetDefaultAiConfig);
     on<ClearProviderModels>(_onClearProviderModels);
+    on<GetProviderDefaultConfig>(_onGetProviderDefaultConfig);
+    on<LoadApiKeyForConfig>(_onLoadApiKeyForConfig);
   }
   final UserAIModelConfigRepository _repository;
 
@@ -31,9 +34,37 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
     try {
       final configs =
           await _repository.listConfigurations(userId: event.userId);
+      
+      // 按提供商分组用户配置
+      final Map<String, UserAIModelConfigModel> providerDefaultConfigs = {};
+      
+      // 按提供商分组
+      final configsByProvider = <String, List<UserAIModelConfigModel>>{};
+      for (final config in configs) {
+        if (!configsByProvider.containsKey(config.provider)) {
+          configsByProvider[config.provider] = [];
+        }
+        configsByProvider[config.provider]!.add(config);
+      }
+      
+      // 为每个提供商选择一个默认配置
+      configsByProvider.forEach((provider, providerConfigs) {
+        // 优先选择默认配置，其次是已验证的配置，最后选择第一个配置
+        final defaultConfig = providerConfigs.firstWhere(
+          (c) => c.isDefault, 
+          orElse: () => providerConfigs.firstWhere(
+            (c) => c.isValidated,
+            orElse: () => providerConfigs.first,
+          ),
+        );
+        
+        providerDefaultConfigs[provider] = defaultConfig;
+      });
+      
       emit(state.copyWith(
         status: AiConfigStatus.loaded,
         configs: configs,
+        providerDefaultConfigs: providerDefaultConfigs,
         errorMessage: () => null, // Clear previous error
       ));
     } catch (e, stackTrace) {
@@ -63,15 +94,34 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
   Future<void> _onLoadModelsForProvider(
       LoadModelsForProvider event, Emitter<AiConfigState> emit) async {
     // Emit state clearing old models and setting the selected provider
+    print('⚠️ 开始处理LoadModelsForProvider事件，provider=${event.provider}');
     emit(state.copyWith(
         modelsForProvider: [], selectedProviderForModels: event.provider));
     try {
       final models = await _repository.listModelsForProvider(event.provider);
-      // Emit state with new models, clearing any previous error message
-      emit(state.copyWith(modelsForProvider: models, errorMessage: () => null));
+      print('⚠️ 成功获取模型列表，provider=${event.provider}，模型数量=${models.length}');
+
+      // 创建模型分组
+      final modelGroup = AIModelGroup.fromModelList(event.provider, models);
+
+      // 更新状态中的模型分组
+      final updatedModelGroups = Map<String, AIModelGroup>.from(state.modelGroups);
+      updatedModelGroups[event.provider] = modelGroup;
+
+      // Emit state with new models and model groups, clearing any previous error message
+      emit(state.copyWith(
+        modelsForProvider: models,
+        modelGroups: updatedModelGroups,
+        errorMessage: () => null
+      ));
+      
+      // 加载完模型后，触发加载该提供商的默认配置信息
+      print('⚠️ 模型加载完成，触发GetProviderDefaultConfig，provider=${event.provider}');
+      add(GetProviderDefaultConfig(provider: event.provider));
     } catch (e, stackTrace) {
       AppLogger.e(
           'AiConfigBloc', '加载模型失败 for ${event.provider}', e, stackTrace);
+      print('⚠️ 加载模型失败，provider=${event.provider}，错误：$e');
       // Emit state clearing models and setting an error message
       emit(state.copyWith(
           modelsForProvider: [],
@@ -230,6 +280,83 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
 
   void _onClearProviderModels(
       ClearProviderModels event, Emitter<AiConfigState> emit) {
-    emit(state.copyWith(clearModels: true));
+    // 清除模型列表和当前选中的提供商
+    emit(state.copyWith(
+      clearModels: true,
+      // 保留模型分组信息，因为它可能在其他地方被使用
+      // 如果需要清除特定提供商的模型分组，可以在这里处理
+    ));
+  }
+
+  // 根据provider查找第一个可用的配置，用于显示该提供商的API密钥和URL
+  Future<void> _onGetProviderDefaultConfig(
+      GetProviderDefaultConfig event, Emitter<AiConfigState> emit) async {
+    final provider = event.provider;
+    print('⚠️ 开始处理GetProviderDefaultConfig事件，provider=$provider');
+    
+    // 获取当前状态的providerDefaultConfigs副本
+    final providerDefaultConfigs = Map<String, UserAIModelConfigModel>.from(state.providerDefaultConfigs);
+    
+    // 从已加载的配置中查找
+    final providerConfigs = state.configs.where((c) => c.provider == provider).toList();
+    print('⚠️ 查找provider=$provider的配置，找到${providerConfigs.length}个配置');
+    
+    if (providerConfigs.isEmpty) {
+      print('⚠️ 没有找到provider=$provider的配置');
+      // 没有找到该提供商的配置，从Map中移除这个提供商的配置（如果有）
+      if (providerDefaultConfigs.containsKey(provider)) {
+        providerDefaultConfigs.remove(provider);
+        emit(state.copyWith(
+          providerDefaultConfigs: providerDefaultConfigs,
+        ));
+        print('⚠️ 已从providerDefaultConfigs中移除provider=$provider的配置');
+      }
+      return;
+    }
+    
+    // 首先寻找默认的
+    final defaultConfig = providerConfigs.firstWhere(
+      (c) => c.isDefault, 
+      orElse: () => providerConfigs.firstWhere(
+        (c) => c.isValidated,
+        orElse: () => providerConfigs.first,
+      ),
+    );
+    
+    print('⚠️ 找到provider=$provider的默认配置，id=${defaultConfig.id}，apiEndpoint=${defaultConfig.apiEndpoint}，hasApiKey=${defaultConfig.apiKey != null}');
+    
+    // 更新或添加该提供商的默认配置
+    providerDefaultConfigs[provider] = defaultConfig;
+    
+    // 更新状态
+    emit(state.copyWith(
+      providerDefaultConfigs: providerDefaultConfigs,
+    ));
+    
+    print('⚠️ 已更新状态中的providerDefaultConfigs，当前包含的提供商：${providerDefaultConfigs.keys.join(", ")}');
+  }
+
+  // 处理加载API密钥的事件
+  Future<void> _onLoadApiKeyForConfig(
+      LoadApiKeyForConfig event, Emitter<AiConfigState> emit) async {
+    try {
+      // 从已加载的配置中查找
+      final config = state.configs.firstWhereOrNull(
+        (config) => config.id == event.configId
+      );
+      
+      if (config != null && config.apiKey != null) {
+        // 如果已加载的配置中有API密钥，直接使用
+        event.onApiKeyLoaded(config.apiKey!);
+        return;
+      }
+      
+      // 如果没有找到配置或者没有API密钥，提示用户手动输入
+      event.onApiKeyLoaded("请手动输入API密钥");
+    } catch (e, stackTrace) {
+      AppLogger.e('AiConfigBloc', '获取API密钥失败', e, stackTrace);
+      // 如果失败，返回一个错误提示
+      event.onApiKeyLoaded("获取失败，请手动输入");
+    }
   }
 }
