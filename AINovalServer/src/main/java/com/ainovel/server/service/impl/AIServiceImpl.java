@@ -24,6 +24,7 @@ import com.ainovel.server.service.ai.langchain4j.GeminiLangChain4jModelProvider;
 import com.ainovel.server.service.ai.langchain4j.OpenAILangChain4jModelProvider;
 import com.ainovel.server.service.ai.langchain4j.OpenRouterLangChain4jModelProvider;
 import com.ainovel.server.service.ai.langchain4j.SiliconFlowLangChain4jModelProvider;
+import com.ainovel.server.service.ai.GrokModelProvider;
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -82,6 +83,16 @@ public class AIServiceImpl implements AIService {
                 "google/gemma-2-9b-it",
                 "meta-llama/Meta-Llama-3.1-70B-Instruct",
                 "meta-llama/Meta-Llama-3.1-70B-Instruct"
+        ));
+        
+        // 更新X.AI的modelGroups，添加所有Grok模型
+        modelGroups.put("x-ai", List.of(
+                "x-ai/grok-3-beta",
+                "x-ai/grok-3",
+                "x-ai/grok-3-fast-beta",
+                "x-ai/grok-3-mini-beta",
+                "x-ai/grok-3-mini-fast-beta",
+                "x-ai/grok-2-vision-1212"
         ));
 
         modelGroups.put("openrouter", List.of(
@@ -343,6 +354,11 @@ public class AIServiceImpl implements AIService {
                         new SiliconFlowLangChain4jModelProvider(modelName, apiKey, apiEndpoint);
                     case "openrouter" ->
                         new OpenRouterLangChain4jModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
+                    case "x-ai" -> {
+                        // X.AI不支持LangChain4j，使用我们的原生实现即使在LangChain4j模式下
+                        log.info("创建X.AI的Grok模型提供商(原生实现): model={}", modelName);
+                        yield new GrokModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
+                    }
                     default -> {
                         log.error("LangChain4j 模式下不支持的提供商: {}", lowerCaseProvider);
                         yield null;
@@ -361,6 +377,8 @@ public class AIServiceImpl implements AIService {
                     case "openrouter" ->
                         // 对于非LangChain4j模式，我们可以使用OpenAI的实现，因为OpenRouter兼容OpenAI的API
                         new OpenAIModelProvider(modelName, apiKey, apiEndpoint != null ? apiEndpoint : "https://openrouter.ai/api/v1");
+                    case "x-ai" ->
+                        new GrokModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
                     default -> {
                         log.error("原始模式下不支持的提供商: {}", lowerCaseProvider);
                         yield null;
