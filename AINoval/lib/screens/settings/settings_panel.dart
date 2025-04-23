@@ -67,14 +67,32 @@ class _SettingsPanelState extends State<SettingsPanel> {
     });
   }
 
-
-
   void _hideAddEditForm() {
     setState(() {
       // Optionally clear BLoC state related to model loading if needed
       // context.read<AiConfigBloc>().add(ClearProviderModels());
       _configToEdit = null;
       _showAddEditForm = false;
+    });
+  }
+
+  // 新增方法：显示编辑表单
+  void _showEditForm(UserAIModelConfigModel config) {
+    // 检查Bloc是否已有该Provider的模型，若无则加载
+    if (mounted) {
+      final bloc = context.read<AiConfigBloc>();
+      if (bloc.state.selectedProviderForModels != config.provider ||
+          bloc.state.modelsForProvider.isEmpty) {
+        bloc.add(LoadModelsForProvider(provider: config.provider));
+      }
+      // 也可以考虑加载该提供商的默认配置（如果需要的话）
+      // bloc.add(GetProviderDefaultConfig(provider: config.provider));
+    }
+
+    setState(() {
+      _configToEdit = config; // 设置要编辑的配置
+      _showAddEditForm = true; // 显示表单
+      _selectedIndex = 0; // 确保在 '模型服务' 类别下
     });
   }
 
@@ -346,6 +364,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
           key: key,
           userId: widget.userId,
           onAddNew: _showAddForm,
+          onEditConfig: _showEditForm, // 传递编辑回调
         );
       case '提示词管理':
         return const PromptManagementPanel();
@@ -359,8 +378,6 @@ class _SettingsPanelState extends State<SettingsPanel> {
     }
   }
 
-
-
   // Builds the actual form widget, added key parameter
   Widget _buildAiConfigForm({required Key key}) {
     // REMOVE the BlocListener that was here, as it might prematurely hide the form.
@@ -373,8 +390,6 @@ class _SettingsPanelState extends State<SettingsPanel> {
       onCancel: _hideAddEditForm, // Use the hide function for cancel
     );
   }
-
-
 
   // 新增编辑器设置面板构建方法
   Widget _buildEditorSettingsPanel({required Key key}) {
