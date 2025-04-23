@@ -28,10 +28,10 @@ class OutlineGenerationChunk {
 
   factory OutlineGenerationChunk.fromJson(Map<String, dynamic> json) {
     return OutlineGenerationChunk(
-      optionId: json['optionId'] as String,
+      optionId: json['optionId'] as String? ?? '',
       optionTitle: json['optionTitle'] as String?,
-      textChunk: json['textChunk'] as String,
-      isFinalChunk: json['isFinalChunk'] as bool,
+      textChunk: json['textChunk'] as String? ?? '',
+      isFinalChunk: json['finalChunk'] as bool? ?? false,
       error: json['error'] as String?,
     );
   }

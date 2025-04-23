@@ -104,16 +104,18 @@ class OutlineGenerationChunkReceived extends NextOutlineEvent {
   final String? optionTitle;
   final String textChunk;
   final bool isFinalChunk;
+  final String? error;
 
   const OutlineGenerationChunkReceived({
     required this.optionId,
     this.optionTitle,
     required this.textChunk,
     required this.isFinalChunk,
+    this.error,
   });
 
   @override
-  List<Object?> get props => [optionId, optionTitle, textChunk, isFinalChunk];
+  List<Object?> get props => [optionId, optionTitle, textChunk, isFinalChunk, error];
 }
 
 /// 生成错误事件

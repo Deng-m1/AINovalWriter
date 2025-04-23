@@ -40,8 +40,8 @@ class NextOutlineRepositoryImpl implements NextOutlineRepository {
           AppLogger.e(_tag, '服务器返回已知错误格式: code=${json['code']}, message=$errorMessage');
           throw ApiException(errorCode, errorMessage); // 使用int类型的errorCode
         }
-        // 再检查是否包含 'error' 字段 (兼容旧的或不同的错误格式)
-        else if (json is Map<String, dynamic> && json.containsKey('error')) {
+        // 再检查是否包含 'error' 字段的值是否非空 (兼容旧的或不同的错误格式)
+        else if (json is Map<String, dynamic> && json['error'] != null) {
            final errorMessage = json['error'] as String? ?? 'Unknown server error';
            AppLogger.e(_tag, '服务器返回错误字段: $errorMessage');
            throw ApiException(-1, errorMessage); // 默认错误码-1
@@ -56,6 +56,7 @@ class NextOutlineRepositoryImpl implements NextOutlineRepository {
           throw ApiException(-1, '解析响应失败: $e');
         }
       },
+      eventName: 'outline-chunk',
     );
   }
 
@@ -67,7 +68,7 @@ class NextOutlineRepositoryImpl implements NextOutlineRepository {
     AppLogger.i(_tag, '重新生成单个剧情大纲选项: novelId=$novelId, optionId=${request.optionId}, configId=${request.selectedConfigId}');
     
     return SseClient().streamEvents<OutlineGenerationChunk>(
-      path: '/novels/$novelId/next-outlines/regenerate-outline-option',
+      path: '/novels/$novelId/next-outlines/regenerate-option',
       method: SSERequestType.POST,
       body: request.toJson(),
       parser: (json) {
@@ -79,8 +80,8 @@ class NextOutlineRepositoryImpl implements NextOutlineRepository {
           AppLogger.e(_tag, '服务器返回已知错误格式: code=${json['code']}, message=$errorMessage');
           throw ApiException(errorCode, errorMessage); // 使用int类型的errorCode
         }
-        // 再检查是否包含 'error' 字段 (兼容旧的或不同的错误格式)
-        else if (json is Map<String, dynamic> && json.containsKey('error')) {
+        // 再检查是否包含 'error' 字段的值是否非空 (兼容旧的或不同的错误格式)
+        else if (json is Map<String, dynamic> && json['error'] != null) {
            final errorMessage = json['error'] as String? ?? 'Unknown server error';
            AppLogger.e(_tag, '服务器返回错误字段: $errorMessage');
            throw ApiException(-1, errorMessage); // 默认错误码-1
@@ -95,6 +96,7 @@ class NextOutlineRepositoryImpl implements NextOutlineRepository {
           throw ApiException(-1, '解析响应失败: $e');
         }
       },
+      eventName: 'outline-chunk',
     );
   }
 
@@ -107,7 +109,7 @@ class NextOutlineRepositoryImpl implements NextOutlineRepository {
     
     try {
       final response = await apiClient.post(
-        '/novels/$novelId/next-outlines/save-outline',
+        '/novels/$novelId/next-outlines/save',
         data: request.toJson(),
       );
       

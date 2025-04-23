@@ -3,6 +3,7 @@ package com.ainovel.server.domain.model;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -72,13 +73,13 @@ public class AIRequest {
      * 其他参数
      */
     @Builder.Default
-    private Map<String, Object> parameters = Map.of();
+    private Map<String, Object> parameters = new HashMap<>();
 
     /**
      * 其他参数
      */
     @Builder.Default
-    private Map<String, Object> metadata = Map.of();
+    private Map<String, Object> metadata = new HashMap<>();
 
     /**
      * 对话历史
