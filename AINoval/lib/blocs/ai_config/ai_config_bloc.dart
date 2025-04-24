@@ -385,16 +385,66 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
       AppLogger.i('AiConfigBloc', '加载提供商 ${event.providerName} 能力成功: $capability');
       emit(state.copyWith(providerCapability: capability));
 
-      // 无论能力如何，都尝试加载一次默认模型（不带Key）
-      AppLogger.i('AiConfigBloc', '触发加载 ${event.providerName} 的默认模型列表');
-      add(LoadModelsForProvider(provider: event.providerName));
+      // --- 修改开始 ---
+      bool shouldLoadWithKey = false;
+      UserAIModelConfigModel? defaultConfig;
+
+      // 优先从 providerDefaultConfigs 获取，因为它是为这个场景设计的
+      defaultConfig = state.providerDefaultConfigs[event.providerName];
       
-      // 原来的逻辑注释掉，或者根据需要保留部分日志
-      // if (capability == ModelListingCapability.listingWithoutKey) {
-      //   add(LoadModelsForProvider(provider: event.providerName));
-      // } else {
-      //   AppLogger.i('AiConfigBloc', 'Provider ${event.providerName} requires key or has no listing, explicit model load triggered.');
+      // 如果默认配置里没key，再尝试从完整列表里捞一个有效的 (可能不是最优选择，但作为后备)
+      // if (defaultConfig == null || defaultConfig.apiKey == null || defaultConfig.apiKey!.isEmpty) {
+      //    final providerConfigs = state.configs.where((c) => c.provider == event.providerName).toList();
+      //    if (providerConfigs.isNotEmpty) {
+      //      defaultConfig = providerConfigs.firstWhere(
+      //        (c) => c.isDefault && c.apiKey != null && c.apiKey!.isNotEmpty,
+      //        orElse: () => providerConfigs.firstWhere(
+      //          (c) => c.isValidated && c.apiKey != null && c.apiKey!.isNotEmpty,
+      //          orElse: () => providerConfigs.firstWhere(
+      //             (c) => c.apiKey != null && c.apiKey!.isNotEmpty,
+      //             orElse: () => providerConfigs.first // Last resort: first config even without key
+      //           )
+      //        )
+      //      );
+      //    }
       // }
+
+
+      if (capability == ModelListingCapability.listingWithKey) {
+        // 检查找到的配置（优先是 providerDefaultConfigs 里的）是否有有效的 API Key
+        if (defaultConfig != null && defaultConfig.apiKey != null && defaultConfig.apiKey!.isNotEmpty) {
+           shouldLoadWithKey = true;
+           AppLogger.i('AiConfigBloc', 'Provider ${event.providerName} 需要 Key，且找到已配置的 Key (来自 providerDefaultConfigs 或查找)，将尝试使用 Key 加载模型');
+        } else {
+           AppLogger.i('AiConfigBloc', 'Provider ${event.providerName} 需要 Key，但未找到带 Key 的默认/有效配置，将加载默认模型');
+        }
+      } else {
+         AppLogger.i('AiConfigBloc', 'Provider ${event.providerName} 不需要 Key 或不支持列表，将加载默认模型');
+      }
+
+      // 清除之前的测试状态和错误信息，避免残留
+      emit(state.copyWith(
+          apiKeyTestSuccessProviderClearable: () => null,
+          apiKeyTestErrorClearable: () => null,
+          isTestingApiKey: shouldLoadWithKey // 如果用key加载，状态设为testing
+      ));
+
+
+      if (shouldLoadWithKey && defaultConfig != null) {
+         // 使用 TestApiKey 事件来加载模型列表
+         // 注意：确保 _onTestApiKey 处理器能正确更新模型列表状态
+         AppLogger.i('AiConfigBloc', '触发 TestApiKey (用作加载模型) for ${event.providerName}');
+         add(TestApiKey(
+           providerName: event.providerName,
+           apiKey: defaultConfig.apiKey!,
+           apiEndpoint: defaultConfig.apiEndpoint,
+         ));
+      } else {
+        // 不需要 Key 或没有找到 Key，加载默认模型
+        AppLogger.i('AiConfigBloc', '触发加载 ${event.providerName} 的默认模型列表 (LoadModelsForProvider)');
+        add(LoadModelsForProvider(provider: event.providerName));
+      }
+      // --- 修改结束 ---
 
     } catch (e, stackTrace) {
       AppLogger.e('AiConfigBloc', '加载提供商 ${event.providerName} 能力失败', e, stackTrace);
