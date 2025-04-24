@@ -10,11 +10,13 @@ class ModelGroupList extends StatelessWidget {
     required this.modelGroup,
     required this.onModelSelected,
     this.selectedModel,
+    this.verifiedModels = const [], // 添加已验证模型参数
   });
 
   final AIModelGroup modelGroup;
   final ValueChanged<String> onModelSelected;
   final String? selectedModel;
+  final List<String> verifiedModels; // 已验证模型列表
 
   @override
   Widget build(BuildContext context) {
@@ -55,13 +57,14 @@ class ModelGroupList extends StatelessWidget {
         childrenPadding: const EdgeInsets.only(left: 12, right: 12, bottom: 4, top: 0),
         children: group.modelsInfo.map((modelInfo) {
           final isSelected = modelInfo.id == selectedModel;
-          return _buildModelItem(context, modelInfo, isSelected);
+          final isVerified = verifiedModels.contains(modelInfo.id);
+          return _buildModelItem(context, modelInfo, isSelected, isVerified);
         }).toList(),
       ),
     );
   }
 
-  Widget _buildModelItem(BuildContext context, ModelInfo modelInfo, bool isSelected) {
+  Widget _buildModelItem(BuildContext context, ModelInfo modelInfo, bool isSelected, bool isVerified) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -125,6 +128,17 @@ class ModelGroupList extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            // 已验证标记
+            if (isVerified)
+              Tooltip(
+                message: '已验证模型',
+                child: Icon(
+                  Icons.check_circle,
+                  size: 16,
+                  color: Colors.green,
+                ),
+              ),
+            const SizedBox(width: 4),
             // 免费标签 - Use modelInfo.id
             if (modelInfo.id.toLowerCase().contains('free'))
               Container(

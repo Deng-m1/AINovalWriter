@@ -18,6 +18,7 @@ import com.ainovel.server.domain.model.AIResponse;
 import com.ainovel.server.domain.model.ModelInfo;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import io.netty.channel.ChannelOption;
 import io.netty.handler.ssl.SslContext;
@@ -585,11 +586,89 @@ public class GrokModelProvider extends AbstractAIModelProvider {
             return Flux.fromIterable(getDefaultXAIModels());
         }
     }
-    
-    @Override 
+
+    @Override
     public Flux<ModelInfo> listModelsWithApiKey(String apiKey, String apiEndpoint) {
-        return listModels();
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            return Flux.error(new RuntimeException("API密钥不能为空"));
+        }
+
+        try {
+            // 获取API端点
+            String baseUrl = apiEndpoint != null && !apiEndpoint.trim().isEmpty() ?
+                    apiEndpoint : DEFAULT_API_ENDPOINT;
+
+            // 调用X.AI API获取模型列表
+            return this.webClient.get()
+                    .uri("/models")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .flatMapMany(response -> {
+                        try {
+                            // 解析响应
+                            log.debug("X.AI模型列表响应: {}", response);
+                            
+                            // 使用ObjectMapper解析JSON响应
+                            ObjectMapper mapper = new ObjectMapper();
+                            JsonNode root = mapper.readTree(response);
+                            JsonNode data = root.path("data");
+                            
+                            List<ModelInfo> models = new ArrayList<>();
+                            
+                            if (data.isArray()) {
+                                for (JsonNode modelNode : data) {
+                                    // 提取模型信息
+                                    String id = modelNode.path("id").asText("");
+                                    String object = modelNode.path("object").asText("model");
+                                    long created = modelNode.path("created").asLong(0);
+                                    String ownedBy = modelNode.path("owned_by").asText("xai");
+                                    
+                                    // 构建ModelInfo对象
+                                    // 确保模型ID包含提供商前缀
+                                    String fullModelId = id.startsWith("x-ai/") ? id : "x-ai/" + id;
+                                    
+                                    // 从TOKEN_PRICES获取价格信息
+                                    double inputPrice = TOKEN_PRICES.getOrDefault(fullModelId + "-input", 0.003);
+                                    double outputPrice = TOKEN_PRICES.getOrDefault(fullModelId + "-output", 0.006);
+                                    
+                                    // 创建模型信息
+                                    ModelInfo modelInfo = ModelInfo.basic(fullModelId, fullModelId, "x-ai")
+                                            .withDescription("X.AI的" + id + "模型，由" + ownedBy + "提供")
+                                            .withMaxTokens(128000)  // 默认token上限
+                                            .withInputPrice(inputPrice)
+                                            .withOutputPrice(outputPrice);
+                                    
+                                    models.add(modelInfo);
+                                    log.debug("解析到X.AI模型: {}, 输入价格: {}, 输出价格: {}", fullModelId, inputPrice, outputPrice);
+                                }
+                            }
+                            
+                            if (models.isEmpty()) {
+                                log.warn("X.AI API返回的模型列表为空，将使用默认模型列表");
+                                return Flux.fromIterable(getDefaultXAIModels());
+                            }
+                            
+                            log.info("成功从X.AI API获取{}个模型", models.size());
+                            return Flux.fromIterable(models);
+                        } catch (Exception e) {
+                            log.error("解析X.AI模型列表时出错: {}", e.getMessage(), e);
+                            log.warn("由于解析错误，将返回默认模型列表");
+                            return Flux.fromIterable(getDefaultXAIModels());
+                        }
+                    })
+                    .onErrorResume(e -> {
+                        log.error("获取X.AI模型列表时出错: {}", e.getMessage(), e);
+                        log.warn("由于API调用错误，将返回默认模型列表");
+                        return Flux.fromIterable(getDefaultXAIModels());
+                    });
+        } catch (Exception e) {
+            log.error("调用X.AI API时出错: {}", e.getMessage(), e);
+            return Flux.fromIterable(getDefaultXAIModels());
+        }
     }
+
 
     /**
      * 获取默认的X.AI模型列表

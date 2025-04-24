@@ -3,7 +3,7 @@ package com.ainovel.server.service.ai.factory;
 import com.ainovel.server.config.ProxyConfig;
 import com.ainovel.server.service.ai.AIModelProvider;
 import com.ainovel.server.service.ai.AnthropicModelProvider;
-import com.ainovel.server.service.ai.XaiModelProvider;
+import com.ainovel.server.service.ai.GrokModelProvider;
 import com.ainovel.server.service.ai.langchain4j.AnthropicLangChain4jModelProvider;
 import com.ainovel.server.service.ai.langchain4j.GeminiLangChain4jModelProvider;
 import com.ainovel.server.service.ai.langchain4j.LangChain4jModelProvider;
@@ -49,7 +49,7 @@ public class AIModelProviderFactory {
             case "openrouter" -> new OpenRouterLangChain4jModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
             case "siliconflow" -> new SiliconFlowLangChain4jModelProvider(modelName, apiKey, apiEndpoint);
             case "togetherai" -> new TogetherAILangChain4jModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
-            case "x-ai", "grok" -> new XaiModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
+            case "x-ai", "grok" -> new GrokModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
             case "anthropic-native" -> new AnthropicModelProvider(modelName, apiKey, apiEndpoint);
             default -> throw new IllegalArgumentException("不支持的AI提供商: " + providerName);
         };
@@ -79,7 +79,7 @@ public class AIModelProviderFactory {
     public String getProviderType(AIModelProvider provider) {
         if (provider instanceof LangChain4jModelProvider) {
             return "langchain4j";
-        } else if (provider instanceof XaiModelProvider) {
+        } else if (provider instanceof GrokModelProvider) {
             return "x-ai";
         } else if (provider instanceof AnthropicModelProvider) {
             return "anthropic-native";

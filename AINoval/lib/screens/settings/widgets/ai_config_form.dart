@@ -1,6 +1,7 @@
 import 'package:ainoval/blocs/ai_config/ai_config_bloc.dart';
 import 'package:ainoval/models/ai_model_group.dart';
 import 'package:ainoval/models/user_ai_model_config_model.dart';
+import 'package:ainoval/screens/settings/widgets/custom_model_dialog.dart';
 import 'package:ainoval/screens/settings/widgets/model_group_list.dart';
 import 'package:ainoval/screens/settings/widgets/provider_list.dart';
 import 'package:ainoval/screens/settings/widgets/searchable_model_dropdown.dart';
@@ -216,6 +217,85 @@ class _AiConfigFormState extends State<AiConfigForm> {
     });
   }
 
+  // 处理自定义模型添加
+  void _handleAddCustomModel() {
+    if (_selectedProvider == null) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => CustomModelDialog(
+        providerName: _selectedProvider!,
+        onConfirm: (modelName, modelAlias, apiEndpoint) {
+          setState(() {
+            _selectedModel = modelName;
+            _aliasController.text = modelAlias;
+            if (apiEndpoint != null && apiEndpoint.isNotEmpty) {
+              _apiEndpointController.text = apiEndpoint;
+            }
+            
+            // 如果API Key已经输入，且当前需要API Key进行验证，
+            // 则尝试立即进行验证
+            final apiKey = _apiKeyController.text.trim();
+            if (apiKey.isNotEmpty && _providerCapability == ModelListingCapability.listingWithKey) {
+              // 延迟一下再触发验证，确保状态已更新
+              Future.microtask(() => _testApiKey());
+              
+              // 显示提示
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('已添加自定义模型：$modelName，正在尝试验证连接...'),
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            } else {
+              // 如果没有API Key，提示用户手动验证
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('已添加自定义模型：$modelName${apiEndpoint != null ? "，API端点：$apiEndpoint" : ""}'),
+                  action: SnackBarAction(
+                    label: '立即验证',
+                    onPressed: () {
+                      if (_apiKeyController.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请先输入API Key再进行验证')),
+                        );
+                      } else {
+                        _testApiKey();
+                      }
+                    },
+                  ),
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            }
+          });
+        },
+      ),
+    );
+  }
+
+  // 检查是否存在已验证的相同模型
+  bool _isDuplicateValidatedModel() {
+    if (_isEditMode || _selectedProvider == null || _selectedModel == null) {
+      return false;
+    }
+    
+    final existingConfigs = context.read<AiConfigBloc>().state.configs;
+    return existingConfigs.any((config) =>
+        config.provider == _selectedProvider &&
+        config.modelName == _selectedModel &&
+        config.isValidated);
+  }
+
+  // 获取已验证模型列表
+  List<String> _getVerifiedModels(String provider) {
+    final existingConfigs = context.read<AiConfigBloc>().state.configs;
+    return existingConfigs
+        .where((config) => config.provider == provider && config.isValidated)
+        .map((config) => config.modelName)
+        .toList();
+  }
+
   // Modify provider selection handler
   void _handleProviderSelected(String provider) {
     print('️Provider selected: $provider');
@@ -336,6 +416,10 @@ class _AiConfigFormState extends State<AiConfigForm> {
         // --- API Key Testing Update ---
          if (state.isTestingApiKey != _isTestingApiKey) {
             _isTestingApiKey = state.isTestingApiKey;
+            // If we *start* testing (used for loading models with key), set loading state
+            if (_isTestingApiKey) {
+               _isLoadingModels = true;
+            }
             needsSetState = true;
          }
          // Check if success is for the *currently selected* provider
@@ -344,6 +428,7 @@ class _AiConfigFormState extends State<AiConfigForm> {
            _apiKeyTestSuccess = testSuccessForCurrentProvider;
            if (_apiKeyTestSuccess) {
               print("Listener: API Key test SUCCESS for $_selectedProvider");
+              _isLoadingModels = false; // <-- Reset loading state on success
               // Optionally show success feedback
               ScaffoldMessenger.of(context).showSnackBar(
                  SnackBar(
@@ -357,6 +442,7 @@ class _AiConfigFormState extends State<AiConfigForm> {
         // Handle API key test errors
         if (state.apiKeyTestError != null) {
            print("Listener: API Key test FAILED for $_selectedProvider: ${state.apiKeyTestError}");
+           _isLoadingModels = false; // <-- Reset loading state on error
            ScaffoldMessenger.of(context).showSnackBar(
              SnackBar(
                content: Text('API Key Test Failed: ${state.apiKeyTestError}'),
@@ -825,90 +911,126 @@ class _AiConfigFormState extends State<AiConfigForm> {
 
                             // 模型分组列表（仅在选择了提供商时显示）
                             if (!_isEditMode && _selectedProvider != null && !_isLoadingModels)
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 10.0, bottom: 4.0),
-                                    child: Text('可用模型', style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w500,
-                                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
-                                      fontSize: 13,
-                                    )),
-                                  ),
-                                  // Container to provide background and border for the list area
-                                  Container(
-                                     constraints: BoxConstraints(maxHeight: 250),
-                                     width: double.infinity,
-                                     decoration: BoxDecoration(
-                                       color: Theme.of(context).brightness == Brightness.dark
-                                             ? Theme.of(context).colorScheme.surfaceContainer.withOpacity(0.5)
-                                             : Theme.of(context).colorScheme.surfaceContainerLow.withOpacity(0.7),
-                                       borderRadius: BorderRadius.circular(8),
-                                       border: Border.all(
-                                         color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-                                         width: 0.5,
-                                       ),
-                                     ),
-                                     child: BlocBuilder<AiConfigBloc, AiConfigState>(
-                                      builder: (context, state) {
-                                        // Safely access model group using the selected provider key
-                                        // NOTE: Assuming AIModelGroup and ModelListingCapability are correctly defined/imported elsewhere
-                                        //       after resolving the 'ai_config_repository' dependency.
-                                        final modelGroup = _selectedProvider != null ? state.modelGroups[_selectedProvider!] : null;
-                                        final currentCapability = _providerCapability; // Use local capability state
+                              Expanded(  // 将原来的Column改为Expanded
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 10.0, bottom: 4.0),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text('可用模型', style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                            fontWeight: FontWeight.w500,
+                                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                                            fontSize: 13,
+                                          )),
+                                          TextButton.icon(
+                                            icon: const Icon(Icons.add, size: 14),
+                                            label: const Text('添加自定义模型', style: TextStyle(fontSize: 12)),
+                                            style: TextButton.styleFrom(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              minimumSize: const Size(0, 30),
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            ),
+                                            onPressed: _handleAddCustomModel,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Container to provide background and border for the list area
+                                    Expanded(  // 将Container包装在Expanded中，使其填充剩余空间
+                                      child: Container(
+                                         width: double.infinity,
+                                         decoration: BoxDecoration(
+                                           color: Theme.of(context).brightness == Brightness.dark
+                                                 ? Theme.of(context).colorScheme.surfaceContainer.withOpacity(0.5)
+                                                 : Theme.of(context).colorScheme.surfaceContainerLow.withOpacity(0.7),
+                                           borderRadius: BorderRadius.circular(8),
+                                           border: Border.all(
+                                             color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                                             width: 0.5,
+                                           ),
+                                         ),
+                                         child: BlocBuilder<AiConfigBloc, AiConfigState>(
+                                          builder: (context, state) {
+                                            // Safely access model group using the selected provider key
+                                            // NOTE: Assuming AIModelGroup and ModelListingCapability are correctly defined/imported elsewhere
+                                            //       after resolving the 'ai_config_repository' dependency.
+                                            final modelGroup = _selectedProvider != null ? state.modelGroups[_selectedProvider!] : null;
+                                            final currentCapability = _providerCapability; // Use local capability state
+                                            // 获取该提供商下已经验证的模型列表
+                                            final verifiedModels = _selectedProvider != null ? _getVerifiedModels(_selectedProvider!) : <String>[];
 
-                                        if (_isLoadingModels) {
-                                          return const Center(
-                                            child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()),
-                                          );
-                                        }
-
-                                        // Check if model groups are available
-                                        if (modelGroup != null && modelGroup.groups.isNotEmpty) {
-                                            return SingleChildScrollView(
-                                               child: Padding(
-                                                 padding: const EdgeInsets.symmetric(vertical: 8.0),
-                                                 child: ModelGroupList(
-                                                   modelGroup: modelGroup,
-                                                   onModelSelected: _handleModelSelected,
-                                                   selectedModel: _selectedModel,
-                                                 ),
-                                               ),
-                                             );
-                                        } else {
-                                            // Show message if no models are available or conditions not met
-                                            String message = '该提供商没有可用的模型。';
-                                            // Check if capability requires API key and if it has been tested successfully
-                                            // if (currentCapability == ModelListingCapability.listingWithKey && !_apiKeyTestSuccess) {
-                                            //    message = '请先成功测试 API Key 以加载模型列表。';
-                                            // } else if (currentCapability == ModelListingCapability.noListing) {
-                                            //     message = '该提供商不支持自动获取模型列表。';
-                                            // }
-                                            // ^^^ Commented out capability check as ModelListingCapability might be undefined now
-
-                                            // Fallback message if capability check is removed/unavailable
-                                            if (modelGroup == null || modelGroup.groups.isEmpty) {
-                                               if (_selectedProvider != null) {
-                                                  // More specific message if provider selected but no models
-                                                  message = '未能加载模型列表。如果需要 API Key，请确保已成功测试。';
-                                               } else {
-                                                  message = '请先选择一个提供商。';
-                                               }
+                                            if (_isLoadingModels) {
+                                              return const Center(
+                                                child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()),
+                                              );
                                             }
 
+                                            // Check if model groups are available
+                                            if (modelGroup != null && modelGroup.groups.isNotEmpty) {
+                                                return SingleChildScrollView(
+                                                   child: Padding(
+                                                     padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                                     child: ModelGroupList(
+                                                       modelGroup: modelGroup,
+                                                       onModelSelected: _handleModelSelected,
+                                                       selectedModel: _selectedModel,
+                                                       verifiedModels: verifiedModels, // 传递已验证模型列表
+                                                     ),
+                                                   ),
+                                                 );
+                                            } else {
+                                                // Show message if no models are available or conditions not met
+                                                String message = '该提供商没有可用的模型。';
+                                                // Check if capability requires API key and if it has been tested successfully
+                                                // if (currentCapability == ModelListingCapability.listingWithKey && !_apiKeyTestSuccess) {
+                                                //    message = '请先成功测试 API Key 以加载模型列表。';
+                                                // } else if (currentCapability == ModelListingCapability.noListing) {
+                                                //     message = '该提供商不支持自动获取模型列表。';
+                                                // }
+                                                // ^^^ Commented out capability check as ModelListingCapability might be undefined now
 
-                                            return Center(
-                                              child: Padding(
-                                                padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
-                                                child: Text(message, textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: Theme.of(context).hintColor)),
-                                              ),
-                                            );
-                                        }
-                                      },
-                                     ),
-                                  ),
-                                ],
+                                                // Fallback message if capability check is removed/unavailable
+                                                if (modelGroup == null || modelGroup.groups.isEmpty) {
+                                                   if (_selectedProvider != null) {
+                                                      // More specific message if provider selected but no models
+                                                      message = '未能加载模型列表。如果需要 API Key，请确保已成功测试。';
+                                                   } else {
+                                                      message = '请先选择一个提供商。';
+                                                   }
+                                                }
+
+
+                                                return Center(
+                                                  child: Padding(
+                                                    padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
+                                                    child: Column(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        Text(
+                                                          message, 
+                                                          textAlign: TextAlign.center, 
+                                                          style: TextStyle(fontSize: 13, color: Theme.of(context).hintColor)
+                                                        ),
+                                                        const SizedBox(height: 16),
+                                                        FilledButton.icon(
+                                                          icon: const Icon(Icons.add, size: 16),
+                                                          label: const Text('添加自定义模型'),
+                                                          onPressed: _handleAddCustomModel,
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                );
+                                            }
+                                          },
+                                         ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
 
                               // Loading indicator removed from here, handled inside BlocBuilder
@@ -961,7 +1083,9 @@ class _AiConfigFormState extends State<AiConfigForm> {
                                   // Disable if adding and model not selected
                                   (!_isEditMode && _selectedModel == null) ||
                                   // Disable if adding, provider requires key, and test hasn't succeeded
-                                  (!_isEditMode && _providerCapability == ModelListingCapability.listingWithKey && !_apiKeyTestSuccess)
+                                  (!_isEditMode && _providerCapability == ModelListingCapability.listingWithKey && !_apiKeyTestSuccess) ||
+                                  // Disable if trying to add a duplicate validated model
+                                  _isDuplicateValidatedModel()
                               ? null
                               : _submitForm,
                         style: ElevatedButton.styleFrom(
@@ -975,7 +1099,7 @@ class _AiConfigFormState extends State<AiConfigForm> {
                           ),
                           child: _isSaving
                               ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                : Text(_isEditMode ? '保存更改' : '添加', style: const TextStyle(fontSize: 13)),
+                                : Text(_isEditMode ? '保存更改' : (_isDuplicateValidatedModel() ? '已存在已验证配置' : '添加'), style: const TextStyle(fontSize: 13)),
                         ),
                     ],
                   ),

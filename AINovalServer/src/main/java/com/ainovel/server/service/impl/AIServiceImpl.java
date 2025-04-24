@@ -346,25 +346,61 @@ public class AIServiceImpl implements AIService {
         }
 
         String lowerCaseProvider = provider.toLowerCase();
+        
+        // 检查提供商是否已知 (通过modelGroups)
         if (!modelGroups.containsKey(lowerCaseProvider)) {
             log.warn("请求未知的提供商 '{}'", provider);
             return Flux.error(new IllegalArgumentException("未知的提供商: " + provider));
         }
 
-        // 创建一个临时的提供商实例来获取模型列表
-        try {
-            AIModelProvider provider1 = createAIModelProvider(lowerCaseProvider,
-                    modelGroups.get(lowerCaseProvider).get(0),
-                    apiKey, apiEndpoint);
-            if (provider1 != null) {
-                return provider1.listModelsWithApiKey(apiKey, apiEndpoint);
-            }
-
-            return Flux.empty();
-        } catch (Exception e) {
-            log.error("获取提供商模型信息时出错: {}", e.getMessage(), e);
-            return Flux.empty();
-        }
+        // 尝试获取该提供商的默认模型ID，用于创建Provider实例
+        return capabilityService.getDefaultModels(lowerCaseProvider)
+            .take(1) // 只取第一个默认模型
+            .switchIfEmpty(Mono.defer(() -> {
+                // 如果capabilityService没有默认模型，尝试从modelGroups获取第一个作为后备
+                List<String> modelsFromGroup = modelGroups.get(lowerCaseProvider);
+                if (modelsFromGroup != null && !modelsFromGroup.isEmpty()) {
+                    log.info("使用modelGroups中的第一个模型: {} 作为默认模型", modelsFromGroup.get(0));
+                    return Mono.just(ModelInfo.basic(modelsFromGroup.get(0), modelsFromGroup.get(0), lowerCaseProvider));
+                } else {
+                    log.error("无法为提供商 '{}' 找到任何模型", lowerCaseProvider);
+                    return Mono.error(new RuntimeException("无法为提供商 " + lowerCaseProvider + " 找到任何模型"));
+                }
+            }))
+            .flatMap(defaultModel -> {
+                try {
+                    log.info("为提供商 '{}' 创建Provider实例，使用模型 '{}'", lowerCaseProvider, defaultModel.getId());
+                    
+                    // 创建Provider实例
+                    AIModelProvider providerInstance = providerFactory.createProvider(
+                        lowerCaseProvider,
+                        defaultModel.getId(),
+                        apiKey,
+                        apiEndpoint
+                    );
+                    
+                    if (providerInstance != null) {
+                        log.info("成功创建Provider实例，调用listModelsWithApiKey获取模型列表");
+                        // 调用实例的listModelsWithApiKey方法
+                        return providerInstance.listModelsWithApiKey(apiKey, apiEndpoint)
+                            .collectList()
+                            .flatMapMany(models -> {
+                                log.info("使用API密钥获取提供商 '{}' 的模型信息列表成功: count={}", lowerCaseProvider, models.size());
+                                return Flux.fromIterable(models);
+                            })
+                            .onErrorResume(e -> {
+                                log.error("调用提供商 '{}' 的listModelsWithApiKey失败: {}", lowerCaseProvider, e.getMessage(), e);
+                                return Flux.error(new RuntimeException("获取模型列表失败: " + e.getMessage()));
+                            });
+                    } else {
+                        log.error("无法创建提供商 '{}' 的Provider实例", lowerCaseProvider);
+                        return Mono.error(new RuntimeException("无法创建提供商实例: " + lowerCaseProvider));
+                    }
+                } catch (Exception e) {
+                    log.error("为提供商 '{}' 创建Provider实例或获取模型时出错: {}", lowerCaseProvider, e.getMessage(), e);
+                    return Mono.error(new RuntimeException("获取模型列表时发生内部错误: " + e.getMessage()));
+                }
+            });
     }
 
     @Override
