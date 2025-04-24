@@ -3,17 +3,23 @@ package com.ainovel.server.service.ai.langchain4j;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.MediaType;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import com.ainovel.server.config.ProxyConfig;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.ModelInfo;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
@@ -29,6 +35,18 @@ import reactor.core.publisher.Mono;
 public class OpenRouterLangChain4jModelProvider extends LangChain4jModelProvider {
 
     private static final String DEFAULT_API_ENDPOINT = "https://openrouter.ai/api/v1";
+    
+    // 模型列表缓存 - 静态缓存，所有实例共享
+    private static final Map<String, List<ModelInfo>> MODEL_CACHE = new ConcurrentHashMap<>();
+    
+    // 缓存过期时间 - 1小时
+    private static final long CACHE_EXPIRY_MS = 3600 * 1000;
+    
+    // 最后一次缓存更新时间
+    private static final AtomicLong lastCacheUpdateTime = new AtomicLong(0);
+    
+    // 最大返回的模型数量
+    private static final int MAX_MODELS_TO_RETURN = 20;
 
     // OpenRouter模型价格配置
     // 注意：这些价格需要根据OpenRouter的实际价格进行调整
@@ -170,10 +188,21 @@ public class OpenRouterLangChain4jModelProvider extends LangChain4jModelProvider
     @Override
     public Flux<ModelInfo> listModels() {
         log.info("获取OpenRouter模型列表");
+        
+        // 检查缓存是否有效
+        if (!isCacheExpired() && !MODEL_CACHE.isEmpty()) {
+            log.info("从缓存返回OpenRouter模型列表，共{}个模型", MODEL_CACHE.size());
+            return Flux.fromIterable(MODEL_CACHE.getOrDefault("models", getDefaultOpenRouterModels()));
+        }
 
-        // 创建WebClient
+        // 创建WebClient，增加缓冲区大小
+        ExchangeStrategies strategies = ExchangeStrategies.builder()
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(5 * 1024 * 1024)) // 5MB
+                .build();
+        
         WebClient webClient = WebClient.builder()
                 .baseUrl("https://openrouter.ai/api")
+                .exchangeStrategies(strategies)
                 .build();
 
         // 调用OpenRouter API获取模型列表
@@ -186,20 +215,89 @@ public class OpenRouterLangChain4jModelProvider extends LangChain4jModelProvider
                     try {
                         // 解析响应
                         log.debug("OpenRouter模型列表响应: {}", response);
-
-                        // 这里应该使用JSON解析库来解析响应
-                        // 简化起见，返回预定义的模型列表
-                        return Flux.fromIterable(getDefaultOpenRouterModels());
+                        ObjectMapper mapper = new ObjectMapper();
+                        JsonNode root = mapper.readTree(response);
+                        JsonNode data = root.path("data");
+                        
+                        List<ModelInfo> models = new ArrayList<>();
+                        
+                        if (data.isArray()) {
+                            for (JsonNode modelNode : data) {
+                                String id = modelNode.path("id").asText();
+                                String context = modelNode.path("context_length").asText("0");
+                                int contextLength = Integer.parseInt(context.replaceAll("[^0-9]", ""));
+                                
+                                double inputPrice = 0.0;
+                                double outputPrice = 0.0;
+                                
+                                if (modelNode.has("pricing")) {
+                                    JsonNode pricing = modelNode.path("pricing");
+                                    inputPrice = pricing.path("prompt").asDouble(0.0);
+                                    outputPrice = pricing.path("completion").asDouble(0.0);
+                                }
+                                
+                                // 使用平均价格作为统一价格
+                                double unifiedPrice = (inputPrice + outputPrice) / 2;
+                                
+                                if (unifiedPrice <= 0) {
+                                    // 使用预定义价格，如果有的话
+                                    unifiedPrice = TOKEN_PRICES.getOrDefault(id, 0.001);
+                                }
+                                
+                                ModelInfo modelInfo = ModelInfo.basic(id, id, "openrouter")
+                                        .withDescription("OpenRouter提供的" + id + "模型")
+                                        .withMaxTokens(contextLength > 0 ? contextLength : 8192)
+                                        .withUnifiedPrice(unifiedPrice);
+                                        
+                                models.add(modelInfo);
+                            }
+                        }
+                        
+                        // 按价格排序并限制数量
+                        models.sort(Comparator.<ModelInfo, Double>comparing(model -> 
+                            model.getPricing().getOrDefault("unified", 0.0)).reversed());
+                        
+                        List<ModelInfo> finalModels = models.size() > MAX_MODELS_TO_RETURN ? 
+                                models.subList(0, MAX_MODELS_TO_RETURN) : models;
+                        
+                        // 更新缓存
+                        updateCache(finalModels);
+                        
+                        return Flux.fromIterable(finalModels);
                     } catch (Exception e) {
                         log.error("解析OpenRouter模型列表时出错", e);
-                        return Flux.fromIterable(getDefaultOpenRouterModels());
+                        List<ModelInfo> defaultModels = getDefaultOpenRouterModels();
+                        updateCache(defaultModels);
+                        return Flux.fromIterable(defaultModels);
                     }
                 })
                 .onErrorResume(e -> {
                     log.error("获取OpenRouter模型列表时出错", e);
                     // 出错时返回预定义的模型列表
-                    return Flux.fromIterable(getDefaultOpenRouterModels());
+                    List<ModelInfo> defaultModels = getDefaultOpenRouterModels();
+                    updateCache(defaultModels);
+                    return Flux.fromIterable(defaultModels);
                 });
+    }
+    
+    /**
+     * 检查缓存是否过期
+     * @return 是否过期
+     */
+    private boolean isCacheExpired() {
+        long now = System.currentTimeMillis();
+        long lastUpdate = lastCacheUpdateTime.get();
+        return (now - lastUpdate) > CACHE_EXPIRY_MS;
+    }
+    
+    /**
+     * 更新缓存
+     * @param models 模型列表
+     */
+    private synchronized void updateCache(List<ModelInfo> models) {
+        MODEL_CACHE.put("models", models);
+        lastCacheUpdateTime.set(System.currentTimeMillis());
+        log.info("更新OpenRouter模型缓存，共{}个模型", models.size());
     }
 
     /**

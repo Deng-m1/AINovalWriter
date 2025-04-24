@@ -1,12 +1,15 @@
+import 'dart:async';
 import '../../../models/user_ai_model_config_model.dart';
+import 'package:ainoval/blocs/ai_config/ai_config_bloc.dart'; // 导入以获取ModelListingCapability枚举
+import 'package:ainoval/models/model_info.dart'; // Import ModelInfo
 
 /// 用户 AI 模型配置仓库接口定义
 abstract interface class UserAIModelConfigRepository {
   /// 获取系统支持的所有AI提供商
   Future<List<String>> listAvailableProviders();
 
-  /// 获取指定提供商支持的模型列表
-  Future<List<String>> listModelsForProvider(String provider);
+  /// 获取指定提供商支持的模型列表 (现在返回详细信息)
+  Future<List<ModelInfo>> listModelsForProvider(String provider);
 
   /// 添加新的用户AI模型配置
   Future<UserAIModelConfigModel> addConfiguration({
@@ -57,5 +60,15 @@ abstract interface class UserAIModelConfigRepository {
   Future<UserAIModelConfigModel> setDefaultConfiguration({
     required String userId,
     required String configId,
+  });
+
+  /// 获取提供商的模型列表能力
+  Future<ModelListingCapability> getProviderCapability(String providerName);
+  
+  /// 使用API密钥获取指定提供商的模型列表 (现在返回详细信息)
+  Future<List<ModelInfo>> listModelsWithApiKey({
+    required String provider, 
+    required String apiKey, 
+    String? apiEndpoint
   });
 } 

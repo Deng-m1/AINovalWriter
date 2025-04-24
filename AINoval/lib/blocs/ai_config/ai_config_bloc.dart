@@ -1,5 +1,6 @@
 import 'package:ainoval/models/user_ai_model_config_model.dart';
 import 'package:ainoval/models/ai_model_group.dart';
+import 'package:ainoval/models/model_info.dart'; // Import ModelInfo
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:bloc/bloc.dart';
@@ -97,40 +98,34 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
   Future<void> _onLoadModelsForProvider(
       LoadModelsForProvider event, Emitter<AiConfigState> emit) async {
     emit(state.copyWith(
-        modelsForProvider: [],
+        modelsForProviderInfo: [], 
         selectedProviderForModels: event.provider,
-        // Reset test status if loading models without key
         apiKeyTestSuccessProviderClearable: () => null,
-        apiKeyTestErrorClearable: () => null
+        apiKeyTestErrorClearable: () => null,
       ));
     try {
       final models = await _repository.listModelsForProvider(event.provider);
-      print('⚠️ 成功获取模型列表，provider=${event.provider}，模型数量=${models.length}');
+      AppLogger.i('AiConfigBloc', '成功获取模型列表，provider=${event.provider}，模型数量=${models.length}');
 
-      // 创建模型分组
-      final modelGroup = AIModelGroup.fromModelList(event.provider, models);
-
-      // 更新状态中的模型分组
+      // Use the new factory for ModelInfo list
+      final modelGroup = AIModelGroup.fromModelInfoList(event.provider, models); 
       final updatedModelGroups = Map<String, AIModelGroup>.from(state.modelGroups);
       updatedModelGroups[event.provider] = modelGroup;
 
-      // Emit state with new models and model groups, clearing any previous error message
       emit(state.copyWith(
-        modelsForProvider: models,
-        modelGroups: updatedModelGroups,
+        modelsForProviderInfo: models, 
+        modelGroups: updatedModelGroups, // Update model groups
         errorMessage: () => null
       ));
       
-      // 加载完模型后，触发加载该提供商的默认配置信息
-      print('⚠️ 模型加载完成，触发GetProviderDefaultConfig，provider=${event.provider}');
+      AppLogger.i('AiConfigBloc', '模型加载完成，触发GetProviderDefaultConfig，provider=${event.provider}');
       add(GetProviderDefaultConfig(provider: event.provider));
     } catch (e, stackTrace) {
       AppLogger.e(
           'AiConfigBloc', '加载模型失败 for ${event.provider}', e, stackTrace);
-      print('⚠️ 加载模型失败，provider=${event.provider}，错误：$e');
-      // Emit state clearing models and setting an error message
+      AppLogger.w('AiConfigBloc', '加载模型失败，provider=${event.provider}，错误：$e');
       emit(state.copyWith(
-          modelsForProvider: [],
+          modelsForProviderInfo: [], 
           errorMessage: () => '加载模型列表失败: ${e.toString()}'));
     }
   }
@@ -384,36 +379,29 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
       apiKeyTestErrorClearable: () => null,
     ));
     try {
-      // TODO: Implement the repository call to fetch capability
-      // final capability = await _repository.getProviderCapability(event.providerName);
-      // For now, simulate based on provider name (replace with actual API call)
-      ModelListingCapability capability;
-      if (event.providerName.toLowerCase() == 'openai' || event.providerName.toLowerCase() == 'anthropic') {
-        capability = ModelListingCapability.listingWithKey;
-      } else if (event.providerName.toLowerCase() == 'openrouter' || event.providerName.toLowerCase() == 'ollama') {
-        capability = ModelListingCapability.listingWithoutKey;
-      } else {
-        capability = ModelListingCapability.noListing; // Default or unknown
-      }
+      // 调用repository方法获取提供商能力
+      final capability = await _repository.getProviderCapability(event.providerName);
+      
       AppLogger.i('AiConfigBloc', '加载提供商 ${event.providerName} 能力成功: $capability');
       emit(state.copyWith(providerCapability: capability));
 
-      // After loading capability, decide whether to load models now
-      if (capability == ModelListingCapability.listingWithoutKey) {
-        add(LoadModelsForProvider(provider: event.providerName));
-      } else {
-        // For listingWithKey or noListing, we might load default/empty models
-        // or just wait for API key test / user input.
-        // Current behavior: LoadModelsForProvider will be called explicitly
-        // by the UI or after successful API key test.
-        AppLogger.i('AiConfigBloc', 'Provider ${event.providerName} requires key or has no listing, waiting for explicit model load trigger.');
-         // Optionally load default/empty models immediately for providers requiring keys
-         // add(LoadModelsForProvider(provider: event.providerName));
-      }
+      // 无论能力如何，都尝试加载一次默认模型（不带Key）
+      AppLogger.i('AiConfigBloc', '触发加载 ${event.providerName} 的默认模型列表');
+      add(LoadModelsForProvider(provider: event.providerName));
+      
+      // 原来的逻辑注释掉，或者根据需要保留部分日志
+      // if (capability == ModelListingCapability.listingWithoutKey) {
+      //   add(LoadModelsForProvider(provider: event.providerName));
+      // } else {
+      //   AppLogger.i('AiConfigBloc', 'Provider ${event.providerName} requires key or has no listing, explicit model load triggered.');
+      // }
 
     } catch (e, stackTrace) {
       AppLogger.e('AiConfigBloc', '加载提供商 ${event.providerName} 能力失败', e, stackTrace);
       emit(state.copyWith(errorMessage: () => '加载提供商能力失败: ${e.toString()}'));
+      // 即使能力加载失败，也尝试加载默认模型列表，避免界面空白
+      AppLogger.w('AiConfigBloc', '能力加载失败，仍尝试加载 ${event.providerName} 的默认模型列表');
+      add(LoadModelsForProvider(provider: event.providerName));
     }
   }
 
@@ -421,53 +409,36 @@ class AiConfigBloc extends Bloc<AiConfigEvent, AiConfigState> {
       TestApiKey event, Emitter<AiConfigState> emit) async {
     emit(state.copyWith(
       isTestingApiKey: true,
-      apiKeyTestSuccessProviderClearable: () => null, // Clear previous success
-      apiKeyTestErrorClearable: () => null, // Clear previous error
+      apiKeyTestSuccessProviderClearable: () => null, 
+      apiKeyTestErrorClearable: () => null, 
     ));
     try {
-      // TODO: Implement the repository call to test the key and fetch models
-      // final models = await _repository.listModelsWithApiKey(
-      //   provider: event.providerName,
-      //   apiKey: event.apiKey,
-      //   apiEndpoint: event.apiEndpoint,
-      // );
+      final models = await _repository.listModelsWithApiKey(
+        provider: event.providerName,
+        apiKey: event.apiKey,
+        apiEndpoint: event.apiEndpoint,
+      );
 
-      // Simulate API call delay and result
-      await Future.delayed(const Duration(seconds: 1)); // Simulate network delay
-      List<String> models;
-      if (event.apiKey.startsWith('valid-')) { // Simulate success
-         AppLogger.i('AiConfigBloc', '测试 API Key 成功 for ${event.providerName}');
-         // Simulate getting models after successful test
-         if (event.providerName.toLowerCase() == 'openai') {
-            models = ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'];
-         } else if (event.providerName.toLowerCase() == 'anthropic') {
-            models = ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'];
-         } else {
-           models = ['${event.providerName}-model1', '${event.providerName}-model2'];
-         }
+      AppLogger.i('AiConfigBloc', '测试 API Key 成功 for ${event.providerName}, 获取到 ${models.length} 个模型');
+      
+      // Use the new factory for ModelInfo list
+      final modelGroup = AIModelGroup.fromModelInfoList(event.providerName, models);
+      final updatedModelGroups = Map<String, AIModelGroup>.from(state.modelGroups);
+      updatedModelGroups[event.providerName] = modelGroup;
 
-         final modelGroup = AIModelGroup.fromModelList(event.providerName, models);
-         final updatedModelGroups = Map<String, AIModelGroup>.from(state.modelGroups);
-         updatedModelGroups[event.providerName] = modelGroup;
-
-         emit(state.copyWith(
-           isTestingApiKey: false,
-           apiKeyTestSuccessProvider: event.providerName, // Mark success for this provider
-           modelsForProvider: models, // Update models list
-           modelGroups: updatedModelGroups, // Update model groups
-           selectedProviderForModels: event.providerName, // Ensure this provider is selected
-         ));
-      } else { // Simulate failure
-         AppLogger.w('AiConfigBloc', '测试 API Key 失败 for ${event.providerName}');
-         throw Exception('无效的 API Key 或无法连接');
-      }
-
-    } catch (e, stackTrace) {
-      AppLogger.e('AiConfigBloc', '测试 API Key 异常 for ${event.providerName}', e, stackTrace);
-      // Correctly pass the string directly for nullable apiKeyTestError
       emit(state.copyWith(
         isTestingApiKey: false,
-        apiKeyTestError: 'API Key 测试失败: ${e.toString()}', // Pass string directly
+        apiKeyTestSuccessProvider: event.providerName, 
+        modelsForProviderInfo: models, 
+        modelGroups: updatedModelGroups, // Update model groups
+        selectedProviderForModels: event.providerName, 
+      ));
+    } catch (e, stackTrace) {
+      AppLogger.e('AiConfigBloc', '测试 API Key 异常 for ${event.providerName}', e, stackTrace);
+      emit(state.copyWith(
+        isTestingApiKey: false,
+        apiKeyTestError: 'API Key 测试失败: ${e.toString()}',
+        modelsForProviderInfo: [], 
       ));
     }
   }

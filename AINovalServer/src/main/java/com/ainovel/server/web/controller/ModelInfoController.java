@@ -1,5 +1,6 @@
 package com.ainovel.server.web.controller;
 
+import com.ainovel.server.domain.model.ModelListingCapability;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ainovel.server.domain.model.ModelInfo;
 import com.ainovel.server.service.AIService;
 import com.ainovel.server.service.AIProviderRegistryService;
-import com.ainovel.server.service.ai.ModelListingCapability;
+
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -23,7 +24,7 @@ import reactor.core.publisher.Mono;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/models")
+@RequestMapping("/api/v1/api/models")
 public class ModelInfoController {
     
     @Autowired

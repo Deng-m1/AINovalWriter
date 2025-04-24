@@ -27,6 +27,7 @@ class AiConfigState extends Equatable {
     this.configs = const [],
     this.availableProviders = const [],
     this.modelsForProvider = const [],
+    this.modelsForProviderInfo = const [],
     this.modelGroups = const {},
     this.selectedProviderForModels,
     this.providerDefaultConfigs = const {},
@@ -45,6 +46,7 @@ class AiConfigState extends Equatable {
   final List<UserAIModelConfigModel> configs;
   final List<String> availableProviders;
   final List<String> modelsForProvider; // For the currently selected provider
+  final List<ModelInfo> modelsForProviderInfo; // New field for ModelInfo
   final Map<String, AIModelGroup> modelGroups; // Models grouped by provider
   final String? selectedProviderForModels; // Tracks which provider `modelsForProvider` belongs to
   final Map<String, UserAIModelConfigModel> providerDefaultConfigs; // Provider name -> one representative config
@@ -77,6 +79,7 @@ class AiConfigState extends Equatable {
     List<UserAIModelConfigModel>? configs,
     List<String>? availableProviders,
     List<String>? modelsForProvider,
+    List<ModelInfo>? modelsForProviderInfo,
     Map<String, AIModelGroup>? modelGroups,
     String? selectedProviderForModels,
     // Use ValueGetter to allow clearing the value by passing () => null
@@ -105,6 +108,8 @@ class AiConfigState extends Equatable {
       availableProviders: availableProviders ?? this.availableProviders,
       modelsForProvider:
           clearModels ? [] : (modelsForProvider ?? this.modelsForProvider),
+      modelsForProviderInfo:
+          clearModels ? [] : (modelsForProviderInfo ?? this.modelsForProviderInfo),
       modelGroups: modelGroups ?? this.modelGroups,
       selectedProviderForModels:
           selectedProviderForModelsClearable != null
@@ -139,6 +144,7 @@ class AiConfigState extends Equatable {
         configs,
         availableProviders,
         modelsForProvider,
+        modelsForProviderInfo,
         modelGroups,
         selectedProviderForModels,
         providerDefaultConfigs,

@@ -1,4 +1,5 @@
 import 'package:ainoval/models/ai_model_group.dart';
+import 'package:ainoval/models/model_info.dart';
 import 'package:flutter/material.dart';
 
 /// 模型分组列表组件
@@ -52,23 +53,24 @@ class ModelGroupList extends StatelessWidget {
         collapsedBackgroundColor: Colors.transparent,
         tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         childrenPadding: const EdgeInsets.only(left: 12, right: 12, bottom: 4, top: 0),
-        children: group.models.map((model) {
-          final isSelected = model == selectedModel;
-          return _buildModelItem(context, model, isSelected);
+        children: group.modelsInfo.map((modelInfo) {
+          final isSelected = modelInfo.id == selectedModel;
+          return _buildModelItem(context, modelInfo, isSelected);
         }).toList(),
       ),
     );
   }
 
-  Widget _buildModelItem(BuildContext context, String model, bool isSelected) {
+  Widget _buildModelItem(BuildContext context, ModelInfo modelInfo, bool isSelected) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    // 提取模型名称，去除前缀
-    String displayName = model;
-    if (model.contains('/')) {
-      displayName = model.split('/').last;
-    }
+    // Use modelInfo.name for display, fallback to modelInfo.id
+    String displayName = modelInfo.name.isNotEmpty ? modelInfo.name : modelInfo.id;
+    // Optional: Further cleanup display name if needed (e.g., remove provider prefix if present in name)
+    // if (displayName.startsWith(modelInfo.provider + '/')) { 
+    //   displayName = displayName.substring(modelInfo.provider.length + 1);
+    // }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
@@ -92,17 +94,17 @@ class ModelGroupList extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         title: Row(
           children: [
-            // 模型图标
+            // 模型图标 - Use modelInfo.id for color/initials
             Container(
               width: 24,
               height: 24,
               decoration: BoxDecoration(
-                color: _getModelColor(model),
+                color: _getModelColor(modelInfo.id),
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: Text(
-                  _getModelInitial(model),
+                  _getModelInitial(modelInfo.id),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
@@ -112,7 +114,7 @@ class ModelGroupList extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // 模型名称
+            // 模型名称 - Use displayName
             Expanded(
               child: Text(
                 displayName,
@@ -123,8 +125,8 @@ class ModelGroupList extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            // 免费标签
-            if (model.toLowerCase().contains('free'))
+            // 免费标签 - Use modelInfo.id
+            if (modelInfo.id.toLowerCase().contains('free'))
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
@@ -142,7 +144,7 @@ class ModelGroupList extends StatelessWidget {
               ),
           ],
         ),
-        onTap: () => onModelSelected(model),
+        onTap: () => onModelSelected(modelInfo.id),
         selected: isSelected,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
@@ -151,9 +153,9 @@ class ModelGroupList extends StatelessWidget {
     );
   }
 
-  // 根据模型名称获取颜色
-  Color _getModelColor(String model) {
-    final modelLower = model.toLowerCase();
+  // 根据模型 ID 获取颜色
+  Color _getModelColor(String modelId) {
+    final modelLower = modelId.toLowerCase();
     if (modelLower.contains('gpt')) {
       return Colors.green;
     } else if (modelLower.contains('claude')) {
@@ -179,16 +181,16 @@ class ModelGroupList extends StatelessWidget {
   }
 
   // 获取模型的首字母作为图标
-  String _getModelInitial(String model) {
-    if (model.contains('/')) {
+  String _getModelInitial(String modelId) {
+    if (modelId.contains('/')) {
       // 如果有提供商前缀，使用提供商的首字母
-      return model.split('/').first[0].toUpperCase();
-    } else if (model.contains('-')) {
+      return modelId.split('/').first[0].toUpperCase();
+    } else if (modelId.contains('-')) {
       // 如果有连字符，使用第一部分的首字母
-      return model.split('-').first[0].toUpperCase();
+      return modelId.split('-').first[0].toUpperCase();
     } else {
       // 否则使用模型名称的首字母
-      return model.isNotEmpty ? model[0].toUpperCase() : '?';
+      return modelId.isNotEmpty ? modelId[0].toUpperCase() : '?';
     }
   }
 }

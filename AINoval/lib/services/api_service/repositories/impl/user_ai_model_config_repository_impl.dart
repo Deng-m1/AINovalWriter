@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:ainoval/models/user_ai_model_config_model.dart';
+import 'package:ainoval/models/model_info.dart';
 import 'package:ainoval/services/api_service/base/api_client.dart';
 // Api Exception 可能仍然需要，用于类型检查或如果 repository 层需要抛出特定类型的异常
 // 但 ApiExceptionHelper 不需要了
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
 import 'package:ainoval/utils/logger.dart';
+import 'package:ainoval/blocs/ai_config/ai_config_bloc.dart'; // 添加枚举导入
 
 /// 用户 AI 模型配置仓库实现
 class UserAIModelConfigRepositoryImpl implements UserAIModelConfigRepository {
@@ -29,18 +31,16 @@ class UserAIModelConfigRepositoryImpl implements UserAIModelConfigRepository {
   }
 
   @override
-  Future<List<String>> listModelsForProvider(String provider) async {
-    AppLogger.i('UserAIModelConfigRepoImpl', '获取提供商 $provider 模型');
+  Future<List<ModelInfo>> listModelsForProvider(String provider) async {
+    AppLogger.i('UserAIModelConfigRepoImpl', '获取提供商 $provider 模型信息');
     try {
-      final models =
-          await apiClient.listAIModelsForProvider(provider: provider);
+      final models = await apiClient.listAIModelsForProvider(provider: provider);
       AppLogger.i('UserAIModelConfigRepoImpl',
-          '获取提供商 $provider 模型成功: count=${models.length}');
+          '获取提供商 $provider 模型信息成功: count=${models.length}');
       return models;
     } catch (e, stackTrace) {
       AppLogger.e(
-          'UserAIModelConfigRepoImpl', '获取提供商 $provider 模型失败', e, stackTrace);
-      // 直接重新抛出
+          'UserAIModelConfigRepoImpl', '获取提供商 $provider 模型信息失败', e, stackTrace);
       rethrow;
     }
   }
@@ -221,6 +221,66 @@ class UserAIModelConfigRepositoryImpl implements UserAIModelConfigRepository {
       AppLogger.e('UserAIModelConfigRepoImpl',
           '设置默认配置失败: userId=$userId, configId=$configId', e, stackTrace);
       // 直接重新抛出
+      rethrow;
+    }
+  }
+
+  @override
+  Future<ModelListingCapability> getProviderCapability(String providerName) async {
+    AppLogger.i('UserAIModelConfigRepoImpl', '获取提供商 $providerName 的模型列表能力');
+    try {
+      final capabilityString = await apiClient.getProviderCapability(providerName);
+      AppLogger.i('UserAIModelConfigRepoImpl', '获取提供商 $providerName 的模型列表能力成功: $capabilityString');
+      // 清理字符串，去除可能的前后引号
+      var cleanCapabilityString = capabilityString;
+      if (cleanCapabilityString.startsWith('"') && cleanCapabilityString.endsWith('"')) {
+        cleanCapabilityString = cleanCapabilityString.substring(1, cleanCapabilityString.length - 1);
+      }
+
+      ModelListingCapability capability;
+      // 使用清理后的字符串进行比较
+      switch (cleanCapabilityString) { 
+        case 'NO_LISTING':
+          capability = ModelListingCapability.noListing;
+          break;
+        case 'LISTING_WITHOUT_KEY': 
+          capability = ModelListingCapability.listingWithoutKey;
+          break;
+        case 'LISTING_WITH_KEY':
+          capability = ModelListingCapability.listingWithKey;
+          break;
+        default: 
+          AppLogger.w('UserAIModelConfigRepoImpl', '未知的提供商能力字符串: $capabilityString, 使用默认 noListing');
+          capability = ModelListingCapability.noListing; 
+      }
+      AppLogger.i('UserAIModelConfigRepoImpl', '获取提供商 $providerName 的模型列表能力成功: $capability');
+      return capability;
+    } catch (e, stackTrace) {
+      AppLogger.e('UserAIModelConfigRepoImpl', '获取提供商 $providerName 的模型列表能力失败', e, stackTrace);
+      // 如果出错，默认为最安全的能力类型
+      AppLogger.w('UserAIModelConfigRepoImpl', '使用默认能力类型 noListing');
+      return ModelListingCapability.noListing;
+    }
+  }
+  
+  @override
+  Future<List<ModelInfo>> listModelsWithApiKey({
+    required String provider,
+    required String apiKey,
+    String? apiEndpoint,
+  }) async {
+    AppLogger.i('UserAIModelConfigRepoImpl', '使用API密钥获取提供商 $provider 的模型信息列表');
+    try {
+      final models = await apiClient.listAIModelsWithApiKey(
+        provider: provider,
+        apiKey: apiKey,
+        apiEndpoint: apiEndpoint,
+      );
+      AppLogger.i('UserAIModelConfigRepoImpl', 
+          '使用API密钥获取提供商 $provider 的模型信息列表成功: count=${models.length}');
+      return models;
+    } catch (e, stackTrace) {
+      AppLogger.e('UserAIModelConfigRepoImpl', '使用API密钥获取提供商 $provider 的模型信息列表失败', e, stackTrace);
       rethrow;
     }
   }

@@ -13,18 +13,14 @@ import com.ainovel.server.config.ProxyConfig;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
 import com.ainovel.server.domain.model.ModelInfo;
+import com.ainovel.server.domain.model.ModelListingCapability;
+import com.ainovel.server.service.AIProviderRegistryService;
 import com.ainovel.server.service.AIService;
+import com.ainovel.server.service.NovelService;
 import com.ainovel.server.service.ai.AIModelProvider;
-import com.ainovel.server.service.ai.AnthropicModelProvider;
-import com.ainovel.server.service.ai.GeminiModelProvider;
-import com.ainovel.server.service.ai.OpenAIModelProvider;
-import com.ainovel.server.service.ai.SiliconFlowModelProvider;
-import com.ainovel.server.service.ai.langchain4j.AnthropicLangChain4jModelProvider;
-import com.ainovel.server.service.ai.langchain4j.GeminiLangChain4jModelProvider;
-import com.ainovel.server.service.ai.langchain4j.OpenAILangChain4jModelProvider;
-import com.ainovel.server.service.ai.langchain4j.OpenRouterLangChain4jModelProvider;
-import com.ainovel.server.service.ai.langchain4j.SiliconFlowLangChain4jModelProvider;
-import com.ainovel.server.service.ai.GrokModelProvider;
+
+import com.ainovel.server.service.ai.factory.AIModelProviderFactory;
+import com.ainovel.server.service.ai.capability.ProviderCapabilityService;
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -44,8 +40,22 @@ public class AIServiceImpl implements AIService {
 
     // 模型分组信息
     private final Map<String, List<String>> modelGroups = new HashMap<>();
+    private final NovelService novelService;
+    private final AIProviderRegistryService providerRegistryService;
 
-    public AIServiceImpl() {
+    private final AIModelProviderFactory providerFactory;
+    private final ProviderCapabilityService capabilityService;
+
+    @Autowired
+    public AIServiceImpl(
+            NovelService novelService,
+            AIProviderRegistryService providerRegistryService,
+            AIModelProviderFactory providerFactory,
+            ProviderCapabilityService capabilityService) {
+        this.novelService = novelService;
+        this.providerRegistryService = providerRegistryService;
+        this.providerFactory = providerFactory;
+        this.capabilityService = capabilityService;
         initializeModelGroups();
     }
 
@@ -228,8 +238,10 @@ public class AIServiceImpl implements AIService {
         }
         List<String> models = modelGroups.get(provider.toLowerCase());
         if (models == null) {
-            log.warn("请求未知的提供商 '{}'", provider);
-            return Flux.error(new IllegalArgumentException("未知的提供商: " + provider));
+            log.warn("请求未知的提供商 '{}' 的模型名称列表", provider);
+            // 即使未知，也返回空列表，避免前端报错
+            return Flux.empty();
+            // return Flux.error(new IllegalArgumentException("未知的提供商: " + provider));
         }
         return Flux.fromIterable(models);
     }
@@ -249,42 +261,78 @@ public class AIServiceImpl implements AIService {
         if (!StringUtils.isNotBlank(provider)) {
             return Flux.error(new IllegalArgumentException("提供商名称不能为空"));
         }
-
         String lowerCaseProvider = provider.toLowerCase();
-        if (!modelGroups.containsKey(lowerCaseProvider)) {
-            log.warn("请求未知的提供商 '{}'", provider);
-            return Flux.error(new IllegalArgumentException("未知的提供商: " + provider));
+
+        // 1. 获取提供商能力
+        return providerRegistryService.getProviderListingCapability(lowerCaseProvider)
+                .flatMapMany(capability -> {
+                    log.info("提供商 '{}' 的能力是: {}", lowerCaseProvider, capability);
+                    // 2. 根据能力决定行为
+                    if (capability == ModelListingCapability.LISTING_WITHOUT_KEY /* || capability == ModelListingCapability.LISTING_WITH_OR_WITHOUT_KEY */ ) {
+                        log.info("提供商 '{}' 支持无密钥列出模型，尝试调用实际 provider", lowerCaseProvider);
+                        // 尝试获取实际的 Provider 实例并调用 listModels()
+                        // 注意：createAIModelProvider 可能需要 modelName 和 apiKey，这里需要调整
+                        // 简化处理：假设 createAIModelProvider 能处理 dummy key，或者有其他方式获取实例
+                        try {
+                            String defaultEndpoint = capabilityService.getDefaultApiEndpoint(lowerCaseProvider);
+                            
+                            // 获取默认模型ID用于创建临时提供商实例
+                            return capabilityService.getDefaultModels(lowerCaseProvider)
+                                .switchIfEmpty(Mono.error(new RuntimeException("未找到提供商 " + lowerCaseProvider + " 的默认模型")))
+                                .take(1)  // 只取第一个模型，用于创建临时实例
+                                .flatMap(firstModel -> {
+                                    // 创建临时提供商实例用于获取模型列表
+                                    AIModelProvider providerInstance = providerFactory.createProvider(
+                                            lowerCaseProvider,
+                                            firstModel.getId(),
+                                            "dummy-key-for-listing",
+                                            null // 使用默认端点
+                                    );
+                                    
+                                    if (providerInstance != null) {
+                                        return providerInstance.listModels()
+                                                .doOnError(e -> log.error("调用提供商 '{}' 的 listModels 失败，将回退到默认列表", lowerCaseProvider, e))
+                                                .onErrorResume(e -> getDefaultModelInfos(lowerCaseProvider)); // 出错时回退
+                                    } else {
+                                        log.warn("无法创建提供商 '{}' 的实例，将回退到默认列表", lowerCaseProvider);
+                                        return getDefaultModelInfos(lowerCaseProvider);
+                                    }
+                                });
+                        } catch (Exception e) {
+                            log.error("尝试为提供商 '{}' 获取实际模型列表时出错，将回退到默认列表", lowerCaseProvider, e);
+                            return getDefaultModelInfos(lowerCaseProvider);
+                        }
+                    } else {
+                        // 能力为 NO_LISTING 或 LISTING_WITH_KEY，返回默认模型信息
+                        log.info("提供商 '{}' 能力为 {}，返回默认模型列表", lowerCaseProvider, capability);
+                        return getDefaultModelInfos(lowerCaseProvider);
+                    }
+                })
+                .switchIfEmpty(Flux.defer(() -> {
+                    // 如果获取能力失败或提供商未知，也返回默认列表
+                    log.warn("无法获取提供商 '{}' 的能力或提供商未知，返回默认模型列表", lowerCaseProvider);
+                    return getDefaultModelInfos(lowerCaseProvider);
+                }));
+    }
+
+    // 辅助方法：获取默认模型信息
+    private Flux<ModelInfo> getDefaultModelInfos(String lowerCaseProvider) {
+        List<String> modelNames = modelGroups.get(lowerCaseProvider);
+        if (modelNames == null || modelNames.isEmpty()) {
+            log.warn("无法找到提供商 '{}' 的默认模型名称列表", lowerCaseProvider);
+            return Flux.empty(); // 如果连默认的都没有，返回空
         }
 
-        // 创建一个临时的提供商实例来获取模型列表
-        // 对于不需要API密钥的提供商，可以直接获取模型列表
-        try {
-            if (lowerCaseProvider.equals("openrouter")) {
-                // OpenRouter不需要API密钥就能获取模型列表
-                AIModelProvider provider1 = createAIModelProvider(lowerCaseProvider,
-                        modelGroups.get(lowerCaseProvider).get(0),
-                        "dummy-key", null);
-                if (provider1 != null) {
-                    return provider1.listModels();
-                }
-            }
-
-            // 对于其他提供商，创建一个空的模型列表，并根据模型分组信息填充
-            List<ModelInfo> models = new ArrayList<>();
-            List<String> modelNames = modelGroups.get(lowerCaseProvider);
-
-            for (String modelName : modelNames) {
-                models.add(ModelInfo.basic(modelName, modelName, lowerCaseProvider)
-                        .withDescription(lowerCaseProvider + "的" + modelName + "模型")
-                        .withMaxTokens(8192) // 默认值
-                        .withUnifiedPrice(0.001)); // 默认价格
-            }
-
-            return Flux.fromIterable(models);
-        } catch (Exception e) {
-            log.error("获取提供商模型信息时出错: {}", e.getMessage(), e);
-            return Flux.empty();
+        List<ModelInfo> models = new ArrayList<>();
+        for (String modelName : modelNames) {
+            // 创建基础的 ModelInfo 对象
+            models.add(ModelInfo.basic(modelName, modelName, lowerCaseProvider)
+                    .withDescription(lowerCaseProvider + "的" + modelName + "模型")
+                    .withMaxTokens(8192) // 使用合理的默认值
+                    .withUnifiedPrice(0.001)); // 使用合理的默认值
         }
+        log.info("为提供商 '{}' 返回了 {} 个默认模型信息", lowerCaseProvider, models.size());
+        return Flux.fromIterable(models);
     }
 
     @Override
@@ -320,75 +368,7 @@ public class AIServiceImpl implements AIService {
     }
 
     @Override
-    public AIModelProvider createAIModelProvider(String provider, String modelName, String apiKey, String apiEndpoint) {
-        String lowerCaseProvider = provider.toLowerCase();
-        if (!StringUtils.isNotBlank(apiKey)) {
-            log.error("尝试创建 Provider 时 API Key 为空: provider={}, modelName={}", provider, modelName);
-            return null;
-        }
-
-        if (!modelGroups.containsKey(lowerCaseProvider)) {
-            log.error("尝试为不受支持的提供商创建实例: provider={}", provider);
-            return null;
-        }
-
-        List<String> supportedModels = modelGroups.get(lowerCaseProvider);
-        if (supportedModels == null || supportedModels.stream().noneMatch(m -> m.equalsIgnoreCase(modelName))) {
-            log.error("提供商 '{}' 不支持模型 '{}' 或模型名称无效", provider, modelName);
-            return null;
-        }
-
-        log.debug("创建 AIModelProvider: provider={}, model={}, useLangChain4j={}, endpointProvided={}",
-                lowerCaseProvider, modelName, useLangChain4j, StringUtils.isNotBlank(apiEndpoint));
-
-        try {
-            if (useLangChain4j) {
-                return switch (lowerCaseProvider) {
-                    case "openai" ->
-                        new OpenAILangChain4jModelProvider(modelName, apiKey, apiEndpoint,proxyConfig);
-                    case "anthropic" ->
-                        new AnthropicLangChain4jModelProvider(modelName, apiKey, apiEndpoint);
-                    case "gemini" ->
-                        new GeminiLangChain4jModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
-                    case "siliconflow" ->
-                        new SiliconFlowLangChain4jModelProvider(modelName, apiKey, apiEndpoint);
-                    case "openrouter" ->
-                        new OpenRouterLangChain4jModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
-                    case "x-ai" -> {
-                        // X.AI不支持LangChain4j，使用我们的原生实现即使在LangChain4j模式下
-                        log.info("创建X.AI的Grok模型提供商(原生实现): model={}", modelName);
-                        yield new GrokModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
-                    }
-                    default -> {
-                        log.error("LangChain4j 模式下不支持的提供商: {}", lowerCaseProvider);
-                        yield null;
-                    }
-                };
-            } else {
-                return switch (lowerCaseProvider) {
-                    case "openai" ->
-                        new OpenAIModelProvider(modelName, apiKey, apiEndpoint);
-                    case "anthropic" ->
-                        new AnthropicModelProvider(modelName, apiKey, apiEndpoint);
-                    case "gemini" ->
-                        new GeminiModelProvider(modelName, apiKey, apiEndpoint);
-                    case "siliconflow" ->
-                        new SiliconFlowModelProvider(modelName, apiKey, apiEndpoint);
-                    case "openrouter" ->
-                        // 对于非LangChain4j模式，我们可以使用OpenAI的实现，因为OpenRouter兼容OpenAI的API
-                        new OpenAIModelProvider(modelName, apiKey, apiEndpoint != null ? apiEndpoint : "https://openrouter.ai/api/v1");
-                    case "x-ai" ->
-                        new GrokModelProvider(modelName, apiKey, apiEndpoint, proxyConfig);
-                    default -> {
-                        log.error("原始模式下不支持的提供商: {}", lowerCaseProvider);
-                        yield null;
-                    }
-                };
-            }
-        } catch (Exception e) {
-            log.error("创建 AIModelProvider 实例时发生异常: provider={}, model={}, error={}",
-                    provider, modelName, e.getMessage(), e);
-            return null;
-        }
+    public AIModelProvider createAIModelProvider(String providerName, String modelName, String apiKey, String apiEndpoint) {
+        return providerFactory.createProvider(providerName, modelName, apiKey, apiEndpoint);
     }
 }

@@ -38,7 +38,7 @@ import com.ainovel.server.config.ProxyConfig;
  * X.AI的Grok模型提供商
  */
 @Slf4j
-public class GrokModelProvider extends AbstractAIModelProvider {
+public class XaiModelProvider extends AbstractAIModelProvider {
 
     private static final String DEFAULT_API_ENDPOINT = "https://api.x.ai/v1";
     private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -75,7 +75,7 @@ public class GrokModelProvider extends AbstractAIModelProvider {
      * @param apiKey API密钥
      * @param apiEndpoint API端点
      */
-    public GrokModelProvider(String modelName, String apiKey, String apiEndpoint) {
+    public XaiModelProvider(String modelName, String apiKey, String apiEndpoint) {
         super("x-ai", modelName, apiKey, apiEndpoint);
         initWebClient();
     }
@@ -87,7 +87,7 @@ public class GrokModelProvider extends AbstractAIModelProvider {
      * @param apiEndpoint API端点
      * @param proxyConfig 代理配置
      */
-    public GrokModelProvider(String modelName, String apiKey, String apiEndpoint, ProxyConfig proxyConfig) {
+    public XaiModelProvider(String modelName, String apiKey, String apiEndpoint, ProxyConfig proxyConfig) {
         super("x-ai", modelName, apiKey, apiEndpoint);
         this.proxyConfig = proxyConfig;
         this.proxyEnabled = (proxyConfig != null && proxyConfig.isEnabled());
@@ -545,19 +545,15 @@ public class GrokModelProvider extends AbstractAIModelProvider {
         if (apiKey == null || apiKey.trim().isEmpty()) {
             return Flux.error(new RuntimeException("API密钥不能为空"));
         }
-        
+
         try {
             // 获取API端点
             String baseUrl = apiEndpoint != null && !apiEndpoint.trim().isEmpty() ?
                     apiEndpoint : DEFAULT_API_ENDPOINT;
-            
-            // 创建WebClient
-            WebClient tempWebClient = WebClient.builder()
-                    .baseUrl(baseUrl)
-                    .build();
-            
+
+
             // 调用X.AI API获取模型列表
-            return tempWebClient.get()
+            return this.webClient.get()
                     .uri("/models")
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
@@ -566,7 +562,7 @@ public class GrokModelProvider extends AbstractAIModelProvider {
                         try {
                             // 解析响应
                             log.debug("X.AI模型列表响应: {}", response);
-                            
+
                             // 实际情况可能需要根据API响应格式进行调整
                             // 这里简化处理，直接返回预定义的模型列表
                             return Flux.fromIterable(getDefaultXAIModels());
@@ -588,7 +584,44 @@ public class GrokModelProvider extends AbstractAIModelProvider {
     
     @Override 
     public Flux<ModelInfo> listModelsWithApiKey(String apiKey, String apiEndpoint) {
-        return listModels();
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            return Flux.error(new RuntimeException("API密钥不能为空"));
+        }
+
+        try {
+            // 获取API端点
+            String baseUrl = apiEndpoint != null && !apiEndpoint.trim().isEmpty() ?
+                    apiEndpoint : DEFAULT_API_ENDPOINT;
+
+            // 调用X.AI API获取模型列表
+            return this.webClient.get()
+                    .uri("/models")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .flatMapMany(response -> {
+                        try {
+                            // 解析响应
+                            log.debug("X.AI模型列表响应: {}", response);
+
+                            // 实际情况可能需要根据API响应格式进行调整
+                            // 这里简化处理，直接返回预定义的模型列表
+                            return Flux.fromIterable(getDefaultXAIModels());
+                        } catch (Exception e) {
+                            log.error("解析X.AI模型列表时出错", e);
+                            return Flux.fromIterable(getDefaultXAIModels());
+                        }
+                    })
+                    .onErrorResume(e -> {
+                        log.error("获取X.AI模型列表时出错: {}", e.getMessage(), e);
+                        // 出错时返回预定义的模型列表
+                        return Flux.fromIterable(getDefaultXAIModels());
+                    });
+        } catch (Exception e) {
+            log.error("调用X.AI API时出错", e);
+            return Flux.fromIterable(getDefaultXAIModels());
+        }
     }
 
     /**

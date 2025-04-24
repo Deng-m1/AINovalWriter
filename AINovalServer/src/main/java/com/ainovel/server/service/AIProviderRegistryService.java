@@ -1,6 +1,7 @@
 package com.ainovel.server.service;
 
-import com.ainovel.server.service.ai.ModelListingCapability;
+import com.ainovel.server.domain.model.ModelListingCapability;
+
 import reactor.core.publisher.Mono;
 
 /**
