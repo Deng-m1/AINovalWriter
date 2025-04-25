@@ -258,6 +258,19 @@
             <artifactId>spring-context-support</artifactId>
         </dependency>
         
+        <!-- Spring AMQP & RabbitMQ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+        
+        <!-- Java 延迟队列支持 (用于任务重试) -->
+        <dependency>
+            <groupId>net.jodah</groupId>
+            <artifactId>expiringmap</artifactId>
+            <version>0.5.11</version>
+        </dependency>
+        
     </dependencies>
     
     <build>

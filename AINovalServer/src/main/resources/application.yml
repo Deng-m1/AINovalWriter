@@ -22,6 +22,27 @@ spring:
     base-path: /
   lifecycle:
     timeout-per-shutdown-phase: 30s
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+        concurrency: 4
+        max-concurrency: 8
+        retry:
+          enabled: false
+    connection-timeout: 5000
+    template:
+      mandatory: true
+      receive-timeout: 30000
+      reply-timeout: 30000
 
 logging:
   level:
