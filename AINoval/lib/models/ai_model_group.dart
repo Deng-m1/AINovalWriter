@@ -1,3 +1,4 @@
+import 'package:ainoval/models/model_info.dart'; // Import ModelInfo
 import 'package:meta/meta.dart';
 
 /// AI模型分组模型，用于UI显示
@@ -11,43 +12,39 @@ class AIModelGroup {
   final String provider;
   final List<ModelPrefixGroup> groups;
 
-  /// 从模型列表创建分组
-  factory AIModelGroup.fromModelList(String provider, List<String> models) {
-    // 按模型前缀分组
-    final Map<String, List<String>> groupedModels = {};
+  /// 从 ModelInfo 列表创建分组
+  factory AIModelGroup.fromModelInfoList(String provider, List<ModelInfo> models) {
+    final Map<String, List<ModelInfo>> groupedModels = {};
 
-    for (final model in models) {
-      // 提取前缀，使用第一个 '/' 或 ':' 或 '-' 作为分隔符
-      // 如果没有这些分隔符，则使用整个模型名称作为前缀
+    for (final modelInfo in models) {
       String prefix;
-      if (model.contains('/')) {
-        prefix = model.split('/').first;
-      } else if (model.contains(':')) {
-        prefix = model.split(':').first;
-      } else if (model.contains('-')) {
-        final parts = model.split('-');
-        // 对于像 gpt-3.5-turbo 这样的模型，我们希望前缀是 gpt
+      // Use model ID for prefix extraction
+      final modelId = modelInfo.id;
+      if (modelId.contains('/')) {
+        prefix = modelId.split('/').first;
+      } else if (modelId.contains(':')) {
+        prefix = modelId.split(':').first;
+      } else if (modelId.contains('-')) {
+        final parts = modelId.split('-');
         prefix = parts.first;
       } else {
-        prefix = model;
+        prefix = modelId;
       }
 
-      // 添加到对应的分组
       if (!groupedModels.containsKey(prefix)) {
         groupedModels[prefix] = [];
       }
-      groupedModels[prefix]!.add(model);
+      groupedModels[prefix]!.add(modelInfo);
     }
 
-    // 转换为 ModelPrefixGroup 列表
     final groups = groupedModels.entries
         .map((entry) => ModelPrefixGroup(
               prefix: entry.key,
-              models: entry.value,
+              // Pass ModelInfo list to ModelPrefixGroup constructor
+              modelsInfo: entry.value, 
             ))
         .toList();
 
-    // 按前缀字母顺序排序
     groups.sort((a, b) => a.prefix.compareTo(b.prefix));
 
     return AIModelGroup(
@@ -57,10 +54,10 @@ class AIModelGroup {
   }
 
   /// 获取所有模型的平铺列表
-  List<String> get allModels {
-    final List<String> result = [];
+  List<ModelInfo> get allModelsInfo {
+    final List<ModelInfo> result = [];
     for (final group in groups) {
-      result.addAll(group.models);
+      result.addAll(group.modelsInfo);
     }
     return result;
   }
@@ -93,11 +90,14 @@ class AIModelGroup {
 class ModelPrefixGroup {
   const ModelPrefixGroup({
     required this.prefix,
-    required this.models,
+    required this.modelsInfo, // Change from models (List<String>)
   });
 
   final String prefix;
-  final List<String> models;
+  final List<ModelInfo> modelsInfo; // Store ModelInfo
+
+  // Keep models getter for backward compatibility or UI that needs strings?
+  List<String> get models => modelsInfo.map((info) => info.id).toList();
 
   @override
   bool operator ==(Object other) {
@@ -105,11 +105,11 @@ class ModelPrefixGroup {
 
     return other is ModelPrefixGroup &&
         other.prefix == prefix &&
-        _listEquals(other.models, models);
+        _listEquals(other.modelsInfo, modelsInfo); // Compare ModelInfo lists
   }
 
   @override
-  int get hashCode => prefix.hashCode ^ Object.hashAll(models);
+  int get hashCode => prefix.hashCode ^ Object.hashAll(modelsInfo);
 
   // 辅助方法：比较两个列表是否相等
   bool _listEquals<T>(List<T>? a, List<T>? b) {

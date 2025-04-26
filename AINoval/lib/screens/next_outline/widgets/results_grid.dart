@@ -69,11 +69,24 @@ class _ResultsGridState extends State<ResultsGrid> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '生成结果',
-          style: Theme.of(context).textTheme.titleLarge,
+        Row(
+          children: [
+            Icon(
+              Icons.format_list_bulleted,
+              size: 24,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              '生成结果',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
 
         // 全局加载状态
         if (widget.isGenerating && widget.outlineOptions.isEmpty)
@@ -83,7 +96,7 @@ class _ResultsGridState extends State<ResultsGrid> {
 
         // 空状态
         else if (widget.outlineOptions.isEmpty)
-          EmptyStatePlaceholder(
+          const EmptyStatePlaceholder(
             icon: Icons.description_outlined,
             title: '尚未生成剧情',
             message: '请在上方配置选项后点击"生成剧情大纲"。',
@@ -102,8 +115,8 @@ class _ResultsGridState extends State<ResultsGrid> {
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: crossAxisCount,
                       childAspectRatio: 0.7,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 20,
+                      mainAxisSpacing: 20,
                     ),
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -126,7 +139,7 @@ class _ResultsGridState extends State<ResultsGrid> {
                 },
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 30),
 
               // 全局操作按钮
               if (widget.outlineOptions.isNotEmpty && !widget.isGenerating)
@@ -144,15 +157,19 @@ class _ResultsGridState extends State<ResultsGrid> {
         Row(
           children: [
             // 重新生成按钮
-            ElevatedButton.icon(
+            OutlinedButton.icon(
               onPressed: widget.isGenerating || widget.isSaving
                   ? null
                   : () => widget.onRegenerateAll(null),
-              icon: const Icon(LucideIcons.refresh_cw, size: 20),
+              icon: const Icon(LucideIcons.refresh_cw, size: 18),
               label: const Text('重新生成(全部)'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
+              style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.grey.shade700,
+                side: BorderSide(color: Colors.grey.shade300),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
 
@@ -165,21 +182,30 @@ class _ResultsGridState extends State<ResultsGrid> {
                     ? null
                     : () => _showSaveOptionsDialog(context),
                 icon: widget.isSaving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onPrimary,
                         ),
                       )
-                    : const Icon(LucideIcons.save, size: 20),
-                label: Text(widget.isSaving ? '保存中...' : '保存选中的大纲'),
+                    : const Icon(LucideIcons.save, size: 18),
+                label: Text(
+                  widget.isSaving ? '保存中...' : '保存选中的大纲',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
           ],
         ),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
 
         // 提示并重试
         Row(
@@ -187,12 +213,30 @@ class _ResultsGridState extends State<ResultsGrid> {
             Expanded(
               child: TextField(
                 controller: _regenerateHintController,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
                   hintText: '输入提示以优化所有生成...',
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 12,
+                  prefixIcon: Icon(
+                    LucideIcons.lightbulb, 
+                    size: 18, 
+                    color: Colors.amber.shade700
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: Colors.amber.shade500),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
                   ),
                 ),
               ),
@@ -208,11 +252,15 @@ class _ResultsGridState extends State<ResultsGrid> {
                       widget.onRegenerateAll(hint);
                       _regenerateHintController.clear();
                     },
-              icon: const Icon(LucideIcons.lightbulb, size: 20),
-              label: const Text('提示并重试(全部)'),
+              icon: const Icon(LucideIcons.sparkles, size: 18),
+              label: const Text('提示并重试'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.amber.shade100,
-                foregroundColor: Colors.brown.shade700,
+                foregroundColor: Colors.amber.shade900,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ],

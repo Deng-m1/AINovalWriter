@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:collection/collection.dart';
 
 import 'package:ainoval/blocs/ai_config/ai_config_bloc.dart';
 import 'package:ainoval/models/user_ai_model_config_model.dart';
@@ -13,10 +15,12 @@ class ModelServiceListPage extends StatefulWidget {
     super.key,
     required this.userId,
     required this.onAddNew,
+    required this.onEditConfig,
   });
 
   final String userId;
   final VoidCallback onAddNew;
+  final Function(UserAIModelConfigModel) onEditConfig;
 
   @override
   State<ModelServiceListPage> createState() => _ModelServiceListPageState();
@@ -56,6 +60,67 @@ class _ModelServiceListPageState extends State<ModelServiceListPage> {
     ));
   }
 
+  void _handleSetDefault(String configId) {
+    context.read<AiConfigBloc>().add(SetDefaultAiConfig(
+      userId: widget.userId,
+      configId: configId,
+    ));
+  }
+
+  void _handleValidate(String configId) {
+    context.read<AiConfigBloc>().add(ValidateAiConfig(
+      userId: widget.userId,
+      configId: configId,
+    ));
+  }
+
+  void _handleEdit(String configId) {
+    // 找到要编辑的配置
+    final config = context.read<AiConfigBloc>().state.configs.firstWhereOrNull((c) => c.id == configId);
+    if (config != null) {
+      // 调用父组件的回调来显示编辑表单
+      widget.onEditConfig(config);
+    } else {
+      // 处理未找到配置的情况
+      Fluttertoast.showToast(msg: "未找到要编辑的配置");
+    }
+  }
+
+  void _handleDelete(String configId) {
+    // 显示确认对话框
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('确认删除'),
+          content: const Text('确定要删除这个模型服务配置吗？此操作无法撤销。'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('取消'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(); // 关闭对话框
+              },
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+              child: const Text('删除'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(); // 关闭对话框
+                // 发送删除事件
+                context.read<AiConfigBloc>().add(DeleteAiConfig(
+                  userId: widget.userId,
+                  configId: configId,
+                ));
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // 过滤配置列表
   List<UserAIModelConfigModel> _getFilteredConfigs(List<UserAIModelConfigModel> configs) {
     return configs.where((config) {
@@ -85,6 +150,7 @@ class _ModelServiceListPageState extends State<ModelServiceListPage> {
       provider: config.provider,
       path: config.modelName,
       verified: config.isValidated,
+      isDefault: config.isDefault,
       timestamp: config.updatedAt,
       description: '这是一个${config.provider}提供的${config.modelName}模型服务。',
       tags: ['AI', config.provider, if (config.isDefault) '默认'],
@@ -199,7 +265,10 @@ class _ModelServiceListPageState extends State<ModelServiceListPage> {
 
                     return ModelServiceCard(
                       model: cardData,
-                      onVerify: _handleVerify,
+                      onSetDefault: _handleSetDefault,
+                      onValidate: _handleValidate,
+                      onEdit: _handleEdit,
+                      onDelete: _handleDelete,
                     );
                   },
                 );

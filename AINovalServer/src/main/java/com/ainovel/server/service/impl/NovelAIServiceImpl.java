@@ -546,7 +546,7 @@ public class NovelAIServiceImpl implements NovelAIService {
         return createSingleOutlineGenerationRequest(novelId, contextDescription, authorGuidance, startChapterId, endChapterId)
             .flatMap(request -> enrichRequestWithContext(request))
             .flatMapMany(enrichedRequest ->
-                getAIModelProvider(userId, configId)
+                getAIModelProviderByConfigId(userId, configId)
                     .flatMapMany(provider ->
                         processProviderStream(provider, enrichedRequest, optionId, optionIndex)
                     )
@@ -571,7 +571,7 @@ public class NovelAIServiceImpl implements NovelAIService {
         return createSingleOutlineGenerationRequest(novelId, currentContext, authorGuidance)
             .flatMap(request -> enrichRequestWithContext(request))
             .flatMapMany(enrichedRequest ->
-                getAIModelProvider(userId, configId)
+                getAIModelProviderByConfigId(userId, configId)
                     .flatMapMany(provider ->
                         processProviderStream(provider, enrichedRequest, optionId, optionIndex)
                     )
@@ -673,12 +673,18 @@ public class NovelAIServiceImpl implements NovelAIService {
                      request.setEnableContext(true); // Context 由外部传入
 
                      // 添加章节范围元数据 (如果适用)
-                      if (request.getMetadata() == null) {
-                         request.setMetadata(new HashMap<>());
-                      }
-                     if (startChapterId != null) request.getMetadata().put("startChapterId", startChapterId);
-                     if (endChapterId != null) request.getMetadata().put("endChapterId", endChapterId);
-
+                     Map<String, Object> metadata = request.getMetadata();
+                     if (metadata == null) {
+                         metadata = new HashMap<>(); // Create a new mutable map if null
+                         request.setMetadata(metadata);
+                     } else if (!(metadata instanceof HashMap)) {
+                         // 如果存在但不是可变的 HashMap (例如是不可变 Map)，则创建可变副本
+                         log.warn("AIRequest metadata was not a HashMap ({}), creating a mutable copy.", metadata.getClass().getName());
+                         metadata = new HashMap<>(metadata);
+                         request.setMetadata(metadata);
+                     }
+                     if (startChapterId != null) metadata.put("startChapterId", startChapterId);
+                     if (endChapterId != null) metadata.put("endChapterId", endChapterId);
 
                      // 设置参数 (可以根据需要调整)
                      request.setTemperature(0.75);
@@ -1651,6 +1657,32 @@ public class NovelAIServiceImpl implements NovelAIService {
             outlines.add(outline);
         }
         return outlines;
+    }
+
+    /**
+     * 根据配置ID获取AI模型提供商
+     * @param userId 用户ID
+     * @param configId 配置ID
+     * @return AI模型提供商
+     */
+    public Mono<AIModelProvider> getAIModelProviderByConfigId(String userId, String configId) {
+        log.info("获取用户 {} 的AI模型提供商，通过配置ID: {}", userId, configId);
+        return userAIModelConfigService.getConfigurationById(userId, configId) // <-- 使用正确的方法名
+                .doOnNext(config -> log.info("找到用户 {} 指定的配置ID {} 对应的配置: Provider={}, Model={}", 
+                                             userId, configId, config.getProvider(), config.getModelName()))
+                .flatMap(config -> {
+                    // 检查配置是否有效 (虽然 getConfiguration 内部可能已检查，但多一层保险)
+                    if (!config.getIsValidated()) {
+                         log.warn("配置ID {} 对应的模型配置未验证，但仍尝试创建 Provider (用户ID: {})".formatted(configId, userId));
+                         // 或者可以根据业务逻辑决定是否抛出错误
+                         // return Mono.error(new IllegalArgumentException("指定的AI模型配置未验证: " + configId));
+                    }
+                    return getOrCreateAIModelProvider(userId, config);
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("找不到用户 {} 指定的AI模型配置ID: {}", userId, configId);
+                    return Mono.error(new IllegalArgumentException("找不到指定的AI模型配置ID: " + configId));
+                }));
     }
 
 }

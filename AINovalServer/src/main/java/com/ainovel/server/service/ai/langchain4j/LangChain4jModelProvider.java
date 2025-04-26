@@ -136,35 +136,34 @@ public abstract class LangChain4jModelProvider implements AIModelProvider {
     }
 
     /**
-     * 配置系统代理 使用系统属性设置HTTP和HTTPS代理
+     * 配置系统代理
      */
     protected void configureSystemProxy() throws NoSuchAlgorithmException, KeyManagementException {
-        if (proxyConfig != null && proxyConfig.isProxyEnabled()) {
-            String host = proxyConfig.getProxyHost();
-            int port = proxyConfig.getProxyPort();
+        if (proxyConfig != null && proxyConfig.isEnabled()) {
+            String host = proxyConfig.getHost();
+            int port = proxyConfig.getPort();
             log.info("Gemini Provider: 检测到 ProxyConfig 已启用，配置系统HTTP/S代理: Host={}, Port={}", host, port);
             System.setProperty("http.proxyHost", host);
             System.setProperty("http.proxyPort", String.valueOf(port));
             System.setProperty("https.proxyHost", host);
             System.setProperty("https.proxyPort", String.valueOf(port));
-            log.info("Gemini Provider: 已设置Java系统代理属性。");
-            // 创建信任管理器
 
+            // 设置信任所有证书的 SSL 上下文
             TrustManager[] trustAllCerts = new TrustManager[]{
-                new X509TrustManager() {
-                    @Override
-                    public void checkClientTrusted(X509Certificate[] x509Certificates, String s) throws CertificateException {
+                    new X509TrustManager() {
+                        @Override
+                        public void checkClientTrusted(X509Certificate[] x509Certificates, String s) throws CertificateException {
+                        }
+
+                        @Override
+                        public X509Certificate[] getAcceptedIssuers() {
+                            return new X509Certificate[0];
+                        }
+
+                        @Override
+                        public void checkServerTrusted(X509Certificate[] certs, String authType) {
+                        }
                     }
-
-                    public X509Certificate[] getAcceptedIssuers() {
-                        return null;
-                    }
-
-                    public void checkServerTrusted(X509Certificate[] certs, String authType) {
-                    }
-
-                }
-
             };
 
             // 初始化SSLContext

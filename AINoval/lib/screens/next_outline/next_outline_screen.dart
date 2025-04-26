@@ -15,6 +15,7 @@ import 'package:ainoval/services/api_service/repositories/user_ai_model_config_r
 import 'package:ainoval/widgets/common/loading_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_lucide/flutter_lucide.dart';
 
 /// 剧情推演屏幕
 class NextOutlineScreen extends StatelessWidget {
@@ -23,11 +24,23 @@ class NextOutlineScreen extends StatelessWidget {
   
   /// 小说标题
   final String novelTitle;
+  
+  /// 切换到写作模式回调
+  final VoidCallback onSwitchToWrite;
+
+  /// 跳转到添加模型页面的回调
+  final VoidCallback? onNavigateToAddModel;
+
+  /// 跳转到配置特定模型页面的回调
+  final Function(String configId)? onConfigureModel;
 
   const NextOutlineScreen({
     Key? key,
     required this.novelId,
     required this.novelTitle,
+    required this.onSwitchToWrite,
+    this.onNavigateToAddModel,
+    this.onConfigureModel,
   }) : super(key: key);
 
   @override
@@ -57,6 +70,9 @@ class NextOutlineScreen extends StatelessWidget {
         child: _NextOutlineScreenContent(
           novelId: novelId,
           novelTitle: novelTitle,
+          onSwitchToWrite: onSwitchToWrite,
+          onNavigateToAddModel: onNavigateToAddModel,
+          onConfigureModel: onConfigureModel,
         ),
       ),
     );
@@ -70,20 +86,30 @@ class _NextOutlineScreenContent extends StatelessWidget {
   
   /// 小说标题
   final String novelTitle;
+  
+  /// 切换到写作模式回调
+  final VoidCallback onSwitchToWrite;
+
+  /// 跳转到添加模型页面的回调
+  final VoidCallback? onNavigateToAddModel;
+
+  /// 跳转到配置特定模型页面的回调
+  final Function(String configId)? onConfigureModel;
 
   const _NextOutlineScreenContent({
     Key? key,
     required this.novelId,
     required this.novelTitle,
+    required this.onSwitchToWrite,
+    this.onNavigateToAddModel,
+    this.onConfigureModel,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('剧情推演 - $novelTitle'),
-        elevation: 1,
-      ),
+      // 设置背景色为非常浅的灰色，接近白色
+      backgroundColor: Colors.grey[100],
       body: BlocConsumer<NextOutlineBloc, NextOutlineState>(
         listenWhen: (previous, current) => 
           previous.generationStatus != current.generationStatus,
@@ -108,8 +134,9 @@ class _NextOutlineScreenContent extends StatelessWidget {
             );
           }
           
+          // 主内容区域
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(24), // 增加主滚动区域的padding
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -158,9 +185,11 @@ class _NextOutlineScreenContent extends StatelessWidget {
                       GenerateNextOutlinesRequested(request: request),
                     );
                   },
+                  onNavigateToAddModel: onNavigateToAddModel,
+                  onConfigureModel: onConfigureModel,
                 ),
                 
-                const SizedBox(height: 24),
+                const SizedBox(height: 32), // 增加配置卡片和结果网格之间的间距
                 
                 // 结果区域
                 ResultsGrid(

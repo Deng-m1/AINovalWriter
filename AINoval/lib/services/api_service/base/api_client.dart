@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:ainoval/config/app_config.dart' hide LogLevel;
 import 'package:ainoval/models/chat_models.dart';
 import 'package:ainoval/models/import_status.dart';
+import 'package:ainoval/models/model_info.dart';
 import 'package:ainoval/models/user_ai_model_config_model.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/utils/logger.dart';
@@ -1114,14 +1115,18 @@ class ApiClient {
   }
 
   /// 获取指定 AI 提供商支持的模型列表
-  Future<List<String>> listAIModelsForProvider(
+  Future<List<ModelInfo>> listAIModelsForProvider(
       {required String provider}) async {
     final path = '$_userAIConfigBasePath/providers/models/list';
     final body = {'provider': provider};
     try {
+      // Backend returns Flux<ModelInfo>, Dio post likely collects it into List<dynamic>
       final responseData = await post(path, data: body);
       if (responseData is List) {
-        final models = responseData.map((item) => item.toString()).toList();
+        // Parse the list of JSON maps into a list of ModelInfo objects
+        final models = responseData
+            .map((json) => ModelInfo.fromJson(json as Map<String, dynamic>))
+            .toList();
         return models;
       } else {
         AppLogger.e(
@@ -1342,6 +1347,61 @@ class ApiClient {
     } catch (e) {
       AppLogger.e('ApiClient', '设置默认 AI 配置失败 ($userId / $configId)', e);
       rethrow;
+    }
+  }
+
+  /// 获取提供商的模型列表能力
+  Future<String> getProviderCapability(String providerName) async {
+    try {
+      final response = await _dio.get<String>(
+        '/api/models/providers/$providerName/capability',
+      );
+      return response.data ?? 'NO_LISTING';
+    } on DioException catch (e) {
+      AppLogger.e('ApiClient', '获取提供商能力失败，provider: $providerName', e);
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取提供商能力时发生意外错误，provider: $providerName', e);
+      throw ApiException(-1, '获取提供商能力失败: ${e.toString()}');
+    }
+  }
+
+  /// 使用API密钥获取指定提供商的模型列表
+  Future<List<ModelInfo>> listAIModelsWithApiKey({
+    required String provider,
+    required String apiKey,
+    String? apiEndpoint,
+  }) async {
+    final path = '/api/models/providers/$provider/info/auth'; // Correct endpoint for auth models
+    try {
+      Map<String, dynamic> queryParams = {
+        'apiKey': apiKey,
+      };
+      
+      if (apiEndpoint != null && apiEndpoint.isNotEmpty) {
+        queryParams['apiEndpoint'] = apiEndpoint;
+      }
+      
+      // Use _dio.get directly to pass queryParameters
+      final response = await _dio.get(path, queryParameters: queryParams);
+      final responseData = response.data;
+      
+      if (responseData is List) {
+        // Parse the list of JSON maps into a list of ModelInfo objects
+        final models = responseData
+            .map((json) => ModelInfo.fromJson(json as Map<String, dynamic>))
+            .toList();
+        return models;
+      } else {
+        AppLogger.w('ApiClient', '使用API密钥获取模型列表返回格式不正确: $responseData');
+        return []; // Return empty list on format error
+      }
+    } on DioException catch (e) {
+      AppLogger.e('ApiClient', '使用API密钥获取模型列表失败，provider: $provider', e);
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '使用API密钥获取模型列表时发生意外错误，provider: $provider', e);
+      throw ApiException(-1, '使用API密钥获取模型列表失败: ${e.toString()}');
     }
   }
 

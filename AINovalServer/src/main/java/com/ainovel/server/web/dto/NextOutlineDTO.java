@@ -129,12 +129,6 @@ public class NextOutlineDTO {
     public static class RegenerateOptionRequest {
         
         /**
-         * 小说ID
-         */
-        @NotBlank(message = "小说ID不能为空")
-        private String novelId;
-        
-        /**
          * 要重新生成的剧情选项ID
          */
         @NotBlank(message = "选项ID不能为空")

@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.ainovel.server.domain.model.ModelInfo;
 import com.ainovel.server.domain.model.UserAIModelConfig;
 import com.ainovel.server.service.AIService;
 import com.ainovel.server.service.UserAIModelConfigService;
@@ -56,10 +57,12 @@ public class UserAIModelConfigController {
     }
 
     @PostMapping("/providers/models/list")
-    @Operation(summary = "获取指定AI提供商支持的模型列表")
-    public Mono<List<String>> listModelsForProvider(
+    @Operation(summary = "获取指定AI提供商支持的模型信息列表(默认或根据能力获取)")
+    public Flux<ModelInfo> listModelsForProvider(
             @Valid @RequestBody ProviderModelsRequest request) {
-        return aiService.getModelsForProvider(request.provider()).collectList();
+        log.info("请求获取提供商 '{}' 的模型信息列表 (Controller)", request.provider());
+        return aiService.getModelInfosForProvider(request.provider())
+                .doOnError(e -> log.error("在 Controller 层获取提供商 '{}' 的模型信息时出错: {}", request.provider(), e.getMessage(), e));
     }
 
     /**

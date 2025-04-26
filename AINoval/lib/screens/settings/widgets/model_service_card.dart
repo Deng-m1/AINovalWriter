@@ -7,6 +7,7 @@ class ModelServiceData {
   final String provider;
   final String path;
   final bool verified;
+  final bool isDefault;
   final String? status;
   final DateTime timestamp;
   final String? description;
@@ -20,6 +21,7 @@ class ModelServiceData {
     required this.provider,
     required this.path,
     required this.verified,
+    required this.isDefault,
     this.status,
     required this.timestamp,
     this.description,
@@ -45,11 +47,17 @@ class ModelServiceCard extends StatefulWidget {
   const ModelServiceCard({
     super.key,
     required this.model,
-    required this.onVerify,
+    required this.onSetDefault,
+    required this.onValidate,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   final ModelServiceData model;
-  final Function(String) onVerify;
+  final Function(String) onSetDefault;
+  final Function(String) onValidate;
+  final Function(String) onEdit;
+  final Function(String) onDelete;
 
   @override
   State<ModelServiceCard> createState() => _ModelServiceCardState();
@@ -243,45 +251,66 @@ class _ModelServiceCardState extends State<ModelServiceCard> {
                         size: 18,
                         color: theme.colorScheme.onSurface.withAlpha(153),
                       ),
-                      itemBuilder: (context) => [
-                        PopupMenuItem(
-                          child: const Row(
+                      itemBuilder: (context) => <PopupMenuEntry<String>>[
+                        const PopupMenuItem<String>(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit, size: 16),
+                              SizedBox(width: 8),
+                              Text('编辑', style: TextStyle(fontSize: 13)),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'copy_path',
+                          child: Row(
                             children: [
                               Icon(Icons.copy, size: 16),
                               SizedBox(width: 8),
-                              Text('复制路径', style: TextStyle(fontSize: 13)),
+                              Text('复制模型路径', style: TextStyle(fontSize: 13)),
                             ],
                           ),
-                          onTap: () {
-                            // 复制路径逻辑
-                          },
-                        ),
-                        PopupMenuItem(
-                          child: const Row(
-                            children: [
-                              Icon(Icons.star_outline, size: 16),
-                              SizedBox(width: 8),
-                              Text('添加到收藏', style: TextStyle(fontSize: 13)),
-                            ],
-                          ),
-                          onTap: () {
-                            // 添加到收藏逻辑
-                          },
                         ),
                         if (widget.model.apiEndpoint != null)
-                          PopupMenuItem(
-                            child: const Row(
+                          const PopupMenuItem<String>(
+                            value: 'visit_api',
+                            child: Row(
                               children: [
                                 Icon(Icons.open_in_new, size: 16),
                                 SizedBox(width: 8),
                                 Text('访问API', style: TextStyle(fontSize: 13)),
                               ],
                             ),
-                            onTap: () {
-                              // 访问API逻辑
-                            },
                           ),
+                        const PopupMenuDivider(),
+                        PopupMenuItem<String>(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete_outline, size: 16, color: theme.colorScheme.error),
+                              const SizedBox(width: 8),
+                              Text('删除', style: TextStyle(fontSize: 13, color: theme.colorScheme.error)),
+                            ],
+                          ),
+                        ),
                       ],
+                      onSelected: (String value) {
+                        switch (value) {
+                          case 'edit':
+                            widget.onEdit(widget.model.id);
+                            break;
+                          case 'copy_path':
+                            // 复制路径逻辑
+                            break;
+                          case 'visit_api':
+                            // 访问API逻辑
+                            break;
+                          case 'delete':
+                            widget.onDelete(widget.model.id);
+                            break;
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -324,7 +353,7 @@ class _ModelServiceCardState extends State<ModelServiceCard> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                widget.model.verified ? '已验证' : '待验证',
+                                widget.model.verified ? '已验证' : '未验证',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
@@ -337,35 +366,35 @@ class _ModelServiceCardState extends State<ModelServiceCard> {
                           ),
                         ),
 
-                        // 其他状态标签
-                        if (widget.model.status != null)
+                        // 默认状态标签
+                        if (widget.model.isDefault)
                           Padding(
                             padding: const EdgeInsets.only(left: 8),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                               decoration: BoxDecoration(
-                                color: Colors.blue.withAlpha(26),
+                                color: theme.colorScheme.primary.withAlpha(26),
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
-                                  color: Colors.blue.withAlpha(77),
+                                  color: theme.colorScheme.primary.withAlpha(77),
                                   width: 1,
                                 ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(
-                                    Icons.info_outline,
+                                  Icon(
+                                    Icons.star,
                                     size: 12,
-                                    color: Colors.blue,
+                                    color: theme.colorScheme.primary,
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
-                                    _getStatusText(widget.model.status!),
-                                    style: const TextStyle(
+                                    '默认',
+                                    style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w500,
-                                      color: Colors.blue,
+                                      color: theme.colorScheme.primary,
                                     ),
                                   ),
                                 ],
@@ -566,32 +595,45 @@ class _ModelServiceCardState extends State<ModelServiceCard> {
                 ),
 
                 // 设为默认按钮（仅未验证时显示）
-                if (!widget.model.verified)
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => widget.onVerify(widget.model.id),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            left: BorderSide(
-                              color: theme.colorScheme.outline.withAlpha(26),
-                              width: 1,
-                            ),
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      // 如果未验证，则执行验证逻辑
+                      if (!widget.model.verified) {
+                        widget.onValidate(widget.model.id);
+                      } else {
+                         // 如果已验证，则执行设为默认逻辑
+                         if (!widget.model.isDefault) {
+                          widget.onSetDefault(widget.model.id);
+                         }
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          left: BorderSide(
+                            color: theme.colorScheme.outline.withAlpha(26),
+                            width: 1,
                           ),
                         ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          '设为默认',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: theme.colorScheme.primary,
-                          ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        widget.model.verified
+                           ? (widget.model.isDefault ? '默认模型' : '设为默认')
+                           : '验证连接', // 未验证时显示验证
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: widget.model.verified && widget.model.isDefault
+                              ? theme.colorScheme.onSurface.withAlpha(100) // 如果是默认，灰色显示
+                              : theme.colorScheme.primary, // 否则高亮
                         ),
                       ),
                     ),
                   ),
+                ),
               ],
             ),
           ),
