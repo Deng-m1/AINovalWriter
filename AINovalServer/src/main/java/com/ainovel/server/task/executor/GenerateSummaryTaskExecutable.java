@@ -9,8 +9,10 @@ import com.ainovel.server.task.BackgroundTaskExecutable;
 import com.ainovel.server.task.TaskContext;
 import com.ainovel.server.task.dto.summarygeneration.GenerateSummaryParameters;
 import com.ainovel.server.task.dto.summarygeneration.GenerateSummaryResult;
+import com.ainovel.server.task.service.RateLimiterService;
 import com.ainovel.server.web.dto.SummarizeSceneRequest;
 import com.ainovel.server.web.dto.SummarizeSceneResponse;
+import com.ainovel.server.domain.model.UserAIModelConfig;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +37,7 @@ public class GenerateSummaryTaskExecutable implements BackgroundTaskExecutable<G
     private final NovelAIService novelAIService;
     private final UserAIModelConfigService userAIModelConfigService;
     private final MongoTemplate mongoTemplate;
+    private final RateLimiterService rateLimiterService;
 
     @Override
     public GenerateSummaryResult execute(GenerateSummaryParameters parameters, TaskContext<GenerateSummaryParameters> context) throws Exception {
@@ -68,7 +71,24 @@ public class GenerateSummaryTaskExecutable implements BackgroundTaskExecutable<G
                     sceneId, expectedVersion, actualVersion);
         }
 
-        // 3. 调用AI服务生成摘要
+        // 3. 获取AI模型信息以确定限流键
+        // 简化：使用固定值避免依赖不存在的方法
+        String aiModelProvider = "default";
+        if (aiConfigId != null && !aiConfigId.isEmpty()) {
+            // 使用aiConfigId作为限流键的一部分
+            aiModelProvider = "model-" + aiConfigId;
+            context.logInfo("使用AI配置ID {}作为限流键", aiConfigId);
+        }
+        
+        // 4. 应用限流
+        context.logInfo("为AI服务调用申请限流许可: {}", aiModelProvider);
+        boolean permitAcquired = rateLimiterService.acquirePermit(aiModelProvider);
+        if (!permitAcquired) {
+            context.logError("获取{}的限流许可失败，任务将重试", aiModelProvider);
+            throw new RuntimeException("获取AI服务限流许可失败，请稍后重试");
+        }
+
+        // 5. 调用AI服务生成摘要
         SummarizeSceneRequest summarizeRequest = new SummarizeSceneRequest();
         // 可以添加style instructions等额外参数
 
@@ -83,7 +103,7 @@ public class GenerateSummaryTaskExecutable implements BackgroundTaskExecutable<G
         String generatedSummary = response.getSummary();
         context.logInfo("场景 {} 摘要生成成功，长度: {}", sceneId, generatedSummary.length());
 
-        // 4. 原子更新场景摘要
+        // 6. 原子更新场景摘要
         boolean updateSuccess = updateSceneSummaryAtomic(sceneId, conflict ? actualVersion : expectedVersion, generatedSummary);
         
         if (!updateSuccess) {
@@ -110,7 +130,7 @@ public class GenerateSummaryTaskExecutable implements BackgroundTaskExecutable<G
             }
         }
 
-        // 5. 返回结果
+        // 7. 返回结果
         return GenerateSummaryResult.builder()
                 .sceneId(sceneId)
                 .summary(generatedSummary)

@@ -271,6 +271,25 @@
             <version>0.5.11</version>
         </dependency>
         
+        <!-- Google Guava库 (用于限流服务) -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>33.0.0-jre</version>
+        </dependency>
+        
+        <!-- Resilience4j (用于限流服务) -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-ratelimiter</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-core</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+        
     </dependencies>
     
     <build>
