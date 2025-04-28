@@ -1,31 +1,27 @@
 package com.ainovel.server.task.listener;
 
 import com.ainovel.server.task.event.internal.*;
-import com.ainovel.server.task.model.BackgroundTask;
 import com.ainovel.server.task.model.TaskStatus;
 import com.ainovel.server.task.service.TaskStateService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
-import java.time.Instant;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 状态聚合服务，负责监听内部事件并更新数据库中的任务状态
+ * 状态聚合服务，负责监听内部事件并以响应式方式更新数据库中的任务状态
  */
+@Slf4j
 @Service
 public class StateAggregatorService {
 
-    private static final Logger logger = LoggerFactory.getLogger(StateAggregatorService.class);
     private static final long EVENT_ID_CACHE_TTL_SECONDS = 900; // 15分钟
     
     private final TaskStateService taskStateService;
@@ -43,149 +39,150 @@ public class StateAggregatorService {
     }
     
     /**
-     * 处理任务提交事件
-     * 注意：该事件通常在数据库记录创建之后发送，因此通常不需要处理
+     * 处理任务提交事件 (响应式)
      */
     @EventListener
-    @Async
-    public void onTaskSubmitted(TaskSubmittedEvent event) {
-        if (!checkAndMarkEventProcessed(event.getEventId())) {
-            logger.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
-            return;
-        }
-        
-        logger.debug("处理任务提交事件: {}", event.getTaskId());
-        // 通常任务已经在提交阶段创建，这里无需额外操作
-    }
-    
-    /**
-     * 处理任务开始事件
-     */
-    @EventListener
-    @Async
-    public void onTaskStarted(TaskStartedEvent event) {
-        if (!checkAndMarkEventProcessed(event.getEventId())) {
-            logger.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
-            return;
-        }
-        
-        logger.debug("处理任务开始事件: {}", event.getTaskId());
-        
-        // 任务开始在消费者中已经调用了trySetRunning，因此这里只是保险操作
-        boolean updated = taskStateService.trySetRunning(event.getTaskId(), event.getExecutionNodeId());
-        if (!updated) {
-            logger.warn("无法更新任务{}为运行状态，可能已经被另一个消费者处理", event.getTaskId());
-        }
-    }
-    
-    /**
-     * 处理任务进度事件
-     */
-    @EventListener
-    @Async
-    public void onTaskProgress(TaskProgressEvent event) {
-        if (!checkAndMarkEventProcessed(event.getEventId())) {
-            logger.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
-            return;
-        }
-        
-        logger.debug("处理任务进度事件: {}", event.getTaskId());
-        
-        Optional<BackgroundTask> updated = taskStateService.recordProgress(event.getTaskId(), event.getProgress());
-        if (!updated.isPresent()) {
-            logger.warn("无法更新任务{}的进度，任务可能不存在或状态不允许更新", event.getTaskId());
-        }
-    }
-    
-    /**
-     * 处理任务完成事件
-     */
-    @EventListener
-    @Async
-    public void onTaskCompleted(TaskCompletedEvent event) {
-        if (!checkAndMarkEventProcessed(event.getEventId())) {
-            logger.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
-            return;
-        }
-        
-        logger.debug("处理任务完成事件: {}", event.getTaskId());
-        
-        Optional<BackgroundTask> taskOpt = taskStateService.recordCompletion(event.getTaskId(), event.getResult());
-        if (!taskOpt.isPresent()) {
-            logger.warn("无法将任务{}标记为已完成，任务可能不存在或状态不允许更新", event.getTaskId());
-            return;
-        }
-        
-        // 处理子任务完成对父任务的影响
-        BackgroundTask task = taskOpt.get();
-        if (task.getParentTaskId() != null) {
-            logger.debug("更新父任务{}的子任务状态摘要", task.getParentTaskId());
-            Optional<BackgroundTask> parentOpt = taskStateService.updateSubTaskStatusSummary(
-                    task.getParentTaskId(), "completed", 1);
-            
-            if (!parentOpt.isPresent()) {
-                logger.warn("无法更新父任务{}的子任务状态摘要", task.getParentTaskId());
+    public Mono<Void> onTaskSubmitted(TaskSubmittedEvent event) {
+        return Mono.defer(() -> {
+            if (!checkAndMarkEventProcessed(event.getEventId())) {
+                log.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
+                return Mono.empty();
             }
-        }
-    }
-    
-    /**
-     * 处理任务失败事件
-     */
-    @EventListener
-    @Async
-    public void onTaskFailed(TaskFailedEvent event) {
-        if (!checkAndMarkEventProcessed(event.getEventId())) {
-            logger.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
-            return;
-        }
-        
-        logger.debug("处理任务失败事件: {}", event.getTaskId());
-        
-        Optional<BackgroundTask> taskOpt = taskStateService.recordFailure(
-                event.getTaskId(), event.getErrorInfo(), event.isDeadLetter());
-        
-        if (!taskOpt.isPresent()) {
-            logger.warn("无法将任务{}标记为失败，任务可能不存在或状态不允许更新", event.getTaskId());
-            return;
-        }
-        
-        // 处理子任务失败对父任务的影响
-        BackgroundTask task = taskOpt.get();
-        if (task.getParentTaskId() != null) {
-            logger.debug("更新父任务{}的子任务状态摘要", task.getParentTaskId());
-            Optional<BackgroundTask> parentOpt = taskStateService.updateSubTaskStatusSummary(
-                    task.getParentTaskId(), "failed", 1);
             
-            if (!parentOpt.isPresent()) {
-                logger.warn("无法更新父任务{}的子任务状态摘要", task.getParentTaskId());
-            }
-        }
+            log.debug("处理任务提交事件: {}", event.getTaskId());
+            // 通常任务已经在提交阶段创建，这里无需额外操作，直接完成
+            return Mono.empty();
+        });
     }
     
     /**
-     * 处理任务重试事件
+     * 处理任务开始事件 (响应式)
      */
     @EventListener
-    @Async
-    public void onTaskRetrying(TaskRetryingEvent event) {
-        if (!checkAndMarkEventProcessed(event.getEventId())) {
-            logger.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
-            return;
-        }
-        
-        logger.debug("处理任务重试事件: {}", event.getTaskId());
-        
-        Optional<BackgroundTask> updated = taskStateService.recordRetrying(
-                event.getTaskId(), event.getErrorInfo(), event.getNextAttemptTimestamp());
-        
-        if (!updated.isPresent()) {
-            logger.warn("无法将任务{}标记为重试中，任务可能不存在或状态不允许更新", event.getTaskId());
-        }
+    public Mono<Void> onTaskStarted(TaskStartedEvent event) {
+        return Mono.defer(() -> {
+            if (!checkAndMarkEventProcessed(event.getEventId())) {
+                log.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
+                return Mono.empty();
+            }
+            
+            log.debug("处理任务开始事件: {}", event.getTaskId());
+            
+            return taskStateService.trySetRunning(event.getTaskId(), event.getExecutionNodeId())
+                .doOnNext(updated -> {
+                    if (!updated) {
+                        log.warn("无法更新任务{}为运行状态，可能已被另一个消费者处理", event.getTaskId());
+                    }
+                })
+                .then(); // 转换为 Mono<Void>
+        });
     }
     
     /**
-     * 检查事件是否已处理并标记为已处理
+     * 处理任务进度事件 (响应式)
+     */
+    @EventListener
+    public Mono<Void> onTaskProgress(TaskProgressEvent event) {
+        return Mono.defer(() -> {
+            if (!checkAndMarkEventProcessed(event.getEventId())) {
+                log.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
+                return Mono.empty();
+            }
+            
+            log.debug("处理任务进度事件: {}", event.getTaskId());
+            
+            return taskStateService.recordProgress(event.getTaskId(), event.getProgressData())
+                .doOnError(e -> log.warn("无法更新任务{}的进度: {}", event.getTaskId(), e.getMessage()));
+        });
+    }
+    
+    /**
+     * 处理任务完成事件 (响应式)
+     */
+    @EventListener
+    public Mono<Void> onTaskCompleted(TaskCompletedEvent event) {
+        return Mono.defer(() -> {
+            if (!checkAndMarkEventProcessed(event.getEventId())) {
+                log.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
+                return Mono.empty();
+            }
+            
+            log.debug("处理任务完成事件: {}", event.getTaskId());
+            
+            return taskStateService.recordCompletion(event.getTaskId(), event.getResult())
+                .then(taskStateService.getTask(event.getTaskId())) // 获取任务以检查父任务ID
+                .flatMap(task -> {
+                    if (task != null && task.getParentTaskId() != null) {
+                        log.debug("更新父任务{}的子任务状态摘要", task.getParentTaskId());
+                        return taskStateService.updateSubTaskStatusSummary(
+                                task.getParentTaskId(), task.getId(), TaskStatus.RUNNING, TaskStatus.COMPLETED)
+                            .doOnError(e -> log.warn("无法更新父任务{}的子任务状态摘要: {}", 
+                                                    task.getParentTaskId(), e.getMessage()));
+                    } else {
+                        return Mono.empty();
+                    }
+                })
+                .doOnError(e -> log.warn("无法将任务{}标记为已完成: {}", event.getTaskId(), e.getMessage()));
+        });
+    }
+    
+    /**
+     * 处理任务失败事件 (响应式)
+     */
+    @EventListener
+    public Mono<Void> onTaskFailed(TaskFailedEvent event) {
+        return Mono.defer(() -> {
+            if (!checkAndMarkEventProcessed(event.getEventId())) {
+                log.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
+                return Mono.empty();
+            }
+            
+            log.debug("处理任务失败事件: {}", event.getTaskId());
+            TaskStatus newStatus = event.isDeadLetter() ? TaskStatus.DEAD_LETTER : TaskStatus.FAILED;
+
+            return taskStateService.recordFailure(event.getTaskId(), event.getErrorInfo(), event.isDeadLetter())
+                .then(taskStateService.getTask(event.getTaskId())) // 获取任务以检查父任务ID
+                .flatMap(task -> {
+                    if (task != null && task.getParentTaskId() != null) {
+                        log.debug("更新父任务{}的子任务状态摘要", task.getParentTaskId());
+                        // 假设失败前是RUNNING，实际可能需要从事件获取更准确的前置状态
+                        return taskStateService.updateSubTaskStatusSummary(
+                                task.getParentTaskId(), task.getId(), TaskStatus.RUNNING, newStatus)
+                            .doOnError(e -> log.warn("无法更新父任务{}的子任务状态摘要: {}", 
+                                                    task.getParentTaskId(), e.getMessage()));
+                    } else {
+                        return Mono.empty();
+                    }
+                })
+                .doOnError(e -> log.warn("无法将任务{}标记为失败: {}", event.getTaskId(), e.getMessage()));
+        });
+    }
+    
+    /**
+     * 处理任务重试事件 (响应式)
+     */
+    @EventListener
+    public Mono<Void> onTaskRetrying(TaskRetryingEvent event) {
+        return Mono.defer(() -> {
+            if (!checkAndMarkEventProcessed(event.getEventId())) {
+                log.debug("事件已处理，跳过: {} - {}", event.getEventId(), event.getTaskId());
+                return Mono.empty();
+            }
+            
+            log.debug("处理任务重试事件: {}", event.getTaskId());
+            
+            // 使用当前时间戳加上延迟毫秒数计算下次尝试时间
+            long currentTime = System.currentTimeMillis();
+            java.time.Instant nextAttemptTimestamp = java.time.Instant.ofEpochMilli(currentTime + event.getDelayMillis());
+            
+            return taskStateService.recordRetry(
+                event.getTaskId(), event.getErrorInfo(), nextAttemptTimestamp)
+                .doOnError(e -> log.warn("无法将任务{}标记为重试中: {}", event.getTaskId(), e.getMessage()));
+        });
+    }
+    
+    /**
+     * 检查事件是否已处理并标记为已处理 (幂等性)
      * 
      * @param eventId 事件ID
      * @return 如果事件未处理过返回true，否则返回false
@@ -199,15 +196,14 @@ public class StateAggregatorService {
      */
     private void cleanupProcessedEventIds() {
         try {
-            // 在实际实现中，应该基于事件时间戳进行清理
-            // 这里简单起见，每次定时任务执行时都清空缓存
+            // 简单清理策略：直接清空
             int size = processedEventIds.size();
             if (size > 0) {
-                logger.debug("清理已处理事件ID缓存，当前大小: {}", size);
+                log.debug("清理已处理事件ID缓存，当前大小: {}", size);
                 processedEventIds.clear();
             }
         } catch (Exception e) {
-            logger.error("清理已处理事件ID时发生错误", e);
+            log.error("清理已处理事件ID时发生错误", e);
         }
     }
 } 

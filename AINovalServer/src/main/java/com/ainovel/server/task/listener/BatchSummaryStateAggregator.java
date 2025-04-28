@@ -13,9 +13,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
+import java.util.AbstractMap;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -47,51 +49,43 @@ public class BatchSummaryStateAggregator {
         }
 
         String taskId = event.getTaskId();
+        log.debug("接收到摘要生成子任务完成事件: {}", taskId);
         
-        // 查找当前任务，获取父任务ID
-        Optional<BackgroundTask> taskOpt = taskStateService.findById(taskId);
-        if (!taskOpt.isPresent()) {
-            log.warn("找不到任务: {}", taskId);
-            return;
-        }
-        
-        String parentTaskId = taskOpt.get().getParentTaskId();
-        
-        // 如果没有父任务ID，则不需要聚合
-        if (parentTaskId == null || parentTaskId.isEmpty()) {
-            return;
-        }
-
-        log.debug("处理摘要生成子任务 {} 完成事件，父任务: {}", taskId, parentTaskId);
-
-        try {
-            // 查找父任务
-            Optional<BackgroundTask> parentTaskOpt = taskStateService.findById(parentTaskId);
-            if (!parentTaskOpt.isPresent()) {
-                log.warn("找不到父任务: {}", parentTaskId);
-                return;
-            }
-
-            BackgroundTask parentTask = parentTaskOpt.get();
-            if (!"BATCH_GENERATE_SUMMARY".equals(parentTask.getTaskType())) {
-                return; // 父任务类型不匹配
-            }
-
-            // 获取子任务结果
-            GenerateSummaryResult result = null;
-            if (event.getResult() instanceof GenerateSummaryResult) {
-                result = (GenerateSummaryResult) event.getResult();
-            } else {
-                log.warn("子任务结果类型不匹配: {}", event.getResult() != null ? event.getResult().getClass().getName() : "null");
-                return;
-            }
-
-            // 更新父任务进度
-            updateParentTaskProgress(parentTask, result, true, null);
-            
-        } catch (Exception e) {
-            log.error("处理摘要生成任务完成事件失败", e);
-        }
+        // 使用响应式方式处理
+        taskStateService.getTask(taskId)
+            .switchIfEmpty(Mono.defer(() -> {
+                log.warn("找不到任务: {}", taskId);
+                return Mono.empty();
+            }))
+            .filter(task -> task.getParentTaskId() != null && !task.getParentTaskId().isEmpty())
+            .flatMap(task -> {
+                String parentTaskId = task.getParentTaskId();
+                log.debug("处理摘要生成子任务 {} 完成事件，父任务: {}", taskId, parentTaskId);
+                
+                return taskStateService.getTask(parentTaskId)
+                    .switchIfEmpty(Mono.defer(() -> {
+                        log.warn("找不到父任务: {}", parentTaskId);
+                        return Mono.empty();
+                    }))
+                    .filter(parentTask -> "BATCH_GENERATE_SUMMARY".equals(parentTask.getTaskType()))
+                    .flatMap(parentTask -> {
+                        // 获取子任务结果
+                        if (!(event.getResult() instanceof GenerateSummaryResult)) {
+                            log.warn("子任务结果类型不匹配: {}", 
+                                    event.getResult() != null ? event.getResult().getClass().getName() : "null");
+                            return Mono.empty();
+                        }
+                        
+                        GenerateSummaryResult result = (GenerateSummaryResult) event.getResult();
+                        
+                        // 更新父任务进度
+                        return updateParentTaskProgress(parentTask, result, true, null);
+                    });
+            })
+            .subscribe(
+                success -> {},
+                error -> log.error("处理摘要生成任务完成事件失败", error)
+            );
     }
 
     /**
@@ -110,59 +104,58 @@ public class BatchSummaryStateAggregator {
         }
 
         String taskId = event.getTaskId();
+        log.debug("接收到摘要生成子任务失败事件: {}", taskId);
         
-        // 查找当前任务，获取父任务ID
-        Optional<BackgroundTask> taskOpt = taskStateService.findById(taskId);
-        if (!taskOpt.isPresent()) {
-            log.warn("找不到任务: {}", taskId);
-            return;
-        }
-        
-        String parentTaskId = taskOpt.get().getParentTaskId();
-        
-        // 如果没有父任务ID，则不需要聚合
-        if (parentTaskId == null || parentTaskId.isEmpty()) {
-            return;
-        }
-
-        log.debug("处理摘要生成子任务 {} 失败事件，父任务: {}", taskId, parentTaskId);
-
-        try {
-            // 查找父任务
-            Optional<BackgroundTask> parentTaskOpt = taskStateService.findById(parentTaskId);
-            if (!parentTaskOpt.isPresent()) {
-                log.warn("找不到父任务: {}", parentTaskId);
-                return;
-            }
-
-            BackgroundTask parentTask = parentTaskOpt.get();
-            if (!"BATCH_GENERATE_SUMMARY".equals(parentTask.getTaskType())) {
-                return; // 父任务类型不匹配
-            }
-
-            // 获取子任务的场景ID
-            String sceneId = null;
-            String errorMessage = null;
-            if (event.getErrorInfo() != null) {
-                errorMessage = (String) event.getErrorInfo().get("message");
+        // 使用响应式方式处理
+        taskStateService.getTask(taskId)
+            .switchIfEmpty(Mono.defer(() -> {
+                log.warn("找不到任务: {}", taskId);
+                return Mono.empty();
+            }))
+            .filter(task -> task.getParentTaskId() != null && !task.getParentTaskId().isEmpty())
+            .flatMap(task -> {
+                String parentTaskId = task.getParentTaskId();
+                log.debug("处理摘要生成子任务 {} 失败事件，父任务: {}", taskId, parentTaskId);
                 
-                // 从子任务参数中获取场景ID
-                BackgroundTask subTask = taskOpt.get();
-                if (subTask.getParameters() != null && subTask.getParameters() instanceof Map) {
-                    Map<String, Object> params = (Map<String, Object>) subTask.getParameters();
-                    if (params.containsKey("sceneId")) {
-                        sceneId = (String) params.get("sceneId");
+                // 获取子任务的场景ID
+                String sceneId = null;
+                String errorMessage = null;
+                
+                if (event.getErrorInfo() != null) {
+                    if (event.getErrorInfo().containsKey("message")) {
+                        errorMessage = (String) event.getErrorInfo().get("message");
+                    }
+                    
+                    // 从子任务参数中获取场景ID
+                    Object params = task.getParameters();
+                    if (params != null && params instanceof Map) {
+                        Map<String, Object> paramMap = (Map<String, Object>) params;
+                        if (paramMap.containsKey("sceneId")) {
+                            sceneId = (String) paramMap.get("sceneId");
+                        }
                     }
                 }
-            }
-
-            // 更新父任务进度
-            updateParentTaskProgress(parentTask, null, false, sceneId != null ? 
-                    Map.entry(sceneId, errorMessage != null ? errorMessage : "未知错误") : null);
-            
-        } catch (Exception e) {
-            log.error("处理摘要生成任务失败事件失败", e);
-        }
+                
+                final String finalSceneId = sceneId;
+                final String finalErrorMessage = errorMessage != null ? errorMessage : "未知错误";
+                
+                return taskStateService.getTask(parentTaskId)
+                    .switchIfEmpty(Mono.defer(() -> {
+                        log.warn("找不到父任务: {}", parentTaskId);
+                        return Mono.empty();
+                    }))
+                    .filter(parentTask -> "BATCH_GENERATE_SUMMARY".equals(parentTask.getTaskType()))
+                    .flatMap(parentTask -> {
+                        // 更新父任务进度
+                        Map.Entry<String, String> failedEntry = finalSceneId != null ? 
+                                new AbstractMap.SimpleEntry<>(finalSceneId, finalErrorMessage) : null;
+                        return updateParentTaskProgress(parentTask, null, false, failedEntry);
+                    });
+            })
+            .subscribe(
+                success -> {},
+                error -> log.error("处理摘要生成任务失败事件失败", error)
+            );
     }
 
     /**
@@ -172,8 +165,9 @@ public class BatchSummaryStateAggregator {
      * @param result 子任务结果 (可能为null，如果是失败)
      * @param isSuccess 子任务是否成功
      * @param failedEntry 失败的场景ID和错误消息 (如果是失败)
+     * @return 完成信号
      */
-    private void updateParentTaskProgress(BackgroundTask parentTask, GenerateSummaryResult result, 
+    private Mono<Void> updateParentTaskProgress(BackgroundTask parentTask, GenerateSummaryResult result, 
                                         boolean isSuccess, Map.Entry<String, String> failedEntry) {
         // 获取当前进度
         BatchGenerateSummaryProgress currentProgress = null;
@@ -203,105 +197,124 @@ public class BatchSummaryStateAggregator {
                     .failedCount(0)
                     .conflictCount(0)
                     .skippedCount(currentProgress.getSkippedCount())
+                    .failedSceneDetails(new HashMap<>())
                     .build();
         }
 
-        // 更新进度计数
-        int newProcessedCount = currentProgress.getProcessedCount() + 1;
-        int newSuccessCount = currentProgress.getSuccessCount();
-        int newFailedCount = currentProgress.getFailedCount();
-        int newConflictCount = currentProgress.getConflictCount();
-
-        // 更新结果计数
-        int newResultSuccessCount = currentResult.getSuccessCount();
-        int newResultFailedCount = currentResult.getFailedCount();
-        int newResultConflictCount = currentResult.getConflictCount();
-        Map<String, String> failedSceneDetails = currentResult.getFailedSceneDetails();
-
+        // 创建状态统计的副本，以确保它们在lambda中是有效不变的
+        final int totalScenes = currentProgress.getTotalScenes();
+        final int skippedCount = currentProgress.getSkippedCount();
+        final int processedCount = currentProgress.getProcessedCount() + 1;
+        final int startingSuccessCount = currentProgress.getSuccessCount();
+        final int startingFailedCount = currentProgress.getFailedCount();
+        final int startingConflictCount = currentProgress.getConflictCount();
+        
+        // 创建结果计数的副本
+        final int startingResultSuccessCount = currentResult.getSuccessCount();
+        final int startingResultFailedCount = currentResult.getFailedCount();
+        final int startingResultConflictCount = currentResult.getConflictCount();
+        
+        // 创建新的进度和结果对象
+        BatchGenerateSummaryProgress.BatchGenerateSummaryProgressBuilder progressBuilder = BatchGenerateSummaryProgress.builder()
+                .totalScenes(totalScenes)
+                .processedCount(processedCount)
+                .skippedCount(skippedCount);
+        
+        BatchGenerateSummaryResult.BatchGenerateSummaryResultBuilder resultBuilder = BatchGenerateSummaryResult.builder()
+                .totalScenes(totalScenes)
+                .skippedCount(skippedCount);
+                
+        // 复制失败细节映射
+        Map<String, String> failedSceneDetails = new HashMap<>(
+                currentResult.getFailedSceneDetails() != null ? 
+                currentResult.getFailedSceneDetails() : new HashMap<>());
+        
+        // 根据任务状态更新计数器
         if (isSuccess) {
             // 子任务成功
-            if (result != null && result.isConflict()) {
-                // 版本冲突
-                newConflictCount++;
-                newResultConflictCount++;
+            boolean hasConflict = result != null && result.getModelName() != null && 
+                                result.getModelName().contains("conflict");
+            if (hasConflict) {
+                // 版本冲突 - 判断条件需要根据实际业务逻辑调整
+                progressBuilder.successCount(startingSuccessCount)
+                              .failedCount(startingFailedCount)
+                              .conflictCount(startingConflictCount + 1);
+                
+                resultBuilder.successCount(startingResultSuccessCount)
+                           .failedCount(startingResultFailedCount)
+                           .conflictCount(startingResultConflictCount + 1);
             } else {
                 // 正常成功
-                newSuccessCount++;
-                newResultSuccessCount++;
+                progressBuilder.successCount(startingSuccessCount + 1)
+                              .failedCount(startingFailedCount)
+                              .conflictCount(startingConflictCount);
+                
+                resultBuilder.successCount(startingResultSuccessCount + 1)
+                           .failedCount(startingResultFailedCount)
+                           .conflictCount(startingResultConflictCount);
             }
         } else {
             // 子任务失败
-            newFailedCount++;
-            newResultFailedCount++;
+            progressBuilder.successCount(startingSuccessCount)
+                          .failedCount(startingFailedCount + 1)
+                          .conflictCount(startingConflictCount);
+            
+            resultBuilder.successCount(startingResultSuccessCount)
+                       .failedCount(startingResultFailedCount + 1)
+                       .conflictCount(startingResultConflictCount);
             
             // 添加失败细节
             if (failedEntry != null) {
                 failedSceneDetails.put(failedEntry.getKey(), failedEntry.getValue());
             }
         }
-
-        // 创建新的进度对象
-        BatchGenerateSummaryProgress newProgress = BatchGenerateSummaryProgress.builder()
-                .totalScenes(currentProgress.getTotalScenes())
-                .processedCount(newProcessedCount)
-                .successCount(newSuccessCount)
-                .failedCount(newFailedCount)
-                .conflictCount(newConflictCount)
-                .skippedCount(currentProgress.getSkippedCount())
-                .build();
-
-        // 创建新的结果对象
-        BatchGenerateSummaryResult newResult = BatchGenerateSummaryResult.builder()
-                .totalScenes(currentResult.getTotalScenes())
-                .successCount(newResultSuccessCount)
-                .failedCount(newResultFailedCount)
-                .conflictCount(newResultConflictCount)
-                .skippedCount(currentResult.getSkippedCount())
-                .failedSceneDetails(failedSceneDetails)
-                .build();
-
+        
+        // 设置失败详情
+        resultBuilder.failedSceneDetails(failedSceneDetails);
+        
+        // 完成构建
+        final BatchGenerateSummaryProgress newProgress = progressBuilder.build();
+        final BatchGenerateSummaryResult newResult = resultBuilder.build();
+        final String taskId = parentTask.getId();
+        
         // 更新父任务进度
-        Optional<BackgroundTask> updatedTask = taskStateService.recordProgress(parentTask.getId(), newProgress);
-        if (!updatedTask.isPresent()) {
-            log.warn("无法更新父任务进度: {}", parentTask.getId());
-        }
+        return taskStateService.recordProgress(taskId, newProgress)
+            .then(Mono.defer(() -> {
+                // 检查是否所有子任务都已完成
+                final boolean allProcessed = newProgress.getProcessedCount() + newProgress.getSkippedCount() >= newProgress.getTotalScenes();
+                if (allProcessed) {
+                    log.info("批量生成摘要任务 {} 的所有子任务已处理完成，总数: {}, 成功: {}, 失败: {}, 冲突: {}, 跳过: {}", 
+                            taskId, 
+                            newProgress.getTotalScenes(),
+                            newProgress.getSuccessCount(),
+                            newProgress.getFailedCount(),
+                            newProgress.getConflictCount(),
+                            newProgress.getSkippedCount());
 
-        // 检查是否所有子任务都已完成
-        boolean allProcessed = newProgress.getProcessedCount() + newProgress.getSkippedCount() >= newProgress.getTotalScenes();
-        if (allProcessed) {
-            log.info("批量生成摘要任务 {} 的所有子任务已处理完成，总数: {}, 成功: {}, 失败: {}, 冲突: {}, 跳过: {}", 
-                    parentTask.getId(), 
-                    newProgress.getTotalScenes(),
-                    newSuccessCount,
-                    newFailedCount,
-                    newConflictCount,
-                    newProgress.getSkippedCount());
+                    // 确定父任务的最终状态
+                    final TaskStatus finalStatus;
+                    if (newProgress.getFailedCount() > 0 && newProgress.getSuccessCount() + newProgress.getConflictCount() == 0) {
+                        // 所有子任务都失败
+                        finalStatus = TaskStatus.FAILED;
+                    } else if (newProgress.getFailedCount() > 0) {
+                        // 部分成功部分失败
+                        finalStatus = TaskStatus.COMPLETED_WITH_ERRORS;
+                    } else {
+                        finalStatus = TaskStatus.COMPLETED;
+                    }
 
-            // 确定父任务的最终状态
-            TaskStatus finalStatus = TaskStatus.COMPLETED;
-            if (newFailedCount > 0 && newSuccessCount + newConflictCount == 0) {
-                // 所有子任务都失败
-                finalStatus = TaskStatus.FAILED;
-            } else if (newFailedCount > 0) {
-                // 部分成功部分失败
-                finalStatus = TaskStatus.COMPLETED_WITH_ERRORS;
-            }
-
-            // 根据最终状态更新父任务
-            Optional<BackgroundTask> completedTask = null;
-            if (finalStatus == TaskStatus.COMPLETED || finalStatus == TaskStatus.COMPLETED_WITH_ERRORS) {
-                completedTask = taskStateService.recordCompletion(parentTask.getId(), newResult);
-            } else {
-                completedTask = taskStateService.recordFailure(
-                        parentTask.getId(), 
-                        Map.of("message", "所有子任务失败", "failedCount", newFailedCount),
-                        true); // 标记为死信
-            }
-
-            if (!completedTask.isPresent()) {
-                log.warn("无法更新父任务状态为 {}: {}", finalStatus, parentTask.getId());
-            }
-        }
+                    // 根据最终状态更新父任务
+                    if (finalStatus == TaskStatus.COMPLETED || finalStatus == TaskStatus.COMPLETED_WITH_ERRORS) {
+                        return taskStateService.recordCompletion(taskId, newResult);
+                    } else {
+                        Map<String, Object> errorInfo = Map.of(
+                                "message", "所有子任务失败", 
+                                "failedCount", newProgress.getFailedCount());
+                        return taskStateService.recordFailure(taskId, errorInfo, true); // 标记为死信
+                    }
+                }
+                return Mono.empty();
+            }));
     }
 
     /**

@@ -1,4 +1,4 @@
-package com.ainovel.server.task.dto.summarygeneration;
+package com.ainovel.server.task.dto.scenegeneration;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -8,23 +8,28 @@ import lombok.NoArgsConstructor;
 import java.time.Instant;
 
 /**
- * 生成场景摘要任务的结果DTO
+ * 生成场景任务的结果DTO
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class GenerateSummaryResult {
-    
+public class GenerateSceneResult {
+
     /**
-     * 场景ID
+     * 生成的场景ID
      */
     private String sceneId;
     
     /**
-     * 生成的摘要内容
+     * 生成的场景内容
      */
-    private String summary;
+    private String content;
+    
+    /**
+     * 场景字数
+     */
+    private int wordCount;
     
     /**
      * 生成的向量嵌入（如果启用）
@@ -45,4 +50,9 @@ public class GenerateSummaryResult {
      * 完成时间
      */
     private Instant completedAt;
+    
+    /**
+     * 是否保存到数据库
+     */
+    private boolean savedToDatabase;
 } 

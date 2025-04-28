@@ -20,6 +20,7 @@ import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -71,7 +72,17 @@ public class RabbitMQConfig {
     @Value("${spring.rabbitmq.virtual-host:/}")
     private String virtualHost;
     
+    @Value("${spring.rabbitmq.listener.simple.prefetch:1}")
+    private int prefetchCount;
+    
+    @Value("${spring.rabbitmq.listener.simple.concurrency:5}")
+    private int concurrentConsumers;
+    
+    @Value("${spring.rabbitmq.listener.simple.max-concurrency:10}")
+    private int maxConcurrentConsumers;
+    
     @Autowired
+    @Qualifier("taskObjectMapper")
     private ObjectMapper objectMapper;
     
     /**
@@ -111,7 +122,7 @@ public class RabbitMQConfig {
         RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
         
         // 设置消息转换器
-        rabbitTemplate.setMessageConverter(jsonMessageConverter());
+        rabbitTemplate.setMessageConverter(jackson2JsonMessageConverter());
         
         // 启用强制消息
         rabbitTemplate.setMandatory(true);
@@ -134,10 +145,10 @@ public class RabbitMQConfig {
     }
     
     /**
-     * 配置Jackson2消息转换器
+     * 配置消息转换器
      */
     @Bean
-    public Jackson2JsonMessageConverter jsonMessageConverter() {
+    public Jackson2JsonMessageConverter jackson2JsonMessageConverter() {
         return new Jackson2JsonMessageConverter(objectMapper);
     }
     
@@ -149,17 +160,17 @@ public class RabbitMQConfig {
             ConnectionFactory connectionFactory) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
-        factory.setMessageConverter(jsonMessageConverter());
+        factory.setMessageConverter(jackson2JsonMessageConverter());
         
         // 配置手动确认模式
         factory.setAcknowledgeMode(AcknowledgeMode.MANUAL);
         
         // 配置并发消费者数
-        factory.setConcurrentConsumers(4);
-        factory.setMaxConcurrentConsumers(8);
+        factory.setConcurrentConsumers(concurrentConsumers);
+        factory.setMaxConcurrentConsumers(maxConcurrentConsumers);
         
         // 配置预取数量
-        factory.setPrefetchCount(1);
+        factory.setPrefetchCount(prefetchCount);
         
         // 使用虚拟线程
         factory.setTaskExecutor(Executors.newVirtualThreadPerTaskExecutor());

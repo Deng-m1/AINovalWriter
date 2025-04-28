@@ -1,4 +1,4 @@
-package com.ainovel.server.task.dto.summarygeneration;
+package com.ainovel.server.task.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 生成场景摘要任务的参数DTO
+ * 场景摘要生成任务参数
  */
 @Data
 @Builder
@@ -20,23 +20,22 @@ public class GenerateSummaryParameters {
     private String sceneId;
     
     /**
-     * 小说ID
+     * 小说ID (可选)
      */
     private String novelId;
     
     /**
-     * 用户自定义提示（可选）
+     * 生成语调
      */
-    private String customPrompt;
+    private String tone;
     
     /**
-     * 最大摘要长度（可选）
+     * 摘要最大长度
      */
     private Integer maxLength;
     
     /**
-     * 是否使用AI模型增强（可选）
+     * 摘要关注点
      */
-    @Builder.Default
-    private Boolean useAIEnhancement = true;
+    private String focusOn;
 } 

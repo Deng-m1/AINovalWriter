@@ -9,6 +9,7 @@ import org.springframework.data.mongodb.ReactiveMongoDatabaseFactory;
 import org.springframework.data.mongodb.ReactiveMongoTransactionManager;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.SimpleReactiveMongoDatabaseFactory;
+import org.springframework.data.mongodb.core.convert.DefaultMongoTypeMapper;
 import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
 import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
 import org.springframework.data.mongodb.core.mapping.event.LoggingEventListener;
@@ -23,6 +24,7 @@ import com.mongodb.reactivestreams.client.MongoClients;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.convert.ReadingConverter;
 import org.springframework.data.convert.WritingConverter;
+import org.springframework.data.mongodb.core.convert.MongoConverter;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -33,7 +35,7 @@ import java.util.Map;
 
 /**
  * MongoDB配置类
- * 配置MongoDB连接、日志和统计功能
+ * 配置MongoDB连接、响应式支持、日志和统计功能
  */
 @Configuration
 @EnableReactiveMongoRepositories(basePackages = "com.ainovel.server.repository")
@@ -72,6 +74,12 @@ public class MongoConfig {
     @Bean
     public ReactiveMongoTemplate reactiveMongoTemplate(MongoClient mongoClient, MappingMongoConverter converter) {
         ReactiveMongoTemplate template = new ReactiveMongoTemplate(mongoClient, database);
+        
+        // 禁用MongoDB的_class字段（改进性能和减少存储空间）
+        converter.setTypeMapper(new DefaultMongoTypeMapper(null));
+        
+        // 启用点符号路径
+        converter.setMapKeyDotReplacement(null);
         
         // 启用日志记录
         logger.info("已配置ReactiveMongoTemplate，启用查询日志和统计");
@@ -122,8 +130,12 @@ public class MongoConfig {
     @Bean
     public MongoCustomConversions mongoCustomConversions() {
         List<Converter<?, ?>> converters = new ArrayList<>();
+        
+        // 日期/时间转换器
         converters.add(new DateToInstantConverter());
         converters.add(new InstantToDateConverter());
+        
+        // 对象/Map转换器
         converters.add(new MapToObjectConverter());
         converters.add(new ObjectToMapConverter());
         
@@ -159,7 +171,7 @@ public class MongoConfig {
     public class MapToObjectConverter implements Converter<Map<String, Object>, Object> {
         @Override
         public Object convert(Map<String, Object> source) {
-            return source; // 保持Map结构，由服务层根据上下文进行进一步反序列化
+            return source; // 保持Map结构，由TaskConversionConfig进一步处理
         }
     }
     

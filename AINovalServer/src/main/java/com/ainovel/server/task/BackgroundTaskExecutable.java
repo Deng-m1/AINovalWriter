@@ -1,53 +1,115 @@
 package com.ainovel.server.task;
 
+import reactor.core.publisher.Mono;
+
 /**
- * 后台任务执行器接口
+ * 后台任务执行器接口，所有具体任务类型的执行器都应实现此接口
  * @param <P> 任务参数类型
  * @param <R> 任务结果类型
  */
 public interface BackgroundTaskExecutable<P, R> {
     
     /**
-     * 执行任务
-     * @param parameters 任务参数
-     * @param context 任务上下文，用于更新进度、记录日志等
-     * @return 任务结果
-     * @throws Exception 执行过程中的异常
-     */
-    R execute(P parameters, TaskContext<P> context) throws Exception;
-    
-    /**
-     * 获取任务类型标识符
-     * @return 任务类型字符串
+     * 获取任务类型标识
+     * @return 任务类型的唯一标识
      */
     String getTaskType();
     
     /**
-     * 获取参数类型的Class
-     * @return 参数类型的Class对象
+     * 执行任务
+     * @param context 任务上下文，包含任务参数和状态更新方法
+     * @return 任务执行结果的Mono
      */
-    Class<P> getParameterType();
+    Mono<R> execute(TaskContext<P> context);
     
     /**
-     * 获取结果类型的Class
-     * @return 结果类型的Class对象
+     * 判断任务是否支持取消
+     * @return 如果支持取消返回true，否则返回false
      */
-    Class<R> getResultType();
-    
-    /**
-     * 是否允许在失败时重试（默认允许）
-     * @param throwable 导致失败的异常
-     * @return 如果允许重试返回true，否则返回false
-     */
-    default boolean isRetryable(Throwable throwable) {
-        return true;
+    default boolean isCancellable() {
+        return false;
     }
     
     /**
-     * 获取任务最大重试次数（默认3次）
-     * @return 最大重试次数
+     * 取消任务
+     * @param context 任务上下文
+     * @return 完成信号
      */
-    default int getMaxRetries() {
-        return 3;
+    default Mono<Void> cancel(TaskContext<?> context) {
+        return Mono.error(new UnsupportedOperationException("此任务类型不支持取消"));
+    }
+    
+    /**
+     * 获取任务的估计执行时间（秒）
+     * @param context 任务上下文
+     * @return 估计执行时间（秒）
+     */
+    default int getEstimatedExecutionTimeSeconds(TaskContext<P> context) {
+        return 60; // 默认估计时间为1分钟
+    }
+    
+    /**
+     * 获取任务的最大执行时间（秒）
+     * @return 最大执行时间（秒）
+     */
+    default int getMaxExecutionTimeSeconds() {
+        return 3600; // 默认最大执行时间为1小时
+    }
+    
+    /**
+     * 检查任务参数是否有效
+     * @param parameters 任务参数
+     * @return 如果参数有效返回true，否则返回false
+     */
+    default boolean validateParameters(P parameters) {
+        return parameters != null;
+    }
+    
+    /**
+     * 更新任务进度的辅助方法
+     * @param context 任务上下文
+     * @param progressData 进度数据
+     * @return 更新操作的完成信号
+     */
+    default Mono<Void> updateProgress(TaskContext<P> context, Object progressData) {
+        return context.updateProgress(progressData);
+    }
+    
+    /**
+     * 任务进入队列时的钩子（可选实现）
+     * @param context 任务上下文
+     * @return Mono<Void> 表示操作完成的信号
+     */
+    default Mono<Void> onQueued(TaskContext<P> context) {
+        return Mono.empty();
+    }
+    
+    /**
+     * 任务开始执行时的钩子（可选实现）
+     * @param context 任务上下文
+     * @return Mono<Void> 表示操作完成的信号
+     */
+    default Mono<Void> onStarted(TaskContext<P> context) {
+        return Mono.empty();
+    }
+    
+    /**
+     * 任务完成时的钩子（可选实现）
+     * @param context 任务上下文
+     * @param result 任务结果
+     * @return Mono<Void> 表示操作完成的信号
+     */
+    default Mono<Void> onCompleted(TaskContext<P> context, R result) {
+        return Mono.empty();
+    }
+    
+    /**
+     * 任务失败时的钩子（可选实现）
+     * @param context 任务上下文
+     * @param error 失败原因
+     * @return Mono<Void> 表示操作完成的信号
+     */
+    default Mono<Void> onFailed(TaskContext<P> context, Throwable error) {
+        return Mono.empty();
     }
 } 

@@ -467,7 +467,7 @@ public class NovelAIServiceImpl implements NovelAIService {
      * 获取指定章节范围内的摘要 (返回 Mono<String>)
      */
     private Mono<String> getChapterSummariesBetween(String novelId, String novelTitle, String startChapterId, String endChapterId) {
-        // TODO: 实现从 NovelService/SceneService 获取指定章节范围的场景摘要并拼接
+
         log.debug("获取小说 '{}' ({}) 从章节 {} 到 {} 的摘要", novelTitle, novelId, startChapterId, endChapterId);
         // 示例：调用 novelService (假设存在此方法)
         return novelService.getChapterRangeSummaries(novelId, startChapterId, endChapterId)
@@ -484,7 +484,7 @@ public class NovelAIServiceImpl implements NovelAIService {
      * 获取从指定章节开始到结尾的摘要 (返回 Mono<String>)
      */
     private Mono<String> getChapterSummariesFrom(String novelId, String novelTitle, String startChapterId) {
-        // TODO: 实现从 NovelService/SceneService 获取从指定章节开始的场景摘要并拼接
+
         log.debug("获取小说 '{}' ({}) 从章节 {} 开始的摘要", novelTitle, novelId, startChapterId);
         // 示例：调用 novelService (假设存在此方法)
          return novelService.getChapterRangeSummaries(novelId, startChapterId, null) // 假设 null 表示到结尾
@@ -501,7 +501,7 @@ public class NovelAIServiceImpl implements NovelAIService {
      * 获取从开始到指定章节的摘要 (返回 Mono<String>)
      */
     private Mono<String> getChapterSummariesUntil(String novelId, String novelTitle, String endChapterId) {
-        // TODO: 实现从 NovelService/SceneService 获取到指定章节为止的场景摘要并拼接
+
         log.debug("获取小说 '{}' ({}) 到章节 {} 为止的摘要", novelTitle, novelId, endChapterId);
         // 示例：调用 novelService (假设存在此方法)
          return novelService.getChapterRangeSummaries(novelId, null, endChapterId) // 假设 null 表示从开头
@@ -518,7 +518,7 @@ public class NovelAIServiceImpl implements NovelAIService {
      * 获取所有章节的摘要 (返回 Mono<String>)
      */
     private Mono<String> getChapterSummariesAll(String novelId, String novelTitle) {
-        // TODO: 实现从 NovelService/SceneService 获取所有章节的场景摘要并拼接
+
         log.debug("获取小说 '{}' ({}) 的所有章节摘要", novelTitle, novelId);
         // 示例：调用 novelService (假设存在此方法)
         return novelService.getChapterRangeSummaries(novelId, null, null) // 假设 null, null 表示全部
@@ -1415,9 +1415,8 @@ public class NovelAIServiceImpl implements NovelAIService {
                     String promptTemplate = tuple.getT2();
 
                     // 构建最终Prompt，包含用户风格指令
-                    String styleInstructions = request.getStyleInstructions() != null ? request.getStyleInstructions() : "";
+                    String styleInstructions = request.getAdditionalInstructions() != null ? request.getAdditionalInstructions() : "";
                     String inputWithStyle = request.getSummary() + (styleInstructions.isEmpty() ? "" : "\n\n风格要求: " + styleInstructions);
-
                     String finalPrompt = buildFinalPrompt(promptTemplate, context, inputWithStyle);
 
                     // 获取AI配置并调用LLM (流式)
@@ -1554,7 +1553,15 @@ public class NovelAIServiceImpl implements NovelAIService {
         // 使用流式API并收集结果
         return generateSceneFromSummaryStream(userId, novelId, request)
                 .collect(StringBuilder::new, StringBuilder::append)
-                .map(sb -> new GenerateSceneFromSummaryResponse(sb.toString()));
+                .map(sb -> {
+                    GenerateSceneFromSummaryResponse response = new GenerateSceneFromSummaryResponse();
+                    response.setContent(sb.toString());
+                    // 如果有场景ID，设置场景ID
+                    if(request.getSceneId() != null) {
+                        response.setSceneId(request.getSceneId());
+                    }
+                    return response;
+                });
     }
 
     /**
@@ -1686,3 +1693,4 @@ public class NovelAIServiceImpl implements NovelAIService {
     }
 
 }
+
