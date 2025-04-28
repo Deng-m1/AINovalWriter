@@ -52,6 +52,11 @@ logging:
     org.springframework.web: INFO
     reactor.netty: INFO
     com.ainovel.server: DEBUG
+    com.ainovel.server.task: INFO
+    org.springframework.amqp: INFO
+  request: true
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%X{traceId:-}] [%X{userId:-}] [%thread] %logger{36} - %msg%n"
 
 management:
   endpoints:
@@ -68,6 +73,13 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        "[tasks.execution.time]": true
+      percentiles:
+        "[tasks.execution.time]": [0.5, 0.95, 0.99]
+      slo:
+        "[tasks.execution.time]": [1000ms, 5000ms, 10000ms]
 
 # 自定义配置
 ainovel:
@@ -182,43 +194,8 @@ task:
     maxDelayMillis: 3600000 # 1 hour
     backoffFactor: 2.0
     jitterFactor: 0.1
+    # 添加缺失的 delays 配置，使用默认值
+    delays: 15000,60000,300000
   # 关闭配置
   shutdown:
     awaitTerminationTimeout: PT30S # ISO-8601 duration
-
-# Micrometer配置
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,metrics
-  endpoint:
-    health:
-      show-details: when_authorized
-    prometheus:
-      enabled: true
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-    distribution:
-      percentiles-histogram:
-        "[tasks.execution.time]": true
-      percentiles:
-        "[tasks.execution.time]": [0.5, 0.95, 0.99]
-      slo:
-        "[tasks.execution.time]": [1000, 5000, 10000]
-
-# 日志配置
-logging:
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%X{traceId:-}] [%X{userId:-}] [%thread] %logger{36} - %msg%n"
-  level:
-    root: INFO
-    com.ainovel: DEBUG
-    com.ainovel.server.task: INFO
-    org.springframework.web: INFO
-    org.springframework.amqp: INFO
-  request: true
-
-

@@ -50,6 +50,13 @@ public class SceneServiceImpl implements SceneService {
     }
 
     @Override
+    public Mono<Scene> getSceneById(String id) {
+        // 简化版findSceneById，保持一致
+        return sceneRepository.findById(id)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景不存在: " + id)));
+    }
+
+    @Override
     public Flux<Scene> findSceneByChapterId(String chapterId) {
         return sceneRepository.findByChapterId(chapterId);
     }
@@ -358,6 +365,12 @@ public class SceneServiceImpl implements SceneService {
     }
 
     @Override
+    public Mono<Scene> updateSceneContent(String id, String content, String userId) {
+        // 简化版，使用默认原因调用四参数版本
+        return updateSceneContent(id, content, userId, "修改内容");
+    }
+
+    @Override
     public Mono<List<HistoryEntry>> getSceneHistory(String id) {
         return sceneRepository.findById(id)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景不存在: " + id)))
@@ -426,6 +439,30 @@ public class SceneServiceImpl implements SceneService {
                     // 更新场景
                     scene.setUpdatedAt(LocalDateTime.now());
                     return sceneRepository.save(scene);
+                });
+    }
+
+    @Override
+    public Mono<Scene> updateSceneSummary(String id, String summary, String userId) {
+        return sceneRepository.findById(id)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景不存在: " + id)))
+                .flatMap(scene -> {
+                    // 如果摘要没有变化，直接返回
+                    if (scene.getSummary() != null && scene.getSummary().equals(summary)) {
+                        return Mono.just(scene);
+                    }
+
+                    // 更新摘要
+                    scene.setSummary(summary);
+                    scene.setUpdatedAt(LocalDateTime.now());
+                    scene.setVersion(scene.getVersion() + 1);
+
+                    // 保存到数据库
+                    return sceneRepository.save(scene)
+                            .doOnSuccess(savedScene -> {
+                                // 异步更新索引
+                                indexingService.indexScene(savedScene).subscribe();
+                            });
                 });
     }
 

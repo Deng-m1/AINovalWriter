@@ -1,41 +1,56 @@
 package com.ainovel.server.task.service;
 
+import reactor.core.publisher.Mono;
+import java.time.Duration;
+
 /**
- * 限流服务，用于控制对外部API（如AI服务）的调用速率。
- * 可以有内存或分布式实现。
+ * 响应式限流服务接口
  */
 public interface RateLimiterService {
     
     /**
-     * 尝试获取许可证，如果超过限制会阻塞指定的超时时间
-     * 
-     * @param providerOrModelKey 提供商或模型的键（如"openai", "anthropic", "gpt-4"等）
-     * @return 是否成功获取许可
+     * 尝试获取许可
+     * @param userId 用户ID
+     * @param resource 资源标识
+     * @return 是否获取到许可的Mono
      */
-    boolean acquirePermit(String providerOrModelKey);
+    Mono<Boolean> acquirePermit(String userId, String resource);
     
     /**
-     * 尝试获取许可证，如果超过限制会阻塞指定的超时时间
-     * 
-     * @param providerOrModelKey 提供商或模型的键（如"openai", "anthropic", "gpt-4"等）
-     * @param timeoutMillis 最大等待时间（毫秒）
-     * @return 是否成功获取许可
+     * 等待获取许可
+     * @param userId 用户ID
+     * @param resource 资源标识
+     * @param timeout 超时时间
+     * @return 完成信号
      */
-    boolean acquirePermit(String providerOrModelKey, long timeoutMillis);
+    Mono<Void> waitForPermit(String userId, String resource, Duration timeout);
     
     /**
-     * 获取指定提供商或模型的当前可用许可数量
-     * 
-     * @param providerOrModelKey 提供商或模型的键
-     * @return 当前可用许可数量
+     * 释放许可
+     * @param userId 用户ID
+     * @param resource 资源标识
+     * @return 完成信号
      */
-    double getAvailablePermits(String providerOrModelKey);
+    Mono<Void> releasePermit(String userId, String resource);
     
     /**
-     * 获取指定提供商或模型的配置速率
-     * 
-     * @param providerOrModelKey 提供商或模型的键
-     * @return 配置的每秒许可数
+     * 获取可用许可数
+     * @param resource 资源标识
+     * @return 可用许可数的Mono
+     */
+    Mono<Integer> getAvailablePermits(String resource);
+    
+    /**
+     * 重置指定资源的限流器
+     * @param resource 资源标识
+     * @return 完成信号
+     */
+    Mono<Void> resetLimiter(String resource);
+    
+    /**
+     * 获取当前配置的速率
+     * @param providerOrModelKey 提供者或模型键
+     * @return 配置速率
      */
     double getConfiguredRate(String providerOrModelKey);
 } 

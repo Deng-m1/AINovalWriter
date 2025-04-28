@@ -4,27 +4,26 @@ import com.ainovel.server.config.RabbitMQConfig;
 import com.ainovel.server.task.event.external.TaskExternalEvent;
 import com.ainovel.server.task.model.TaskStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.AmqpException;
-import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
-import org.springframework.amqp.core.MessagePropertiesBuilder;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
+import java.util.HashMap;
 
 /**
- * 任务外部事件发布器，负责将任务状态变更事件发布到外部交换机
+ * 响应式任务外部事件发布器，负责将任务状态变更事件发布到外部交换机
  */
+@Slf4j
 @Service
 public class TaskEventPublisher {
-    private static final Logger logger = LoggerFactory.getLogger(TaskEventPublisher.class);
     
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
@@ -38,98 +37,90 @@ public class TaskEventPublisher {
     /**
      * 发布外部事件
      * 
-     * @param event 外部事件对象
-     * @return 是否成功发布
+     * @param eventType 事件类型 (例如 "TASK_COMPLETED", "TASK_FAILED")
+     * @param eventData 事件数据Map
+     * @return 表示操作完成的Mono<Void>
      */
-    public boolean publishExternalEvent(TaskExternalEvent event) {
-        if (event == null) {
-            logger.error("无法发布空事件");
-            return false;
-        }
-        
-        try {
-            String eventType = event.getStatus().name();
+    public Mono<Void> publishExternalEvent(String eventType, Map<String, Object> eventData) {
+        return Mono.fromCallable(() -> {
+            String taskId = eventData.getOrDefault("taskId", "unknown").toString();
+            String correlationId = eventData.containsKey("taskId") ? 
+                            eventData.get("taskId").toString() : UUID.randomUUID().toString();
             String routingKey = "task.event." + eventType.toLowerCase();
-            String correlationId = UUID.randomUUID().toString();
             
-            logger.info("正在发布任务事件 [{} - {}] 到交换机, 路由键: {}", 
-                    event.getTaskId(), eventType, routingKey);
+            log.info("正在发布任务事件 [{}] 到交换机, 事件类型: {}, 路由键: {}", 
+                    taskId, eventType, routingKey);
             
-            MessageProperties props = MessagePropertiesBuilder.newInstance()
-                    .setContentType(MessageProperties.CONTENT_TYPE_JSON)
-                    .setCorrelationId(correlationId)
-                    .setMessageId(event.getEventId())
-                    .setHeader("x-event-type", eventType)
-                    .setHeader("x-task-id", event.getTaskId())
-                    .build();
-            
-            // 让RabbitTemplate序列化消息体
-            Message message = rabbitTemplate.getMessageConverter().toMessage(
-                    event, props);
-            
-            // 创建相关数据，用于跟踪确认
-            CorrelationData correlationData = new CorrelationData(correlationId);
-            
+            // 发送消息到事件交换机
             rabbitTemplate.convertAndSend(
-                    RabbitMQConfig.TASKS_EVENTS_EXCHANGE,
-                    routingKey,
-                    message,
-                    correlationData);
+                RabbitMQConfig.TASKS_EVENTS_EXCHANGE, 
+                routingKey, 
+                eventData, // 直接发送Map数据
+                message -> {
+                    // 设置必要的头信息
+                    message.getMessageProperties().setContentType(MessageProperties.CONTENT_TYPE_JSON);
+                    message.getMessageProperties().setCorrelationId(correlationId);
+                    message.getMessageProperties().setMessageId(UUID.randomUUID().toString());
+                    message.getMessageProperties().setHeader("x-event-type", eventType);
+                    if (eventData.containsKey("taskId")) {
+                        message.getMessageProperties().setHeader("x-task-id", eventData.get("taskId"));
+                    }
+                    return message;
+                },
+                new CorrelationData(correlationId)
+            );
             
+            return null;
+        })
+        .subscribeOn(Schedulers.boundedElastic()) // 发送是阻塞的
+        .doOnError(e -> log.error("发布任务事件 [{}] 到RabbitMQ失败: {}", 
+                            eventType, e.getMessage(), e))
+        .then();
+    }
+    
+    // --- 保留旧方法作为兼容或内部使用，但不推荐直接调用 --- 
+    
+    /**
+     * @deprecated 使用 publishExternalEvent(String eventType, Map<String, Object> eventData) 代替
+     */
+    @Deprecated
+    public boolean publishExternalEvent(TaskExternalEvent event) {
+        // 不再推荐直接使用，改为调用新的Map版本
+        try {
+            Map<String, Object> eventData = objectMapper.convertValue(event, Map.class);
+            publishExternalEvent(event.getStatus().name(), eventData).block(); // 阻塞等待，不推荐
             return true;
-        } catch (AmqpException e) {
-            logger.error("发布任务事件 [{}] 到RabbitMQ失败: {}", 
-                    event.getTaskId(), e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("发布旧版任务事件失败: {}", event.getTaskId(), e);
             return false;
         }
     }
-    
+
     /**
-     * 创建并发布外部事件
-     * 
-     * @param taskId 任务ID
-     * @param taskType 任务类型
-     * @param userId 用户ID
-     * @param status 任务状态
-     * @param result 任务结果(可选)
-     * @param progress 任务进度(可选)
-     * @param errorInfo 错误信息(可选)
-     * @param isDeadLetter 是否为死信(可选)
-     * @param parentTaskId 父任务ID(可选)
-     * @return 是否成功发布
+     * @deprecated 使用 publishExternalEvent(String eventType, Map<String, Object> eventData) 代替
      */
+    @Deprecated
     public boolean publishExternalEvent(String taskId, String taskType, String userId, 
                                         TaskStatus status, Object result, Object progress, 
                                         Object errorInfo, Boolean isDeadLetter, String parentTaskId) {
-        TaskExternalEvent event = new TaskExternalEvent();
-        event.setEventId(UUID.randomUUID().toString());
-        event.setTaskId(taskId);
-        event.setTaskType(taskType);
-        event.setUserId(userId);
-        event.setStatus(status);
-        event.setTimestamp(Instant.now());
+        // 不再推荐直接使用，改为调用新的Map版本
+        Map<String, Object> eventData = new HashMap<>();
+        eventData.put("taskId", taskId);
+        eventData.put("taskType", taskType);
+        eventData.put("userId", userId);
+        eventData.put("status", status.name());
+        if (result != null) eventData.put("result", result);
+        if (progress != null) eventData.put("progress", progress);
+        if (errorInfo != null) eventData.put("errorInfo", errorInfo);
+        if (isDeadLetter != null) eventData.put("isDeadLetter", isDeadLetter);
+        if (parentTaskId != null) eventData.put("parentTaskId", parentTaskId);
         
-        if (result != null) {
-            event.setResult(result);
+        try {
+            publishExternalEvent(status.name(), eventData).block(); // 阻塞等待，不推荐
+            return true;
+        } catch (Exception e) {
+            log.error("发布旧版任务事件失败 (手动构建): {}", taskId, e);
+            return false;
         }
-        
-        if (progress != null) {
-            event.setProgress(progress);
-        }
-        
-        if (errorInfo != null) {
-            event.setErrorInfo(objectMapper.convertValue(errorInfo, objectMapper.getTypeFactory()
-                    .constructMapType(java.util.Map.class, String.class, Object.class)));
-        }
-        
-        if (isDeadLetter != null) {
-            event.setDeadLetter(isDeadLetter);
-        }
-        
-        if (parentTaskId != null) {
-            event.setParentTaskId(parentTaskId);
-        }
-        
-        return publishExternalEvent(event);
     }
 } 

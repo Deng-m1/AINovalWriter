@@ -7,9 +7,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskDecorator;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.filter.CommonsRequestLoggingFilter;
 import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Hooks;
+import reactor.core.publisher.Mono;
 
 import jakarta.annotation.PostConstruct;
 import java.util.Map;
@@ -29,38 +32,59 @@ public class LoggingConfiguration {
     @PostConstruct
     public void init() {
         logger.info("配置Reactor上下文传播MDC");
-        
-        // 设置Reactor Context传递MDC
-        // 注意：这个功能需要更新Reactor版本并完善实现逻辑
-        // 在Reactor高版本中应该使用ContextPropagation.withThreadLocalContextRegistry
-        logger.info("MDC传播将在后续实现");
+        // 启用自动上下文传播 (需要 io.micrometer:context-propagation 依赖)
+        Hooks.enableAutomaticContextPropagation();
+        logger.info("已启用Reactor自动MDC传播");
     }
     
     /**
      * WebFlux请求过滤器，用于设置MDC上下文
      */
     @Bean
-    public WebFilter mdcFilter() {
+    public WebFilter mdcAndLoggingFilter() {
         return (exchange, chain) -> {
-            // 设置traceId
-            String traceId = exchange.getRequest().getHeaders().getFirst("X-Trace-ID");
-            if (traceId == null) {
-                traceId = UUID.randomUUID().toString().replace("-", "");
-            }
+            long startTime = System.currentTimeMillis();
+            ServerHttpRequest request = exchange.getRequest();
+
+            // --- MDC 设置 开始 ---
+            String originalTraceId = request.getHeaders().getFirst("X-Trace-ID");
+            final String traceId = (originalTraceId == null)
+                    ? UUID.randomUUID().toString().replace("-", "")
+                    : originalTraceId;
             MDC.put("traceId", traceId);
-            
-            // 如果请求头中有userId，也放入MDC
-            String userId = exchange.getRequest().getHeaders().getFirst("X-User-ID");
+
+            String userId = request.getHeaders().getFirst("X-User-ID");
             if (userId != null) {
                 MDC.put("userId", userId);
             }
-            
-            // 设置请求路径
-            String path = exchange.getRequest().getPath().value();
+
+            final String path = request.getPath().value();
             MDC.put("path", path);
-            
-            // 处理完请求后需要清理MDC
-            return chain.filter(exchange).doFinally(signalType -> MDC.clear());
+            // --- MDC 设置 结束 ---
+
+            // --- 请求日志 开始 ---
+            final String finalUserId = userId; // effectively final for lambda
+            logger.info("Request Start: {} {} TraceID={}, UserID={}",
+                    request.getMethod(),
+                    request.getURI(),
+                    traceId,
+                    finalUserId != null ? finalUserId : "N/A");
+            // --- 请求日志 结束 ---
+
+            // 附加响应日志和MDC清理
+            return chain.filter(exchange)
+                    .doOnSuccess(aVoid -> {
+                        long duration = System.currentTimeMillis() - startTime;
+                        int statusCode = exchange.getResponse().getStatusCode() != null ? exchange.getResponse().getStatusCode().value() : 0;
+                        logger.info("Request End: Status={} Duration={}ms TraceID={}, Path={}",
+                                statusCode, duration, traceId, path);
+                    })
+                    .doOnError(throwable -> {
+                        long duration = System.currentTimeMillis() - startTime;
+                        logger.error("Request Error: {} Duration={}ms TraceID={}, Path={}",
+                                throwable.getMessage(), duration, traceId, path, throwable);
+                    })
+                    .doFinally(signalType -> MDC.clear()); // 清理MDC
         };
     }
     
@@ -87,7 +111,7 @@ public class LoggingConfiguration {
     /**
      * 请求日志过滤器
      */
-    @Bean
+    /* @Bean
     @ConditionalOnProperty(name = "logging.request", havingValue = "true")
     public CommonsRequestLoggingFilter requestLoggingFilter() {
         CommonsRequestLoggingFilter filter = new CommonsRequestLoggingFilter();
@@ -97,5 +121,5 @@ public class LoggingConfiguration {
         filter.setIncludeHeaders(false);
         filter.setAfterMessagePrefix("Request data: ");
         return filter;
-    }
+    } */
 } 

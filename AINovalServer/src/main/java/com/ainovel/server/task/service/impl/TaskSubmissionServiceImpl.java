@@ -11,12 +11,13 @@ import com.ainovel.server.task.service.TaskSubmissionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.reactive.TransactionalOperator;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -25,18 +26,18 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 任务提交服务实现类
+ * 响应式任务提交服务实现类
  */
+@Slf4j
 @Service
 public class TaskSubmissionServiceImpl implements TaskSubmissionService {
-
-    private static final Logger log = LoggerFactory.getLogger(TaskSubmissionServiceImpl.class);
 
     private final BackgroundTaskRepository taskRepository;
     private final TaskStateService taskStateService;
     private final TaskMessageProducer taskMessageProducer;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
+    private final TransactionalOperator transactionalOperator;
 
     @Autowired
     public TaskSubmissionServiceImpl(
@@ -44,285 +45,173 @@ public class TaskSubmissionServiceImpl implements TaskSubmissionService {
             TaskStateService taskStateService,
             TaskMessageProducer taskMessageProducer,
             ApplicationEventPublisher eventPublisher,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            TransactionalOperator transactionalOperator) {
         this.taskRepository = taskRepository;
         this.taskStateService = taskStateService;
         this.taskMessageProducer = taskMessageProducer;
         this.eventPublisher = eventPublisher;
         this.objectMapper = objectMapper;
+        this.transactionalOperator = transactionalOperator;
     }
 
     @Override
-    @Transactional
-    public String submitTask(String userId, String taskType, Object parameters, String parentTaskId) {
-        Objects.requireNonNull(userId, "用户ID不能为空");
-        Objects.requireNonNull(taskType, "任务类型不能为空");
-        Objects.requireNonNull(parameters, "任务参数不能为空");
-
-        // 创建任务实体
-        BackgroundTask task = new BackgroundTask();
-        String taskId = UUID.randomUUID().toString();
-        task.setId(taskId);
-        task.setUserId(userId);
-        task.setTaskType(taskType);
-        task.setStatus(TaskStatus.QUEUED);
-        task.setParameters(parameters);
-        task.setParentTaskId(parentTaskId);
-        
-        Map<String, Instant> timestamps = new HashMap<>();
-        timestamps.put("created", Instant.now());
-        task.setTimestamps(timestamps);
-        task.setRetryCount(0);
-        
-        // 保存任务到数据库
-        BackgroundTask savedTask = taskRepository.save(task);
-        if (savedTask == null) {
-            throw new RuntimeException("保存任务失败");
+    public Mono<String> submitTask(String userId, String taskType, Object parameters, String parentTaskId) {
+        // 确保参数有效
+        if (userId == null || userId.trim().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("用户ID不能为空"));
         }
-
-        log.info("任务已提交: taskId={}, taskType={}, userId={}", taskId, taskType, userId);
-
-        // 发送任务消息到RabbitMQ
-        try {
-            taskMessageProducer.sendTask(taskId, userId, taskType, parameters);
-        } catch (Exception e) {
-            log.error("发送任务消息失败: taskId={}, error={}", taskId, e.getMessage(), e);
-            // 如果消息发送失败，将任务状态设置为失败
-            Map<String, Object> errorInfo = new HashMap<>();
-            errorInfo.put("message", "消息发送失败: " + e.getMessage());
-            errorInfo.put("exception", e.getClass().getName());
-            errorInfo.put("timestamp", Instant.now().toString());
+        
+        if (taskType == null || taskType.trim().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("任务类型不能为空"));
+        }
+        
+        if (parameters == null) {
+            return Mono.error(new IllegalArgumentException("任务参数不能为空"));
+        }
+        
+        log.info("准备提交任务，用户ID: {}, 任务类型: {}, 父任务ID: {}", userId, taskType, parentTaskId);
+        
+        // 使用响应式事务来确保数据库操作和事件发布的一致性
+        return transactionalOperator.execute(status -> {
+            Mono<String> taskIdMono;
             
-            task.setErrorInfo(errorInfo);
-            task.setStatus(TaskStatus.FAILED);
-            taskRepository.save(task);
+            // 根据是否有父任务ID选择创建普通任务或子任务
+            if (parentTaskId != null && !parentTaskId.trim().isEmpty()) {
+                log.debug("创建子任务，父任务ID: {}", parentTaskId);
+                taskIdMono = taskStateService.createSubTask(userId, taskType, parameters, parentTaskId)
+                    .map(task -> task.getId());
+            } else {
+                log.debug("创建普通任务");
+                taskIdMono = taskStateService.createTask(userId, taskType, parameters, null);
+            }
             
-            throw new RuntimeException("发送任务消息失败", e);
-        }
-
-        // 发布任务提交事件
-        TaskApplicationEvent event = new TaskSubmittedEvent(
-            this, taskId, taskType, userId, parameters, parentTaskId
-        );
-        eventPublisher.publishEvent(event);
-
-        // 发送任务事件消息
-        try {
-            Map<String, Object> eventData = new HashMap<>();
-            eventData.put("taskId", taskId);
-            eventData.put("userId", userId);
-            eventData.put("taskType", taskType);
-            eventData.put("parameters", parameters);
-            eventData.put("parentTaskId", parentTaskId);
-            eventData.put("status", TaskStatus.QUEUED.name());
-            eventData.put("timestamp", Instant.now().toString());
-            
-            taskMessageProducer.sendTaskEvent("TASK_SUBMITTED", eventData);
-        } catch (Exception e) {
-            log.error("发送任务事件消息失败: taskId={}, event={}, error={}", 
-                      taskId, "TASK_SUBMITTED", e.getMessage(), e);
-        }
-
-        return taskId;
-    }
-    
-    @Override
-    @Transactional
-    public String submitTask(String userId, String taskType, Object parameters) {
-        return submitTask(userId, taskType, parameters, null);
-    }
-    
-    @Override
-    @Transactional
-    public String submitTaskWithGeneratedId(String userId, String taskType, Object parameters, String parentTaskId) {
-        return submitTask(userId, taskType, parameters, parentTaskId);
-    }
-    
-    @Override
-    @Transactional
-    public String submitTaskWithGeneratedId(String userId, String taskType, Object parameters) {
-        return submitTask(userId, taskType, parameters, null);
-    }
-
-    @Override
-    public Object getTaskStatus(String taskId) {
-        Objects.requireNonNull(taskId, "任务ID不能为空");
-        
-        BackgroundTask task = taskRepository.findById(taskId).orElse(null);
-        if (task == null) {
-            return null;
-        }
-        
-        return taskToJsonResponse(task);
-    }
-
-    @Override
-    public Object getTaskStatus(String taskId, String userId) {
-        Objects.requireNonNull(taskId, "任务ID不能为空");
-        Objects.requireNonNull(userId, "用户ID不能为空");
-        
-        BackgroundTask task = taskRepository.findById(taskId).orElse(null);
-        if (task == null || !userId.equals(task.getUserId())) {
-            return null;
-        }
-        
-        return taskToJsonResponse(task);
-    }
-
-    @Override
-    @Transactional
-    public boolean cancelTask(String taskId) {
-        Objects.requireNonNull(taskId, "任务ID不能为空");
-        
-        BackgroundTask task = taskRepository.findById(taskId).orElse(null);
-        if (task == null) {
-            return false;
-        }
-        
-        // 只能取消处于排队或执行中状态的任务
-        if (task.getStatus() != TaskStatus.QUEUED && task.getStatus() != TaskStatus.RUNNING 
-            && task.getStatus() != TaskStatus.RETRYING) {
-            return false;
-        }
-        
-        task.setStatus(TaskStatus.CANCELLED);
-        Map<String, Instant> timestamps = task.getTimestamps();
-        if (timestamps == null) {
-            timestamps = new HashMap<>();
-            task.setTimestamps(timestamps);
-        }
-        timestamps.put("cancelled", Instant.now());
-        
-        taskRepository.save(task);
-        
-        // 发送取消事件消息
-        try {
-            Map<String, Object> eventData = new HashMap<>();
-            eventData.put("taskId", taskId);
-            eventData.put("userId", task.getUserId());
-            eventData.put("taskType", task.getTaskType());
-            eventData.put("status", TaskStatus.CANCELLED.name());
-            eventData.put("timestamp", Instant.now().toString());
-            
-            taskMessageProducer.sendTaskEvent("TASK_CANCELLED", eventData);
-        } catch (Exception e) {
-            log.error("发送任务取消事件消息失败: taskId={}, error={}", 
-                      taskId, e.getMessage(), e);
-        }
-        
-        return true;
-    }
-
-    @Override
-    @Transactional
-    public boolean cancelTask(String taskId, String userId) {
-        Objects.requireNonNull(taskId, "任务ID不能为空");
-        Objects.requireNonNull(userId, "用户ID不能为空");
-        
-        // 验证用户是否有权限取消任务
-        BackgroundTask task = taskRepository.findById(taskId).orElse(null);
-        if (task == null || !userId.equals(task.getUserId())) {
-            return false;
-        }
-        
-        // 只能取消处于排队或执行中状态的任务
-        if (task.getStatus() != TaskStatus.QUEUED && task.getStatus() != TaskStatus.RUNNING 
-            && task.getStatus() != TaskStatus.RETRYING) {
-            return false;
-        }
-        
-        task.setStatus(TaskStatus.CANCELLED);
-        Map<String, Instant> timestamps = task.getTimestamps();
-        if (timestamps == null) {
-            timestamps = new HashMap<>();
-            task.setTimestamps(timestamps);
-        }
-        timestamps.put("cancelled", Instant.now());
-        
-        taskRepository.save(task);
-        
-        // 发送取消事件消息
-        try {
-            Map<String, Object> eventData = new HashMap<>();
-            eventData.put("taskId", taskId);
-            eventData.put("userId", userId);
-            eventData.put("taskType", task.getTaskType());
-            eventData.put("status", TaskStatus.CANCELLED.name());
-            eventData.put("timestamp", Instant.now().toString());
-            
-            taskMessageProducer.sendTaskEvent("TASK_CANCELLED", eventData);
-        } catch (Exception e) {
-            log.error("发送任务取消事件消息失败: taskId={}, userId={}, error={}", 
-                      taskId, userId, e.getMessage(), e);
-        }
-        
-        return true;
-    }
-    
-    /**
-     * 将任务对象转换为JSON响应
-     */
-    private JsonNode taskToJsonResponse(BackgroundTask task) {
-        ObjectNode response = objectMapper.createObjectNode();
-        response.put("taskId", task.getId());
-        response.put("userId", task.getUserId());
-        response.put("taskType", task.getTaskType());
-        response.put("status", task.getStatus().name());
-        
-        Map<String, Instant> timestamps = task.getTimestamps();
-        if (timestamps != null) {
-            ObjectNode timestampsNode = objectMapper.createObjectNode();
-            timestamps.forEach((key, value) -> {
-                if (value != null) {
-                    timestampsNode.put(key, value.toString());
+            return taskIdMono.flatMap(taskId -> {
+                // 发布任务提交事件
+                try {
+                    String eventId = UUID.randomUUID().toString();
+                    TaskSubmittedEvent event = new TaskSubmittedEvent(
+                            this, 
+                            taskId, 
+                            taskType, 
+                            userId, 
+                            parameters);
+                    
+                    // 设置事件ID以支持幂等性检查
+                    event.setEventId(eventId);
+                    
+                    log.info("发布任务提交事件: taskId={}, eventId={}, taskType={}", 
+                            taskId, eventId, taskType);
+                    
+                    eventPublisher.publishEvent(event);
+                    
+                    log.debug("任务提交事件已发布，将由TaskSubmissionListener处理后续消息发送到MQ");
+                } catch (Exception e) {
+                    log.error("发布任务提交事件失败: {} [类型: {}, 用户: {}]", taskId, taskType, userId, e);
+                    return Mono.error(e);
                 }
+                
+                return Mono.just(taskId);
             });
-            response.set("timestamps", timestampsNode);
-            
-            // 为了兼容性添加特定的时间戳字段
-            if (timestamps.containsKey("created")) {
-                response.put("createdAt", timestamps.get("created").toString());
+        }).single();
+    }
+    
+    @Override
+    public Mono<Object> getTaskStatus(String taskId) {
+        return getTaskStatus(taskId, null);
+    }
+    
+    @Override
+    public Mono<Object> getTaskStatus(String taskId, String userId) {
+        if (taskId == null || taskId.trim().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("任务ID不能为空"));
+        }
+        
+        return taskStateService.getTask(taskId)
+            .flatMap(task -> {
+                // 如果提供了用户ID，检查用户是否有权限
+                if (userId != null && !userId.equals(task.getUserId())) {
+                    return Mono.error(new SecurityException("无权访问此任务"));
+                }
+                
+                // 构建任务状态响应
+                return Mono.fromCallable(() -> {
+                    ObjectNode statusNode = objectMapper.createObjectNode();
+                    statusNode.put("id", task.getId());
+                    statusNode.put("type", task.getTaskType());
+                    statusNode.put("status", task.getStatus().name());
+                    
+                    if (task.getProgress() != null) {
+                        statusNode.set("progress", objectMapper.valueToTree(task.getProgress()));
+                    }
+                    
+                    if (task.getResult() != null) {
+                        statusNode.set("result", objectMapper.valueToTree(task.getResult()));
+                    }
+                    
+                    if (task.getErrorInfo() != null) {
+                        statusNode.set("errorInfo", objectMapper.valueToTree(task.getErrorInfo()));
+                    }
+                    
+                    if (task.getTimestamps() != null) {
+                        statusNode.set("timestamps", objectMapper.valueToTree(task.getTimestamps()));
+                    }
+                    
+                    statusNode.put("retryCount", task.getRetryCount());
+                    
+                    // Cast ObjectNode to Object before returning
+                    return (Object) statusNode;
+                }).subscribeOn(Schedulers.boundedElastic());
+            })
+            .switchIfEmpty(Mono.error(new IllegalArgumentException("找不到任务: " + taskId)));
+    }
+    
+    @Override
+    public Mono<Boolean> cancelTask(String taskId) {
+        return cancelTask(taskId, null);
+    }
+    
+    @Override
+    public Mono<Boolean> cancelTask(String taskId, String userId) {
+        if (taskId == null || taskId.trim().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("任务ID不能为空"));
+        }
+        
+        Mono<Boolean> cancelMono;
+        
+        if (userId != null && !userId.trim().isEmpty()) {
+            // 带用户权限检查的取消
+            cancelMono = taskStateService.cancelTask(taskId, userId);
+        } else {
+            // 不检查用户权限的取消（通常是系统或管理员操作）
+            cancelMono = taskStateService.getTask(taskId)
+                .flatMap(task -> taskStateService.cancelTask(task.getId(), task.getUserId()));
+        }
+        
+        return cancelMono.flatMap(cancelled -> {
+            if (cancelled) {
+                // 如果成功取消，发送取消事件消息
+                return taskStateService.getTask(taskId)
+                    .flatMap(task -> {
+                        try {
+                            Map<String, Object> eventData = new HashMap<>();
+                            eventData.put("taskId", taskId);
+                            eventData.put("userId", task.getUserId());
+                            eventData.put("taskType", task.getTaskType());
+                            eventData.put("status", TaskStatus.CANCELLED.name());
+                            eventData.put("timestamp", Instant.now().toString());
+                            
+                            return taskMessageProducer.sendTaskEvent("TASK_CANCELLED", eventData)
+                                .thenReturn(true);
+                        } catch (Exception e) {
+                            log.error("发送任务取消事件消息失败: taskId={}, error={}", 
+                                     taskId, e.getMessage(), e);
+                            return Mono.just(true); // 即使事件发送失败，任务取消成功
+                        }
+                    });
+            } else {
+                return Mono.just(false);
             }
-            if (timestamps.containsKey("running")) {
-                response.put("startedAt", timestamps.get("running").toString());
-            }
-            if (timestamps.containsKey("completed")) {
-                response.put("completedAt", timestamps.get("completed").toString());
-            }
-        }
-        
-        if (task.getErrorInfo() != null) {
-            response.set("errorInfo", objectMapper.valueToTree(task.getErrorInfo()));
-            
-            // 为了兼容性提取错误消息
-            Object errorMessage = task.getErrorInfo().get("message");
-            if (errorMessage != null) {
-                response.put("errorMessage", errorMessage.toString());
-            }
-        }
-        
-        if (task.getResult() != null) {
-            response.set("result", objectMapper.valueToTree(task.getResult()));
-        }
-        
-        if (task.getParameters() != null) {
-            response.set("parameters", objectMapper.valueToTree(task.getParameters()));
-        }
-        
-        if (task.getProgress() != null) {
-            response.set("progress", objectMapper.valueToTree(task.getProgress()));
-        }
-        
-        if (task.getParentTaskId() != null) {
-            response.put("parentTaskId", task.getParentTaskId());
-        }
-        
-        response.put("retryCount", task.getRetryCount());
-        
-        if (task.getExecutionNodeId() != null) {
-            response.put("executionNodeId", task.getExecutionNodeId());
-        }
-        
-        return response;
+        });
     }
 } 

@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import com.ainovel.server.domain.dto.ParsedNovelData;
 import com.ainovel.server.domain.dto.ParsedSceneData;
@@ -28,7 +29,11 @@ import com.ainovel.server.service.ImportService;
 import com.ainovel.server.service.IndexingService;
 import com.ainovel.server.service.MetadataService;
 import com.ainovel.server.service.NovelParser;
+import com.ainovel.server.task.service.TaskSubmissionService;
+import com.ainovel.server.task.dto.batchsummary.BatchGenerateSummaryParameters;
 import com.ainovel.server.web.dto.ImportStatus;
+import com.ainovel.server.service.UserAIModelConfigService;
+import com.ainovel.server.common.util.PromptUtil;
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -48,6 +53,8 @@ public class ImportServiceImpl implements ImportService {
     private final IndexingService indexingService;
     private final MetadataService metadataService;
     private final List<NovelParser> parsers;
+    private final TaskSubmissionService taskSubmissionService;
+    private final UserAIModelConfigService userAIModelConfigService;
 
     // 使用ConcurrentHashMap存储活跃的导入任务Sink
     private final Map<String, Sinks.Many<ServerSentEvent<ImportStatus>>> activeJobSinks = new ConcurrentHashMap<>();
@@ -70,12 +77,16 @@ public class ImportServiceImpl implements ImportService {
             SceneRepository sceneRepository,
             IndexingService indexingService,
             MetadataService metadataService,
-            List<NovelParser> parsers) {
+            List<NovelParser> parsers,
+            TaskSubmissionService taskSubmissionService,
+            UserAIModelConfigService userAIModelConfigService) {
         this.novelRepository = novelRepository;
         this.sceneRepository = sceneRepository;
         this.indexingService = indexingService;
         this.metadataService = metadataService;
         this.parsers = parsers;
+        this.taskSubmissionService = taskSubmissionService;
+        this.userAIModelConfigService = userAIModelConfigService;
     }
 
     @Override
@@ -191,7 +202,6 @@ public class ImportServiceImpl implements ImportService {
         return Mono.fromCallable(() -> {
             // 检查是否已取消
             if (isCancelled(jobId)) {
-                log.info("Job {} 已被取消，不再继续处理", jobId);
                 throw new InterruptedException("导入任务已被用户取消");
             }
 
@@ -254,11 +264,10 @@ public class ImportServiceImpl implements ImportService {
                     throw new InterruptedException("导入任务已被用户取消");
                 }
 
-                // 设置小说标题（如果解析器未设置）
-                if (parsedData.getNovelTitle() == null || parsedData.getNovelTitle().isEmpty()) {
-                    String title = extractTitleFromFilename(originalFilename);
-                    parsedData.setNovelTitle(title);
-                }
+                // 始终使用文件名作为小说标题
+                String title = extractTitleFromFilename(originalFilename);
+                parsedData.setNovelTitle(title);
+                log.info("Job {}: 使用文件名 '{}' 作为小说标题。", jobId, title);
 
                 log.info("Job {}: Parsed data obtained. Scene count: {}", jobId, parsedData.getScenes().size());
                 sink.tryEmitNext(createStatusEvent(jobId, "SAVING", "解析完成，发现 " + parsedData.getScenes().size() + " 个场景，正在保存小说结构..."));
@@ -314,13 +323,12 @@ public class ImportServiceImpl implements ImportService {
                                 // 存储订阅以便可以在取消时使用
                                 progressUpdateSubscriptions.put(jobId, subscription);
 
-                                // 执行实际的索引操作，使用 blocking 模式，确保索引完成
+                                // 保存jobId和novelId的映射关系，以便后续取消操作
+                                jobToNovelIdMap.put(jobId, savedNovel.getId());
+                                log.info("Job {}: 已建立与Novel ID: {}的映射关系", jobId, savedNovel.getId());
+
+                                // 执行实际的索引操作
                                 return indexingService.indexNovel(savedNovel.getId())
-                                        .doOnSubscribe(s -> {
-                                            // 保存jobId和novelId的映射关系，以便后续取消操作
-                                            jobToNovelIdMap.put(jobId, savedNovel.getId());
-                                            log.info("Job {}: 已建立与Novel ID: {}的映射关系", jobId, savedNovel.getId());
-                                        })
                                         .doOnSuccess(result -> {
                                             // 检查是否被取消
                                             if (isCancelled(jobId)) {
@@ -328,6 +336,7 @@ public class ImportServiceImpl implements ImportService {
                                             }
 
                                             log.info("Job {}: RAG indexing successfully completed for Novel ID: {}", jobId, savedNovel.getId());
+                                            
                                             // 确保取消进度更新
                                             try {
                                                 var disposable = progressRef.getAndSet(null);
@@ -338,15 +347,12 @@ public class ImportServiceImpl implements ImportService {
 
                                                 // 清理进度更新订阅
                                                 progressUpdateSubscriptions.remove(jobId);
-
-                                                // 清理映射关系
-                                                jobToNovelIdMap.remove(jobId);
                                             } catch (Exception e) {
                                                 log.error("Job {}: Error disposing progress updates", jobId, e);
                                             }
-                                            // 发送完成通知
-                                            sink.tryEmitNext(createStatusEvent(jobId, "COMPLETED", "导入和索引成功完成！"));
-                                            sink.tryEmitComplete();
+                                            
+                                            // 发送RAG索引完成通知
+                                            sink.tryEmitNext(createStatusEvent(jobId, "RAG_INDEXED", "RAG索引成功完成"));
                                         })
                                         .doOnError(error -> {
                                             log.error("Job {}: RAG indexing failed for Novel ID: {}", jobId, savedNovel.getId(), error);
@@ -360,16 +366,45 @@ public class ImportServiceImpl implements ImportService {
 
                                                 // 清理进度更新订阅
                                                 progressUpdateSubscriptions.remove(jobId);
-
-                                                // 清理映射关系
-                                                jobToNovelIdMap.remove(jobId);
                                             } catch (Exception e) {
                                                 log.error("Job {}: Error disposing progress updates", jobId, e);
                                             }
                                             // 发送失败通知
                                             sink.tryEmitNext(createStatusEvent(jobId, "FAILED", "RAG 索引失败: " + error.getMessage()));
                                             sink.tryEmitComplete();
-                                        });
+                                        })
+                                        // 索引完成后，提交批量生成摘要任务
+                                        .then(Mono.defer(() -> {
+                                            // 检查是否被取消
+                                            if (isCancelled(jobId)) {
+                                                return Mono.empty();
+                                            }
+                                            
+                                            // 提交批量生成摘要的任务
+                                            return submitBatchSummaryTask(savedNovel.getId(), userId)
+                                                .doOnSuccess(taskId -> {
+                                                    if (taskId != null) {
+                                                        log.info("Job {}: 为小说 {} 提交了批量生成摘要任务，任务ID: {}", 
+                                                                 jobId, savedNovel.getId(), taskId);
+                                                        sink.tryEmitNext(createStatusEvent(jobId, "SUMMARY_TASK_SUBMITTED", 
+                                                                        "已在后台启动摘要生成任务，将自动为所有章节生成摘要"));
+                                                    } else {
+                                                        log.warn("Job {}: 批量生成摘要任务未能成功提交", jobId);
+                                                    }
+                                                })
+                                                .doOnError(error -> {
+                                                    log.error("Job {}: 提交批量生成摘要任务失败", jobId, error);
+                                                })
+                                                .onErrorResume(e -> Mono.empty()) // 如果提交摘要任务失败，继续流程
+                                                .then(Mono.defer(() -> {
+                                                    // 清理相关映射 
+                                                    jobToNovelIdMap.remove(jobId);
+                                                    // 发送最终完成通知
+                                                    sink.tryEmitNext(createStatusEvent(jobId, "COMPLETED", "导入和索引成功完成！"));
+                                                    sink.tryEmitComplete();
+                                                    return Mono.empty();
+                                                }));
+                                        }));
                             });
                         });
             } catch (IOException e) {
@@ -409,15 +444,15 @@ public class ImportServiceImpl implements ImportService {
      */
     private Mono<Novel> saveNovelAndScenesReactive(ParsedNovelData parsedData, String userId) {
         log.info(">>> saveNovelAndScenesReactive started for novel: {} userId: {} ", parsedData.getNovelTitle(), userId);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime novelNow = LocalDateTime.now(); // 时间戳用于 Novel
 
         // 创建Novel对象
         Novel novel = Novel.builder()
                 .title(parsedData.getNovelTitle())
                 .author(Novel.Author.builder().id(userId).build())
                 .status("draft")
-                .createdAt(now)
-                .updatedAt(now)
+                .createdAt(novelNow) // 使用 Novel 的时间戳
+                .updatedAt(novelNow) // 使用 Novel 的时间戳
                 .build();
 
         // 先保存小说
@@ -430,12 +465,13 @@ public class ImportServiceImpl implements ImportService {
                     // 创建场景列表 - 每个解析出的章节单独一个章节，每个章节默认创建一个场景
                     for (int i = 0; i < parsedData.getScenes().size(); i++) {
                         ParsedSceneData parsedScene = parsedData.getScenes().get(i);
+                        LocalDateTime sceneNow = LocalDateTime.now(); // 为每个 Scene 获取独立的时间戳
 
                         // 使用UUID生成场景ID，与前端保持一致
                         String sceneId = UUID.randomUUID().toString();
 
-                        // 将普通文本转换为富文本格式
-                        String richTextContent = convertToRichText(parsedScene.getSceneContent());
+                        // 将普通文本转换为富文本格式 - 调用 PromptUtil
+                        String richTextContent = PromptUtil.convertPlainTextToQuillDelta(parsedScene.getSceneContent());
 
                         Scene scene = Scene.builder()
                                 .id(sceneId)
@@ -449,8 +485,8 @@ public class ImportServiceImpl implements ImportService {
                                 .locations(new ArrayList<>())
                                 .version(0)
                                 .history(new ArrayList<>())
-                                .createdAt(now)
-                                .updatedAt(now)
+                                .createdAt(sceneNow) // 使用 Scene 的时间戳
+                                .updatedAt(sceneNow) // 使用 Scene 的时间戳
                                 .build();
 
                         // 使用元数据服务计算并设置场景字数
@@ -629,25 +665,64 @@ public class ImportServiceImpl implements ImportService {
     }
 
     /**
-     * 将普通文本转换为富文本格式
+     * 提交批量生成摘要的后台任务
+     * 
+     * @param novelId 小说ID
+     * @param userId 用户ID 
+     * @return 任务ID的Mono
      */
-    private String convertToRichText(String plainText) {
-        if (plainText == null) {
-            return "";
-        }
-
-        String escaped = plainText
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#39;");
-
-        // 确保文本以换行符结束
-        if (!escaped.endsWith("\n")) {
-            escaped += "\n";
-        }
-
-        return escaped;
+    private Mono<String> submitBatchSummaryTask(String novelId, String userId) {
+        return novelRepository.findById(novelId)
+            .flatMap(novel -> {
+                // 获取小说的第一个和最后一个章节ID
+                final String[] chapterIds = new String[2]; // [0]:firstChapterId, [1]:lastChapterId
+                
+                if (novel.getStructure() != null && 
+                    novel.getStructure().getActs() != null && 
+                    !novel.getStructure().getActs().isEmpty()) {
+                    
+                    // 找到第一个章节
+                    outer1: for (var act : novel.getStructure().getActs()) {
+                        if (act.getChapters() != null && !act.getChapters().isEmpty()) {
+                            chapterIds[0] = act.getChapters().get(0).getId();
+                            break outer1;
+                        }
+                    }
+                    
+                    // 找到最后一个章节
+                    outer2: for (int i = novel.getStructure().getActs().size() - 1; i >= 0; i--) {
+                        var act = novel.getStructure().getActs().get(i);
+                        if (act.getChapters() != null && !act.getChapters().isEmpty()) {
+                            chapterIds[1] = act.getChapters().get(act.getChapters().size() - 1).getId();
+                            break outer2;
+                        }
+                    }
+                }
+                
+                if (chapterIds[0] == null || chapterIds[1] == null) {
+                    log.warn("小说 {} 没有章节，无法启动批量生成摘要任务", novelId);
+                    return Mono.empty();
+                }
+                
+                // 获取用户的默认AI配置ID
+                return userAIModelConfigService.getValidatedDefaultConfiguration(userId)
+                    .map(config -> config.getId())
+                    .defaultIfEmpty("default") // 如果用户没有配置，使用默认值
+                    .flatMap(aiConfigId -> {
+                        // 构建任务参数
+                        BatchGenerateSummaryParameters parameters = BatchGenerateSummaryParameters.builder()
+                            .novelId(novelId)
+                            .startChapterId(chapterIds[0])
+                            .endChapterId(chapterIds[1])
+                            .aiConfigId(aiConfigId)
+                            .overwriteExisting(true)
+                            .build();
+                        
+                        log.info("为小说 {} 提交批量生成摘要任务, 用户: {}, AI配置: {}", novelId, userId, aiConfigId);
+                        
+                        // 提交任务
+                        return taskSubmissionService.submitTask(userId, "BATCH_GENERATE_SUMMARY", parameters);
+                    });
+            });
     }
 }

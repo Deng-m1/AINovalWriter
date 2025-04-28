@@ -5,8 +5,10 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
+
 /**
- * 生成场景摘要任务结果
+ * 生成场景摘要任务的结果DTO
  */
 @Data
 @Builder
@@ -25,12 +27,22 @@ public class GenerateSummaryResult {
     private String summary;
     
     /**
-     * 是否遇到了版本冲突
+     * 生成的向量嵌入（如果启用）
      */
-    private boolean conflict;
+    private float[] embedding;
     
     /**
-     * 最终更新使用的版本号
+     * 使用的模型名称
      */
-    private int version;
+    private String modelName;
+    
+    /**
+     * 处理时间（毫秒）
+     */
+    private long processingTimeMs;
+    
+    /**
+     * 完成时间
+     */
+    private Instant completedAt;
 } 

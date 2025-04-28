@@ -13,15 +13,19 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
+import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+
+import java.util.Map;
 import java.util.UUID;
 
 /**
- * 任务消息生产者，负责将任务消息发送到RabbitMQ
+ * 任务消息生产者，负责向RabbitMQ发送任务消息
  */
+@Slf4j
 @Component
 public class TaskMessageProducer {
-    private static final Logger logger = LoggerFactory.getLogger(TaskMessageProducer.class);
     
     private final RabbitTemplate rabbitTemplate;
     
@@ -31,150 +35,160 @@ public class TaskMessageProducer {
     }
     
     /**
-     * 发送任务消息到RabbitMQ
+     * 发送任务消息
      * 
      * @param taskId 任务ID
      * @param userId 用户ID
      * @param taskType 任务类型
-     * @param body 消息体
-     * @param retryCount 重试次数（对于发送到重试队列的任务）
-     * @return 是否发送成功
+     * @param parameters 任务参数
+     * @return 包含操作完成信号的Mono
      */
-    public boolean sendTask(String taskId, String userId, String taskType, Object body, int retryCount) {
-        try {
+    public Mono<Void> sendTask(String taskId, String userId, String taskType, Object parameters) {
+        return Mono.fromCallable(() -> {
+            log.info("发送任务消息: {} [类型: {}, 用户: {}]", taskId, taskType, userId);
+            
+            // 构建路由键
             String routingKey = RabbitMQConfig.TASK_TYPE_PREFIX + taskType;
-            String correlationId = UUID.randomUUID().toString();
             
-            logger.info("正在发送任务 [{} - {}] 到队列，路由键: {}, 重试次数: {}", taskId, taskType, routingKey, retryCount);
-            
-            MessageProperties props = MessagePropertiesBuilder.newInstance()
-                    .setContentType(MessageProperties.CONTENT_TYPE_JSON)
-                    .setCorrelationId(correlationId)
-                    .setMessageId(taskId)
-                    .setHeader("x-task-id", taskId)
-                    .setHeader("x-user-id", userId)
-                    .setHeader("x-task-type", taskType)
-                    .setHeader("x-retry-count", retryCount)
-                    .build();
-            
-            // 让RabbitTemplate序列化消息体
-            Message message = rabbitTemplate.getMessageConverter().toMessage(
-                    body, props);
-            
-            // 创建相关数据，用于跟踪确认
-            CorrelationData correlationData = new CorrelationData(correlationId);
-            
-            // 同步发送，等待确认
+            // 发送消息到任务交换机
             rabbitTemplate.convertAndSend(
-                    RabbitMQConfig.TASKS_EXCHANGE,
-                    routingKey,
-                    message,
-                    correlationData);
+                RabbitMQConfig.TASKS_EXCHANGE, 
+                routingKey, // 使用包含前缀的路由键
+                parameters, 
+                message -> {
+                    // 直接设置消息属性和头信息
+                    message.getMessageProperties().setHeader("x-task-id", taskId);
+                    message.getMessageProperties().setHeader("x-user-id", userId);
+                    message.getMessageProperties().setHeader("x-task-type", taskType);
+                    message.getMessageProperties().setHeader("x-retry-count", 0);
+                    message.getMessageProperties().setCorrelationId(taskId);
+                    message.getMessageProperties().setMessageId(UUID.randomUUID().toString());
+                    return message;
+                },
+                new CorrelationData(taskId)
+            );
             
-            // 简单实现，后续可以改为异步方式并使用CorrelationData中的Future检查结果
-            return true;
-        } catch (AmqpException e) {
-            logger.error("发送任务 [{} - {}] 到RabbitMQ失败: {}", taskId, taskType, e.getMessage(), e);
-            return false;
-        }
-    }
-    
-    /**
-     * 发送任务消息到RabbitMQ（无重试计数）
-     */
-    public boolean sendTask(String taskId, String userId, String taskType, Object body) {
-        return sendTask(taskId, userId, taskType, body, 0);
+            return null;
+        })
+        .subscribeOn(Schedulers.boundedElastic()) // 消息发送是阻塞的，调度到适当的线程池
+        .then();
     }
     
     /**
      * 发送任务消息到重试交换机
+     * 
+     * @param taskId 任务ID
+     * @param userId 用户ID
+     * @param taskType 任务类型
+     * @param parameters 任务参数
+     * @param retryCount 重试次数
+     * @return 包含操作完成信号的Mono
      */
-    public boolean sendToRetryExchange(String taskId, String userId, String taskType, Object body, int retryCount) {
-        try {
-            String correlationId = UUID.randomUUID().toString();
-            String queueName = getDelayQueueForRetryCount(retryCount);
+    public Mono<Void> sendToRetryExchange(String taskId, String userId, String taskType, Object parameters, int retryCount) {
+        return Mono.fromCallable(() -> {
+            log.info("发送任务消息到重试交换机: {} [类型: {}, 用户: {}, 重试次数: {}]", 
+                      taskId, taskType, userId, retryCount);
             
-            logger.info("正在发送任务 [{} - {}] 到重试队列: {}, 重试次数: {}", taskId, taskType, queueName, retryCount);
-            
-            MessageProperties props = MessagePropertiesBuilder.newInstance()
-                    .setContentType(MessageProperties.CONTENT_TYPE_JSON)
-                    .setCorrelationId(correlationId)
-                    .setMessageId(taskId)
-                    .setHeader("x-task-id", taskId)
-                    .setHeader("x-user-id", userId)
-                    .setHeader("x-task-type", taskType)
-                    .setHeader("x-retry-count", retryCount)
-                    .build();
-            
-            // 设置原始路由键，便于后续重新入队
-            props.setHeader("x-original-routing-key", RabbitMQConfig.TASK_TYPE_PREFIX + taskType);
-            
-            // 让RabbitTemplate序列化消息体
-            Message message = rabbitTemplate.getMessageConverter().toMessage(
-                    body, props);
-            
-            // 创建相关数据，用于跟踪确认
-            CorrelationData correlationData = new CorrelationData(correlationId);
-            
-            // 发送到特定延迟队列，而不是交换机
+            // 发送消息到重试交换机
             rabbitTemplate.convertAndSend(
-                    queueName,
-                    message,
-                    correlationData);
+                RabbitMQConfig.TASKS_RETRY_EXCHANGE, 
+                taskType, // 对于FanoutExchange，路由键通常被忽略，这里保持一致
+                parameters, 
+                message -> {
+                    // 直接设置消息属性和头信息
+                    message.getMessageProperties().setHeader("x-task-id", taskId);
+                    message.getMessageProperties().setHeader("x-user-id", userId);
+                    message.getMessageProperties().setHeader("x-task-type", taskType);
+                    message.getMessageProperties().setHeader("x-retry-count", retryCount);
+                    message.getMessageProperties().setCorrelationId(taskId);
+                    message.getMessageProperties().setMessageId(UUID.randomUUID().toString());
+                    return message;
+                },
+                new CorrelationData(taskId)
+            );
             
-            return true;
-        } catch (AmqpException e) {
-            logger.error("发送任务 [{} - {}] 到重试队列失败: {}", taskId, taskType, e.getMessage(), e);
-            return false;
-        }
+            return null;
+        })
+        .subscribeOn(Schedulers.boundedElastic())
+        .then();
     }
     
     /**
-     * 发送事件消息到事件交换机
+     * 发送任务事件消息
+     * 
+     * @param eventType 事件类型
+     * @param eventData 事件数据
+     * @return 包含操作完成信号的Mono
      */
-    public boolean sendTaskEvent(String eventType, Object eventData) {
-        try {
-            String routingKey = "task.event." + eventType;
-            String correlationId = UUID.randomUUID().toString();
+    public Mono<Void> sendTaskEvent(String eventType, Map<String, Object> eventData) {
+        return Mono.fromCallable(() -> {
+            String correlationId = eventData.containsKey("taskId") ? 
+                            eventData.get("taskId").toString() : UUID.randomUUID().toString();
             
-            MessageProperties props = MessagePropertiesBuilder.newInstance()
-                    .setContentType(MessageProperties.CONTENT_TYPE_JSON)
-                    .setCorrelationId(correlationId)
-                    .setHeader("x-event-type", eventType)
-                    .build();
+            log.debug("发送任务事件消息: {} [correlationId: {}]", eventType, correlationId);
             
-            // 让RabbitTemplate序列化消息体
-            Message message = rabbitTemplate.getMessageConverter().toMessage(
-                    eventData, props);
+            // 构建事件路由键
+            String routingKey = "task.event." + eventType.toLowerCase();
             
-            // 创建相关数据，用于跟踪确认
-            CorrelationData correlationData = new CorrelationData(correlationId);
-            
+            // 发送消息到事件交换机
             rabbitTemplate.convertAndSend(
-                    RabbitMQConfig.TASKS_EVENTS_EXCHANGE,
-                    routingKey,
-                    message,
-                    correlationData);
+                RabbitMQConfig.TASKS_EVENTS_EXCHANGE, 
+                routingKey, // 使用包含前缀和事件类型的路由键
+                eventData, 
+                message -> {
+                    message.getMessageProperties().setCorrelationId(correlationId);
+                    message.getMessageProperties().setMessageId(UUID.randomUUID().toString());
+                    message.getMessageProperties().setHeader("x-event-type", eventType);
+                    return message;
+                },
+                new CorrelationData(correlationId)
+            );
             
-            return true;
-        } catch (AmqpException e) {
-            logger.error("发送任务事件 [{}] 到RabbitMQ失败: {}", eventType, e.getMessage(), e);
-            return false;
-        }
+            return null;
+        })
+        .subscribeOn(Schedulers.boundedElastic())
+        .then();
     }
-    
+
     /**
-     * 根据重试次数选择适当的延迟队列
+     * 发送带有延迟的重试任务消息
+     * 
+     * @param taskId 任务ID
+     * @param userId 用户ID
+     * @param taskType 任务类型
+     * @param parameters 任务参数
+     * @param retryCount 重试次数
+     * @param delayMillis 延迟时间（毫秒）
+     * @return 完成信号
      */
-    private String getDelayQueueForRetryCount(int retryCount) {
-        if (retryCount <= 1) {
-            return RabbitMQConfig.TASKS_WAIT_15S_QUEUE;
-        } else if (retryCount <= 3) {
-            return RabbitMQConfig.TASKS_WAIT_1M_QUEUE;
-        } else if (retryCount <= 5) {
-            return RabbitMQConfig.TASKS_WAIT_5M_QUEUE;
-        } else {
-            return RabbitMQConfig.TASKS_WAIT_30M_QUEUE;
-        }
+    public Mono<Void> sendDelayedRetryTask(String taskId, String userId, String taskType, Object parameters, 
+                                           int retryCount, long delayMillis) {
+        return Mono.fromCallable(() -> {
+            log.info("发送带有延迟的重试任务消息: {} [类型: {}, 用户: {}, 重试次数: {}, 延迟时间: {}毫秒]", 
+                      taskId, taskType, userId, retryCount, delayMillis);
+            
+            // 发送消息到重试交换机
+            rabbitTemplate.convertAndSend(
+                RabbitMQConfig.TASKS_RETRY_EXCHANGE, 
+                taskType, // 对于FanoutExchange，路由键通常被忽略
+                parameters, 
+                message -> {
+                    // 直接设置消息属性和头信息
+                    message.getMessageProperties().setHeader("x-task-id", taskId);
+                    message.getMessageProperties().setHeader("x-user-id", userId);
+                    message.getMessageProperties().setHeader("x-task-type", taskType);
+                    message.getMessageProperties().setHeader("x-retry-count", retryCount);
+                    message.getMessageProperties().setCorrelationId(taskId);
+                    message.getMessageProperties().setMessageId(UUID.randomUUID().toString());
+                    message.getMessageProperties().setHeader("x-delay", delayMillis);
+                    return message;
+                },
+                new CorrelationData(taskId)
+            );
+            
+            return null;
+        })
+        .subscribeOn(Schedulers.boundedElastic())
+        .then();
     }
 } 

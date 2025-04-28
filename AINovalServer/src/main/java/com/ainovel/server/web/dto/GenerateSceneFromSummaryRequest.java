@@ -16,6 +16,11 @@ import lombok.NoArgsConstructor;
 public class GenerateSceneFromSummaryRequest {
     
     /**
+     * 要生成或更新的场景ID
+     */
+    private String sceneId;
+    
+    /**
      * 摘要或大纲
      */
     @NotBlank(message = "摘要不能为空")
@@ -32,7 +37,22 @@ public class GenerateSceneFromSummaryRequest {
     private Integer position;
     
     /**
+     * 生成风格 (正常, 简洁, 详细, 戏剧化等)
+     */
+    private String style;
+    
+    /**
+     * 生成的内容长度 (短, 中, 长)
+     */
+    private String length;
+    
+    /**
+     * 生成的语调 (正式, 随意, 幽默, 严肃等)
+     */
+    private String tone;
+    
+    /**
      * 用户附加的风格指令（可选）
      */
-    private String styleInstructions;
+    private String additionalInstructions;
 } 

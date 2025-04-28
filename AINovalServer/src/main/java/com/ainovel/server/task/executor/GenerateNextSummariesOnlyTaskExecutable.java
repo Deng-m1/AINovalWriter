@@ -37,17 +37,9 @@ public class GenerateNextSummariesOnlyTaskExecutable implements BackgroundTaskEx
     }
 
     @Override
-    public Class<GenerateNextSummariesOnlyParameters> getParameterType() {
-        return GenerateNextSummariesOnlyParameters.class;
-    }
-    
-    @Override
-    public Class<GenerateNextSummariesOnlyResult> getResultType() {
-        return GenerateNextSummariesOnlyResult.class;
-    }
-
-    @Override
-    public GenerateNextSummariesOnlyResult execute(GenerateNextSummariesOnlyParameters parameters, TaskContext<GenerateNextSummariesOnlyParameters> context) throws Exception {
+    public Mono<GenerateNextSummariesOnlyResult> execute(TaskContext<GenerateNextSummariesOnlyParameters> context) {
+        // 从context获取参数
+        GenerateNextSummariesOnlyParameters parameters = context.getParameters();
         String novelId = parameters.getNovelId();
         int numberOfChapters = parameters.getNumberOfChapters();
         String aiConfigIdSummary = parameters.getAiConfigIdSummary();
@@ -61,41 +53,43 @@ public class GenerateNextSummariesOnlyTaskExecutable implements BackgroundTaskEx
         progress.setCompleted(0);
         progress.setFailed(0);
         progress.setCurrentIndex(0);
-        context.updateProgress(progress);
-
-        // 获取小说信息
-        Novel novel = novelService.findNovelById(novelId)
-                .blockOptional()
-                .orElseThrow(() -> new IllegalArgumentException("找不到小说: " + novelId));
-
-        // 获取最新章节序号
-        int lastChapterOrder = getLastChapterOrder(novel);
-
-        // 获取上下文内容
-        String contextContent = getContextContent(novel, startContextMode).block();
         
-        // 开始生成第一个章节摘要
-        log.info("开始生成第一个章节摘要，小说ID: {}，当前章节序号: {}", novelId, lastChapterOrder + 1);
-        GenerateSingleSummaryParameters firstChapterParams = GenerateSingleSummaryParameters.builder()
-                .novelId(novelId)
-                .chapterIndex(0)
-                .chapterOrder(lastChapterOrder + 1)
-                .aiConfigIdSummary(aiConfigIdSummary)
-                .context(contextContent)
-                .previousSummary(getLastChapterSummary(novel))
-                .build();
+        return context.updateProgress(progress)
+            .then(novelService.findNovelById(novelId))
+            .switchIfEmpty(Mono.error(new IllegalArgumentException("找不到小说: " + novelId)))
+            .flatMap(novel -> {
+                // 获取最新章节序号
+                int lastChapterOrder = getLastChapterOrder(novel);
 
-        // 提交第一个子任务
-        String taskId = context.submitSubTask("GENERATE_SINGLE_SUMMARY", firstChapterParams);
-        log.info("已提交生成第一个章节摘要的子任务，父任务ID: {}，子任务ID: {}", context.getTaskId(), taskId);
+                // 获取上下文内容
+                return getContextContent(novel, startContextMode)
+                    .flatMap(contextContent -> {
+                        // 开始生成第一个章节摘要
+                        log.info("开始生成第一个章节摘要，小说ID: {}，当前章节序号: {}", novelId, lastChapterOrder + 1);
+                        GenerateSingleSummaryParameters firstChapterParams = GenerateSingleSummaryParameters.builder()
+                                .novelId(novelId)
+                                .chapterIndex(0)
+                                .chapterOrder(lastChapterOrder + 1)
+                                .aiConfigIdSummary(aiConfigIdSummary)
+                                .context(contextContent)
+                                .previousSummary(getLastChapterSummary(novel))
+                                .build();
 
-        // 父任务直接返回初始结果，后续由子任务完成并触发状态聚合
-        return GenerateNextSummariesOnlyResult.builder()
-                .newChapterIds(new ArrayList<>())
-                .summariesGeneratedCount(0)
-                .status("RUNNING")
-                .failedSteps(new ArrayList<>())
-                .build();
+                        // 提交第一个子任务
+                        return context.submitSubTask("GENERATE_SINGLE_SUMMARY", firstChapterParams)
+                            .doOnNext(taskId -> 
+                                log.info("已提交生成第一个章节摘要的子任务，父任务ID: {}，子任务ID: {}", context.getTaskId(), taskId))
+                            .map(taskId -> {
+                                // 父任务直接返回初始结果，后续由子任务完成并触发状态聚合
+                                return GenerateNextSummariesOnlyResult.builder()
+                                        .newChapterIds(new ArrayList<>())
+                                        .summariesGeneratedCount(0)
+                                        .status("RUNNING")
+                                        .failedSteps(new ArrayList<>())
+                                        .build();
+                            });
+                    });
+            });
     }
 
     /**

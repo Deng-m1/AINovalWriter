@@ -32,22 +32,8 @@ public class ContinueWritingContentTaskExecutable implements BackgroundTaskExecu
     private final NovelService novelService;
 
     @Override
-    public String getTaskType() {
-        return "CONTINUE_WRITING_CONTENT";
-    }
-
-    @Override
-    public Class<ContinueWritingContentParameters> getParameterType() {
-        return ContinueWritingContentParameters.class;
-    }
-    
-    @Override
-    public Class<ContinueWritingContentResult> getResultType() {
-        return ContinueWritingContentResult.class;
-    }
-
-    @Override
-    public ContinueWritingContentResult execute(ContinueWritingContentParameters parameters, TaskContext<ContinueWritingContentParameters> context) throws Exception {
+    public Mono<ContinueWritingContentResult> execute(TaskContext<ContinueWritingContentParameters> context) {
+        ContinueWritingContentParameters parameters = context.getParameters();
         String novelId = parameters.getNovelId();
         int numberOfChapters = parameters.getNumberOfChapters();
         String aiConfigIdSummary = parameters.getAiConfigIdSummary();
@@ -66,33 +52,39 @@ public class ContinueWritingContentTaskExecutable implements BackgroundTaskExecu
         progress.setFailed(0);
         progress.setCurrentIndex(0);
         progress.setPercentComplete(0);
-        context.updateProgress(progress);
+        
+        return context.updateProgress(progress)
+            .then(novelService.findNovelById(novelId))
+            .switchIfEmpty(Mono.error(new IllegalArgumentException("找不到小说: " + novelId)))
+            .flatMap(novel -> {
+                // 首先提交生成摘要的子任务
+                // 直接复用已有的摘要生成任务
+                GenerateNextSummariesOnlyParameters summaryParams = GenerateNextSummariesOnlyParameters.builder()
+                        .novelId(novelId)
+                        .numberOfChapters(numberOfChapters)
+                        .aiConfigIdSummary(aiConfigIdSummary)
+                        .startContextMode(startContextMode)
+                        .build();
 
-        // 获取小说信息
-        Novel novel = novelService.findNovelById(novelId)
-                .blockOptional()
-                .orElseThrow(() -> new IllegalArgumentException("找不到小说: " + novelId));
-
-        // 首先提交生成摘要的子任务
-        // 直接复用已有的摘要生成任务
-        GenerateNextSummariesOnlyParameters summaryParams = GenerateNextSummariesOnlyParameters.builder()
-                .novelId(novelId)
-                .numberOfChapters(numberOfChapters)
-                .aiConfigIdSummary(aiConfigIdSummary)
-                .startContextMode(startContextMode)
-                .build();
-
-        // 提交摘要生成任务
-        String summaryTaskId = context.submitSubTask("GENERATE_NEXT_SUMMARIES_ONLY", summaryParams);
-        log.info("已提交生成章节摘要的子任务，父任务ID: {}，子任务ID: {}", context.getTaskId(), summaryTaskId);
-
-        // 返回初始结果，后续由状态聚合器根据子任务完成情况更新
-        return ContinueWritingContentResult.builder()
-                .generatedChapters(new ArrayList<>())
-                .success(false)
-                .status("RUNNING")
-                .completedChapters(0)
-                .totalChapters(numberOfChapters)
-                .build();
+                // 提交摘要生成任务
+                return context.submitSubTask("GENERATE_NEXT_SUMMARIES_ONLY", summaryParams)
+                    .doOnNext(summaryTaskId -> 
+                        log.info("已提交生成章节摘要的子任务，父任务ID: {}，子任务ID: {}", context.getTaskId(), summaryTaskId))
+                    .map(summaryTaskId -> {
+                        // 返回初始结果，后续由状态聚合器根据子任务完成情况更新
+                        return ContinueWritingContentResult.builder()
+                                .generatedChapters(new ArrayList<>())
+                                .success(false)
+                                .status("RUNNING")
+                                .completedChapters(0)
+                                .totalChapters(numberOfChapters)
+                                .build();
+                    });
+            });
+    }
+    
+    @Override
+    public String getTaskType() {
+        return "CONTINUE_WRITING_CONTENT";
     }
 } 

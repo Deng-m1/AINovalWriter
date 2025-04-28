@@ -309,7 +309,7 @@ public class AIGenerationController extends ReactiveBaseController {
                 .doOnNext(request -> {
                     log.info("摘要长度: {}, 样式说明长度: {}, 章节ID: {}, userId: {}, novelId: {}",
                             request.getSummary().length(),
-                            request.getStyleInstructions() != null ? request.getStyleInstructions().length() : 0,
+                            request.getAdditionalInstructions() != null ? request.getAdditionalInstructions().length() : 0,
                             request.getChapterId(),
                             currentUser.getId(),
                             novelId);
