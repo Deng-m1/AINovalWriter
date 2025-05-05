@@ -834,32 +834,42 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
           widget.actId != null && 
           widget.chapterId != null) {
         try {
-          // 从状态中查找当前场景，使用orElse避免抛出"No element"异常
-          final act = state.novel.acts.firstWhere(
-            (a) => a.id == widget.actId,
-            orElse: () => throw Exception('找不到Act: ${widget.actId}'),
-          );
+          // 使用更安全的查找方式
+          bool found = false;
+          String? modelSummaryContent;
           
-          final chapter = act.chapters.firstWhere(
-            (c) => c.id == widget.chapterId,
-            orElse: () => throw Exception('找不到Chapter: ${widget.chapterId}'),
-          );
+          // 遍历所有元素查找指定场景
+          for (final act in state.novel.acts) {
+            if (act.id == widget.actId) {
+              for (final chapter in act.chapters) {
+                if (chapter.id == widget.chapterId) {
+                  for (final scene in chapter.scenes) {
+                    if (scene.id == widget.sceneId) {
+                      found = true;
+                      modelSummaryContent = scene.summary.content ?? '';
+                      break;
+                    }
+                  }
+                  if (found) break;
+                }
+              }
+              if (found) break;
+            }
+          }
           
-          final scene = chapter.scenes.firstWhere(
-            (s) => s.id == widget.sceneId,
-            orElse: () => throw Exception('找不到Scene: ${widget.sceneId}'),
-          );
+          // 如果场景不存在，则提前返回
+          if (!found) {
+            AppLogger.d('SceneEditor', '跳过摘要同步：场景不存在或已被删除: ${widget.sceneId}');
+            return;
+          }
           
           // 当前控制器中的文本
           final currentControllerText = widget.summaryController.text;
           
-          // 模型中的摘要内容
-          final modelSummaryContent = scene.summary.content ?? '';
-          
           // 仅当摘要控制器内容与模型不同时更新
           if (currentControllerText != modelSummaryContent) {
             // 判断变更方向
-            if (currentControllerText.isNotEmpty && modelSummaryContent.isEmpty) {
+            if (currentControllerText.isNotEmpty && (modelSummaryContent == null || modelSummaryContent.isEmpty)) {
               // 如果控制器有内容但模型为空，说明是用户刚输入了内容但可能未保存成功
               // 重新触发保存操作确保内容被保存
               AppLogger.i('SceneEditor', '检测到摘要未同步到模型，重新保存: ${widget.sceneId}');
@@ -878,21 +888,22 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
                   ));
                 }
               });
-            } else {
-              // 模型中有内容但控制器为空，或两者不同，更新控制器
+            } else if (modelSummaryContent != null && modelSummaryContent.isNotEmpty) {
+              // 模型中有内容但控制器不同，更新控制器
               AppLogger.i('SceneEditor', '摘要内容从模型同步到控制器: ${widget.sceneId}');
               
               // 将更新放在下一帧执行，避免在build过程中修改
               Future.microtask(() {
                 if (mounted) {
-                  widget.summaryController.text = modelSummaryContent;
+                  widget.summaryController.text = modelSummaryContent!;
                 }
               });
             }
           }
         } catch (e, stackTrace) {
-          // 记录详细错误信息
-          AppLogger.v('SceneEditor', '同步摘要控制器失败: ${e.toString()}', e, stackTrace);
+          // 记录详细错误信息但不抛出异常
+          AppLogger.i('SceneEditor', '同步摘要控制器失败，可能是场景已被删除: ${widget.sceneId}');
+          AppLogger.v('SceneEditor', '同步摘要控制器详细错误: ${e.toString()}', e, stackTrace);
         }
       }
     });

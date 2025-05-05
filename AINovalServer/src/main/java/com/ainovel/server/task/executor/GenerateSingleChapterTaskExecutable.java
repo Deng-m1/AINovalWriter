@@ -22,6 +22,10 @@ import java.util.Objects; // Import Objects
 import java.time.Duration; // Import Duration
 // 引入 DTO
 import java.util.concurrent.atomic.AtomicReference; // 用于在lambda中传递sceneId
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 生成单章摘要和内容的任务执行器 (REQ-TASK-002 子任务)
@@ -42,68 +46,81 @@ public class GenerateSingleChapterTaskExecutable implements BackgroundTaskExecut
         GenerateSingleChapterParameters params = context.getParameters();
         String taskId = context.getTaskId();
         String userId = context.getUserId();
+        
+        // 增强日志，显示完整索引信息
+        log.info("执行 GenerateSingleChapterTask: {}, User: {}, 章节索引: {}/{}, 父任务: {}, 持久化: {}",
+                 taskId, userId, params.getChapterIndex(), params.getTotalChapters(), 
+                 params.getParentTaskId(), params.isPersistChanges());
+
         if (userId == null) {
              log.error("Task {} cannot proceed without a userId.", taskId);
              return Mono.error(new IllegalStateException("User ID not available in TaskContext"));
         }
 
-        log.info("执行 GenerateSingleChapterTask: {}, User: {}, 章节索引: {}/{}, 持久化: {}",
-                 taskId, userId, params.getChapterIndex(), params.getTotalChapters(), params.isPersistChanges());
-
-        // 用于在 flatMap 链中传递生成的 chapterId 和 sceneId
+        // 用于在 flatMap 链中传递生成的 chapterId, sceneId 和生成的内容
         AtomicReference<String> generatedChapterIdRef = new AtomicReference<>();
-        AtomicReference<String> generatedSceneIdRef = new AtomicReference<>(); // 新增 sceneId 引用
-        AtomicReference<String> generatedSummaryRef = new AtomicReference<>(); // 新增 summary 引用
+        AtomicReference<String> generatedSceneIdRef = new AtomicReference<>(); 
+        AtomicReference<String> generatedSummaryRef = new AtomicReference<>();
+        AtomicReference<String> generatedContentRef = new AtomicReference<>(); // 新增：用于存储生成的内容
 
         // --- 步骤 1: 生成本章摘要并创建章节和初始场景 ---
         return generateSummaryAndInitialChapter(userId, params, context)
             .flatMap((CreatedChapterInfo chapterInfo) -> {
                 generatedChapterIdRef.set(chapterInfo.getChapterId());
                 generatedSceneIdRef.set(chapterInfo.getSceneId());
-                generatedSummaryRef.set(chapterInfo.getGeneratedSummary()); // Use getter from @Data
+                generatedSummaryRef.set(chapterInfo.getGeneratedSummary());
                 context.updateProgress("SUMMARY_GENERATED_AND_CHAPTER_CREATED").subscribe();
 
                 String chapterId = chapterInfo.getChapterId();
                 String generatedSummary = chapterInfo.getGeneratedSummary();
+                
+                log.info("任务 {} 第 {} 章摘要生成并创建章节完成，章节ID: {}, 场景ID: {}, 摘要长度: {} 字符",
+                        taskId, params.getChapterIndex(), chapterId, chapterInfo.getSceneId(), 
+                        generatedSummary != null ? generatedSummary.length() : 0);
 
                 // --- 步骤 2: (可选) 评审环节 ---
                 if (params.isRequiresReview()) {
                     log.info("任务 {} 第 {} 章摘要生成完毕，等待评审。章节ID: {}", taskId, params.getChapterIndex(), chapterId);
-                    // TODO: Publish ChapterSummaryReadyForReviewEvent with chapterId
-                    // 返回的结果需要包含 sceneId 以便后续步骤使用
+                    
                     return Mono.just(GenerateSingleChapterResult.builder()
                             .generatedChapterId(chapterId)
-                            .generatedInitialSceneId(chapterInfo.getSceneId()) // 传递 sceneId
+                            .generatedInitialSceneId(chapterInfo.getSceneId())
                             .generatedSummary(generatedSummary)
                             .chapterIndex(params.getChapterIndex())
                             .contentGenerated(false)
-                            .contentPersisted(false) // Content not persisted yet
+                            .contentPersisted(false)
                             .build());
                 }
 
                 // --- 步骤 3: 生成本章内容并更新场景 ---
-                return generateContentAndUpdateScene(userId, params, chapterId, generatedSceneIdRef.get(), generatedSummary, context) // 传递 sceneId
-                    .flatMap((GenerateSingleChapterResult contentResult) -> {
+                return generateContentAndUpdateScene(userId, params, chapterId, generatedSceneIdRef.get(), generatedSummary, context)
+                    // 修改：直接捕获生成的内容
+                    .flatMap(tuple -> {
+                        GenerateSingleChapterResult contentResult = tuple.getT1();
+                        String generatedContent = tuple.getT2();
+                        
+                        // 存储生成的内容用于后续传递
+                        generatedContentRef.set(generatedContent);
+                        
+                        log.info("任务 {} 第 {} 章内容生成完成，内容长度: {} 字符", 
+                                taskId, params.getChapterIndex(), 
+                                generatedContent != null ? generatedContent.length() : 0);
+                        
                         context.updateProgress("CONTENT_GENERATED").subscribe();
 
                         // --- 步骤 4: 准备并提交下一个子任务 (如果需要) ---
                         if (params.getChapterIndex() < params.getTotalChapters()) {
-                            // 需要获取实际生成的内容来构建下一个上下文
-                            // 这里假设 generateContentAndUpdateScene 的结果里没有内容本身，需要调整
-                            // 或者在 generateContentAndUpdateScene 内部直接获取内容并调用 prepareAndSubmitNextTask
-
-                            // **临时方案：** 在这里重新获取场景内容用于上下文，这不高效，后续应优化
-                            return sceneService.findSceneById(generatedSceneIdRef.get()) // Use SceneService
-                                   .flatMap(scene -> prepareAndSubmitNextTask(params, generatedSummaryRef.get(), scene.getContent(), context))
+                            // 直接使用内存中的内容，无需再次查询数据库
+                            return prepareAndSubmitNextTask(params, generatedSummaryRef.get(), generatedContent, context)
                                    .thenReturn(contentResult);
-
                         } else {
-                            log.info("任务 {} 已完成最后一章 ({}/{}) 的内容生成。章节ID: {}", taskId, params.getChapterIndex(), params.getTotalChapters(), chapterId);
+                            log.info("任务 {} 已完成最后一章 ({}/{}) 的内容生成。章节ID: {}", 
+                                    taskId, params.getChapterIndex(), params.getTotalChapters(), chapterId);
                             return Mono.just(contentResult);
                         }
                     });
             })
-            .doOnError(e -> log.error("GenerateSingleChapterTask {} 执行失败: {}", taskId, e.getMessage()));
+            .doOnError(e -> log.error("GenerateSingleChapterTask {} 执行失败: {}", taskId, e.getMessage(), e));
     }
 
     // 修改 generateSummary 以调用新服务方法并返回 ChapterCreationInfo
@@ -122,25 +139,54 @@ public class GenerateSingleChapterTaskExecutable implements BackgroundTaskExecut
         return summaryMono
             .flatMap((String summary) -> {
                 log.info("任务 {}: 摘要生成成功，长度: {} 字符", context.getTaskId(), summary.length());
-                Mono<CreatedChapterInfo> chapterCreationMono;
-
+                
                 if (params.isPersistChanges()) {
                     log.info("任务 {}: 持久化摘要并创建章节和初始场景 (章节索引 {})", context.getTaskId(), params.getChapterIndex());
-                    String chapterTitle = "第 " + params.getChapterIndex() + " 章"; // Or generate a better title
-                    String sceneTitle = chapterTitle + " - 场景 1"; // Or use summary as title?
-
-                    // 调用新的 Service 方法
-                    chapterCreationMono = novelService.addChapterWithInitialScene(params.getNovelId(), chapterTitle, summary, sceneTitle);
-
+                    
+                    // 先获取小说，以确定已有章节数量
+                    return novelService.findNovelById(params.getNovelId())
+                        .flatMap(novel -> {
+                            // 计算当前小说已有的总章节数
+                            int existingChaptersCount = 0;
+                            if (novel.getStructure() != null && novel.getStructure().getActs() != null) {
+                                for (Act act : novel.getStructure().getActs()) {
+                                    if (act.getChapters() != null) {
+                                        existingChaptersCount += act.getChapters().size();
+                                    }
+                                }
+                            }
+                            
+                            // 新章节的编号 = 已有章节数 + 当前任务的章节索引
+                            int newChapterNumber = existingChaptersCount + params.getChapterIndex();
+                            String chapterTitle = "第 " + newChapterNumber + " 章";
+                            String sceneTitle = chapterTitle + " - 场景 1";
+                            
+                            log.info("任务 {}: 创建第 {} 章 (当前小说已有 {} 章)", 
+                                    context.getTaskId(), newChapterNumber, existingChaptersCount);
+                            
+                            // 在调用 addChapterWithInitialScene 之前，添加自动生成标记
+                            Map<String, Object> metadata = new HashMap<>();
+                            metadata.put("isAutoGenerated", true);
+                            metadata.put("generatedTimestamp", System.currentTimeMillis());
+                            metadata.put("generatedByTask", context.getTaskId());
+                            metadata.put("generatedByUserId", userId);
+                            
+                            // 修改 service 方法调用
+                            return novelService.addChapterWithInitialScene(
+                                params.getNovelId(), 
+                                chapterTitle, 
+                                summary, 
+                                sceneTitle,
+                                metadata // 添加元数据参数
+                            );
+                        });
                 } else {
                     log.info("任务 {}: 跳过持久化 (章节索引 {})", context.getTaskId(), params.getChapterIndex());
                     // 如果不持久化，需要生成临时的 chapterId 和 sceneId
                     String tempChapterId = "temp-chapter-" + params.getNovelId() + "-" + params.getChapterIndex() + "-" + System.currentTimeMillis();
                     String tempSceneId = "temp-scene-" + tempChapterId + "-1";
-                    chapterCreationMono = Mono.just(new CreatedChapterInfo(tempChapterId, tempSceneId, summary));
+                    return Mono.just(new CreatedChapterInfo(tempChapterId, tempSceneId, summary));
                 }
-
-                return chapterCreationMono;
             })
             .onErrorResume(e -> {
                 log.error("任务 {}: 摘要生成及章节创建处理失败: {}", context.getTaskId(), e.getMessage(), e);
@@ -149,14 +195,19 @@ public class GenerateSingleChapterTaskExecutable implements BackgroundTaskExecut
     }
 
     // 修改 generateContent 以调用新服务方法并返回 GenerateSingleChapterResult
-    private Mono<GenerateSingleChapterResult> generateContentAndUpdateScene(String userId, GenerateSingleChapterParameters params, String chapterId, String sceneId, String summary, TaskContext<?> context) {
+    private Mono<Tuple2<GenerateSingleChapterResult, String>> generateContentAndUpdateScene(
+            String userId, GenerateSingleChapterParameters params, String chapterId, 
+            String sceneId, String summary, TaskContext<?> context) {
+        
         boolean canPersist = params.isPersistChanges() && !chapterId.startsWith("temp-chapter-");
-        log.info("任务 {}: 正在为章节 {} (场景 {}, 索引 {}) 生成内容... Persist={}", context.getTaskId(), chapterId, sceneId, params.getChapterIndex(), canPersist);
+        log.info("任务 {}: 正在为章节 {} (场景 {}, 索引 {}) 生成内容... Persist={}", 
+                context.getTaskId(), chapterId, sceneId, params.getChapterIndex(), canPersist);
+        
         String contentContext = params.getCurrentContext() + "\n\n章节摘要:\n" + summary;
 
         GenerateSceneFromSummaryRequest aiRequestDto = new GenerateSceneFromSummaryRequest();
         aiRequestDto.setChapterId(chapterId);
-        aiRequestDto.setSceneId(sceneId); // Pass the target scene ID
+        aiRequestDto.setSceneId(sceneId);
         aiRequestDto.setSummary(summary);
         aiRequestDto.setAdditionalInstructions(params.getWritingStyle());
 
@@ -164,66 +215,106 @@ public class GenerateSingleChapterTaskExecutable implements BackgroundTaskExecut
             .filter(chunk -> !"[DONE]".equals(chunk) && !"heartbeat".equals(chunk))
             .collect(StringBuilder::new, StringBuilder::append)
             .map(StringBuilder::toString)
+            .doOnNext(content -> {
+                // 添加详细日志显示生成的内容长度和开头部分
+                if (content != null && !content.isEmpty()) {
+                    String previewContent = content.length() > 50 
+                        ? content.substring(0, 50) + "..." 
+                        : content;
+                    log.info("任务 {}: AI成功生成内容，总长度: {} 字符，开头: '{}'", 
+                            context.getTaskId(), content.length(), previewContent);
+                } else {
+                    log.warn("任务 {}: AI生成的内容为空或null", context.getTaskId());
+                }
+            })
             .doOnError(e -> log.error("AI内容生成失败: {}", e.getMessage()));
 
         return contentMono
-            .flatMap((String content) -> {
-                log.info("任务 {}: 内容生成成功。", context.getTaskId());
+            .flatMap(content -> {
+                log.info("任务 {}: 内容生成成功，长度: {} 字符", context.getTaskId(), content.length());
                 Mono<Scene> scenePersistenceMono;
 
                 if (canPersist) {
-                    log.info("任务 {}: 持久化场景 {} 的内容。", context.getTaskId(), sceneId);
-                    // 调用新的 Service 方法更新场景内容
-                    scenePersistenceMono = novelService.updateSceneContent(params.getNovelId(), chapterId, sceneId, content);
+                    log.info("任务 {}: 持久化场景 {} 的内容 (长度: {} 字符)。", 
+                            context.getTaskId(), sceneId, content.length());
+                    // 调用Service方法更新场景内容
+                    scenePersistenceMono = novelService.updateSceneContent(params.getNovelId(), chapterId, sceneId, content)
+                        .doOnSuccess(savedScene -> {
+                            log.info("任务 {}: 场景 {} 内容成功保存到数据库", context.getTaskId(), sceneId);
+                        })
+                        .doOnError(e -> {
+                            log.error("任务 {}: 保存场景 {} 内容失败: {}", 
+                                    context.getTaskId(), sceneId, e.getMessage(), e);
+                        });
                 } else {
                     log.info("任务 {}: 跳过内容持久化 (场景 {})", context.getTaskId(), sceneId);
-                    scenePersistenceMono = Mono.empty(); // Or find the non-persistent scene object if needed later
+                    scenePersistenceMono = Mono.empty();
                 }
 
                 return scenePersistenceMono
-                    .map(savedScene -> true) // Indicate persistence happened
-                    .defaultIfEmpty(false) // Indicate persistence didn't happen or wasn't needed
+                    .map(savedScene -> true)
+                    .defaultIfEmpty(false)
                     .map(contentWasPersisted -> {
-                        // 构建最终结果 DTO
-                        return GenerateSingleChapterResult.builder()
+                        // 构建结果DTO + 生成的内容作为元组返回
+                        GenerateSingleChapterResult result = GenerateSingleChapterResult.builder()
                             .generatedChapterId(chapterId)
-                            .generatedInitialSceneId(sceneId) // Pass sceneId in result
+                            .generatedInitialSceneId(sceneId)
                             .generatedSummary(summary)
                             .contentGenerated(true)
-                            .contentPersisted(contentWasPersisted) // Add persistence info
+                            .contentPersisted(contentWasPersisted)
                             .chapterIndex(params.getChapterIndex())
                             .build();
+                            
+                        return Tuples.of(result, content); // 返回元组包含结果和内容
                     });
             })
-             .onErrorResume(e -> {
+            .onErrorResume(e -> {
                 log.error("任务 {}: 内容生成或更新处理失败: {}", context.getTaskId(), e.getMessage(), e);
-                // 返回一个包含错误信息的 DTO 或重新抛出异常
-                 return Mono.error(new RuntimeException("生成或更新场景内容失败: " + e.getMessage(), e));
+                return Mono.error(new RuntimeException("生成或更新场景内容失败: " + e.getMessage(), e));
             });
     }
 
     // 调整 prepareAndSubmitNextTask 以接收实际生成的内容
-     private Mono<String> prepareAndSubmitNextTask(GenerateSingleChapterParameters currentParams, String generatedSummary, String actualGeneratedContent, TaskContext<?> context) {
+     private Mono<String> prepareAndSubmitNextTask(
+             GenerateSingleChapterParameters currentParams, 
+             String generatedSummary, 
+             String actualGeneratedContent, 
+             TaskContext<?> context) {
+        
         int nextChapterIndex = currentParams.getChapterIndex() + 1;
-        log.info("任务 {}: 准备提交下一个章节任务 (索引 {})", context.getTaskId(), nextChapterIndex);
+        log.info("任务 {}: 准备提交下一个章节任务 (索引 {}/{}) 上下文长度: 摘要={}, 内容={}",
+                context.getTaskId(), nextChapterIndex, currentParams.getTotalChapters(),
+                generatedSummary != null ? generatedSummary.length() : 0,
+                actualGeneratedContent != null ? actualGeneratedContent.length() : 0);
 
         String nextContext = manageContextWindow(
             currentParams.getCurrentContext(),
             currentParams.getChapterIndex(),
             generatedSummary,
-            actualGeneratedContent // 使用实际内容
+            actualGeneratedContent // 使用内存中的实际内容
         );
 
         GenerateSingleChapterParameters nextParams = GenerateSingleChapterParameters.builder()
                 .novelId(currentParams.getNovelId())
                 .chapterIndex(nextChapterIndex)
+                .totalChapters(currentParams.getTotalChapters())
+                .aiConfigIdSummary(currentParams.getAiConfigIdSummary())
+                .aiConfigIdContent(currentParams.getAiConfigIdContent())
                 .currentContext(nextContext)
-                // ... (复制其他参数) ...
+                .writingStyle(currentParams.getWritingStyle())
+                .requiresReview(currentParams.isRequiresReview())
                 .persistChanges(currentParams.isPersistChanges())
+                .parentTaskId(currentParams.getParentTaskId())
                 .build();
+        
+        log.info("任务 {}: 准备提交的下一任务参数: novelId={}, 章节索引={}/{}, 上下文长度={}, 父任务={}",
+                context.getTaskId(), nextParams.getNovelId(), nextParams.getChapterIndex(), 
+                nextParams.getTotalChapters(), nextParams.getCurrentContext().length(),
+                nextParams.getParentTaskId());
 
         return context.submitSubTask("GENERATE_SINGLE_CHAPTER", nextParams)
-                .doOnNext(nextTaskId -> log.info("任务 {} 已提交下一个子任务: {} (章节索引 {})", context.getTaskId(), nextTaskId, nextChapterIndex));
+                .doOnNext(nextTaskId -> log.info("任务 {} 已提交下一个子任务: {} (章节索引 {}/{})", 
+                        context.getTaskId(), nextTaskId, nextChapterIndex, currentParams.getTotalChapters()));
     }
     
     /**
@@ -240,7 +331,7 @@ public class GenerateSingleChapterTaskExecutable implements BackgroundTaskExecut
         final int KEEP_LAST_CHAPTERS = 2; // 保留最近几章的详细内容
         
         // 为本章内容添加标记，方便日后识别和截取
-        String currentChapterSection = "\n\n==== 第" + chapterIndex + "章 ====\n摘要:\n" + summary + "\n\n内容:\n" + content;
+        String currentChapterSection = "\n\n==== 上一章 ====\n摘要:\n" + summary + "\n\n内容:\n" + content;
         
         // 如果加入当前章节后仍然在上下文长度限制内，直接返回
         String fullContext = currentContext + currentChapterSection;

@@ -291,6 +291,18 @@ public interface NovelService {
     Mono<CreatedChapterInfo> addChapterWithInitialScene(String novelId, String chapterTitle, String initialSceneSummary, String initialSceneTitle);
 
     /**
+     * 添加一个新章节到最后一卷的末尾，并创建一个包含初始摘要的空场景。
+     *
+     * @param novelId           小说ID
+     * @param chapterTitle      新章节标题
+     * @param initialSceneSummary 新场景的初始摘要 (会被放入第一个 Scene 的 summary 字段)
+     * @param initialSceneTitle 新场景的标题
+     * @param metadata         章节元数据，用于标记自动生成的内容等信息
+     * @return 包含新章节ID和新场景ID的 Mono<CreatedChapterInfo>
+     */
+    Mono<CreatedChapterInfo> addChapterWithInitialScene(String novelId, String chapterTitle, String initialSceneSummary, String initialSceneTitle, Map<String, Object> metadata);
+
+    /**
      * 更新指定场景的内容。
      *
      * @param novelId   小说ID (用于验证或日志记录)

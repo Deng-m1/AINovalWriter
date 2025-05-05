@@ -2,7 +2,9 @@ package com.ainovel.server.domain.model;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.TextIndexed;
@@ -100,8 +102,13 @@ public class Novel {
         private String title;
         private String description;
         private int order;
+        
         @Builder.Default
         private List<Chapter> chapters = new ArrayList<>();
+        
+        // 添加卷级别元数据
+        @Builder.Default
+        private Map<String, Object> metadata = new HashMap<>();
     }
 
     /**
@@ -120,6 +127,10 @@ public class Novel {
         // 修改为scenes列表，实现一对多关系
         @Builder.Default
         private List<String> sceneIds = new ArrayList<>();
+        
+        // 添加章节级别元数据，用于标记自动生成的内容
+        @Builder.Default
+        private Map<String, Object> metadata = new HashMap<>();
     }
 
     /**

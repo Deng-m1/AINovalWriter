@@ -4,12 +4,15 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.ainovel.server.common.util.PromptUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -71,42 +74,52 @@ public class NovelServiceImpl implements NovelService {
     }
 
     @Override
-    public Mono<Novel> updateNovel(String id, Novel novel) {
+    public Mono<Novel> updateNovel(String id, Novel updatedNovel) {
         return novelRepository.findById(id)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", id)))
                 .flatMap(existingNovel -> {
-                    // Update fields from the input novel
-                    if (novel.getTitle() != null) {
-                        existingNovel.setTitle(novel.getTitle());
+                    // 使用智能合并逻辑处理结构更新
+                    if (updatedNovel.getStructure() != null) {
+                        smartMergeNovelStructure(existingNovel, updatedNovel);
                     }
-                    if (novel.getDescription() != null) {
-                        existingNovel.setDescription(novel.getDescription());
+                    
+                    // 更新其他非结构字段
+                    if (updatedNovel.getTitle() != null) {
+                        existingNovel.setTitle(updatedNovel.getTitle());
                     }
-                    if (novel.getGenre() != null) {
-                        existingNovel.setGenre(novel.getGenre());
+                    if (updatedNovel.getDescription() != null) {
+                        existingNovel.setDescription(updatedNovel.getDescription());
                     }
-                    if (novel.getCoverImage() != null) {
-                        existingNovel.setCoverImage(novel.getCoverImage());
+                    if (updatedNovel.getGenre() != null) {
+                        existingNovel.setGenre(updatedNovel.getGenre());
                     }
-                    if (novel.getStatus() != null) {
-                        existingNovel.setStatus(novel.getStatus());
+                    if (updatedNovel.getCoverImage() != null) {
+                        existingNovel.setCoverImage(updatedNovel.getCoverImage());
                     }
-                    if (novel.getTags() != null) {
-                        existingNovel.setTags(novel.getTags());
+                    if (updatedNovel.getStatus() != null) {
+                        existingNovel.setStatus(updatedNovel.getStatus());
                     }
-                    if (novel.getStructure() != null) {
-                        existingNovel.setStructure(novel.getStructure());
+                    if (updatedNovel.getTags() != null) {
+                        existingNovel.setTags(updatedNovel.getTags());
                     }
-                    if (novel.getLastEditedChapterId() != null) {
-                        existingNovel.setLastEditedChapterId(novel.getLastEditedChapterId());
+                    if (updatedNovel.getMetadata() != null) {
+                        existingNovel.setMetadata(updatedNovel.getMetadata());
+                    }
+                    if (updatedNovel.getLastEditedChapterId() != null) {
+                        existingNovel.setLastEditedChapterId(updatedNovel.getLastEditedChapterId());
                     }
 
-                    // Always update the timestamp
+                    // 更新时间戳
                     existingNovel.setUpdatedAt(LocalDateTime.now());
 
                     return novelRepository.save(existingNovel);
                 })
-                .doOnSuccess(updated -> log.info("更新小说成功: {}", updated.getId()));
+                .doOnSuccess(savedNovel -> {
+                    log.info("智能合并更新小说成功: {}", savedNovel.getId());
+                })
+                .doOnError(error -> {
+                    log.error("智能合并更新小说失败: {}", error.getMessage(), error);
+                });
     }
 
     @Override
@@ -1070,7 +1083,18 @@ public class NovelServiceImpl implements NovelService {
     }
 
     @Override
-    public Mono<CreatedChapterInfo> addChapterWithInitialScene(String novelId, String chapterTitle, String initialSceneSummary, String initialSceneTitle) {
+    public Mono<CreatedChapterInfo> addChapterWithInitialScene(
+            String novelId, String chapterTitle, String initialSceneSummary, String initialSceneTitle) {
+        // 调用带元数据版本，提供空的元数据Map
+        return addChapterWithInitialScene(novelId, chapterTitle, initialSceneSummary, initialSceneTitle, new HashMap<>());
+    }
+
+    @Override
+    public Mono<CreatedChapterInfo> addChapterWithInitialScene(
+        String novelId, String chapterTitle, String initialSceneSummary, 
+        String initialSceneTitle, Map<String, Object> metadata) {
+        
+        // 添加元数据参数支持
         return novelRepository.findById(novelId)
             .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
             .flatMap(novel -> {
@@ -1122,7 +1146,8 @@ public class NovelServiceImpl implements NovelService {
                 Chapter newChapter = Chapter.builder()
                     .id(UUID.randomUUID().toString())
                     .title(chapterTitle)
-                    .sceneIds(Collections.singletonList(newScene.getId())) // 关联新场景
+                    .sceneIds(Collections.singletonList(newScene.getId()))
+                    .metadata(metadata) // 设置传入的元数据
                     .build();
 
                 // 设置场景的 chapterId
@@ -1161,7 +1186,7 @@ public class NovelServiceImpl implements NovelService {
                     // return Mono.error(new IllegalArgumentException("Scene chapterId mismatch")); // 可以选择报错或仅警告
                 }
 
-                scene.setContent(content);
+                scene.setContent(PromptUtil.convertPlainTextToQuillDelta(content));
                 scene.setUpdatedAt(LocalDateTime.now());
                 // 可以考虑调用 calculateWordCount 并设置 scene.wordCount
                 // scene.setWordCount(calculateWordCount(content));
@@ -1248,6 +1273,280 @@ public class NovelServiceImpl implements NovelService {
                 .doOnSuccess(novel -> log.info("章节删除成功: 小说={}, 卷={}, 章节={}", novelId, actId, chapterId))
                 .doOnError(e -> log.error("章节删除失败: 小说={}, 卷={}, 章节={}, 原因={}", 
                         novelId, actId, chapterId, e.getMessage()));
+    }
+
+    /**
+     * 智能合并小说结构
+     * 策略：保留前端对标题、顺序等的修改，同时避免前端更新覆盖后台生成的内容
+     */
+    private void smartMergeNovelStructure(Novel existingNovel, Novel updatedNovel) {
+        if (existingNovel.getStructure() == null) {
+            // 数据库中没有结构，直接使用前端的结构
+            existingNovel.setStructure(updatedNovel.getStructure());
+            return;
+        }
+        
+        if (updatedNovel.getStructure() == null) {
+            // 前端没有提供结构，保留现有结构
+            return;
+        }
+        
+        // 构建现有章节和场景的映射，以便快速查找
+        Map<String, Chapter> existingChaptersMap = new HashMap<>();
+        Map<String, Set<String>> existingChapterScenesMap = new HashMap<>();
+        buildChapterAndSceneMap(existingNovel, existingChaptersMap, existingChapterScenesMap);
+        
+        // 合并卷结构
+        List<Act> mergedActs = new ArrayList<>();
+        
+        if (updatedNovel.getStructure().getActs() != null) {
+            for (Act updatedAct : updatedNovel.getStructure().getActs()) {
+                // 在现有结构中查找对应的卷
+                Act existingAct = findActById(existingNovel, updatedAct.getId());
+                
+                Act mergedAct;
+                if (existingAct == null) {
+                    // 全新的卷，直接添加
+                    mergedAct = updatedAct;
+                    log.info("智能合并: 添加全新卷 {}", updatedAct.getId());
+                } else {
+                    // 合并章节内容
+                    List<Chapter> mergedChapters = smartMergeChapters(
+                        existingAct.getChapters(), 
+                        updatedAct.getChapters(),
+                        existingChaptersMap,
+                        existingChapterScenesMap
+                    );
+                    
+                    // 使用更新后的卷信息，但保留合并后的章节
+                    mergedAct = new Act();
+                    mergedAct.setId(updatedAct.getId());
+                    mergedAct.setTitle(updatedAct.getTitle());
+                    mergedAct.setDescription(updatedAct.getDescription());
+                    mergedAct.setOrder(updatedAct.getOrder());
+                    mergedAct.setMetadata(updatedAct.getMetadata());
+                    mergedAct.setChapters(mergedChapters);
+                    
+                    log.info("智能合并: 更新卷 {}, 标题: {}, 合并后章节数: {}", 
+                        mergedAct.getId(), mergedAct.getTitle(), mergedChapters.size());
+                }
+                
+                mergedActs.add(mergedAct);
+            }
+        }
+        
+        // 检查是否有需要保留的现有卷（前端可能删除了一些卷）
+        if (existingNovel.getStructure().getActs() != null) {
+            for (Act existingAct : existingNovel.getStructure().getActs()) {
+                boolean actExists = false;
+                if (updatedNovel.getStructure().getActs() != null) {
+                    for (Act updatedAct : updatedNovel.getStructure().getActs()) {
+                        if (updatedAct.getId().equals(existingAct.getId())) {
+                            actExists = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!actExists) {
+                    // 检查该卷中是否有近期生成的章节（例如过去24小时内）
+                    boolean hasRecentGeneratedChapters = checkForRecentGeneratedChapters(existingAct);
+                    if (hasRecentGeneratedChapters) {
+                        // 保留含有最近生成章节的卷
+                        mergedActs.add(existingAct);
+                        log.warn("智能合并: 保留前端已删除但含有最近生成章节的卷 {}", existingAct.getId());
+                    }
+                }
+            }
+        }
+        
+        // 设置合并后的结构
+        existingNovel.getStructure().setActs(mergedActs);
+        log.info("智能合并完成: 合并后卷数量 {}", mergedActs.size());
+    }
+
+    /**
+     * 构建章节和场景映射
+     */
+    private void buildChapterAndSceneMap(Novel novel, 
+                                        Map<String, Chapter> chaptersMap, 
+                                        Map<String, Set<String>> chapterScenesMap) {
+        if (novel.getStructure() != null && novel.getStructure().getActs() != null) {
+            for (Act act : novel.getStructure().getActs()) {
+                if (act.getChapters() != null) {
+                    for (Chapter chapter : act.getChapters()) {
+                        chaptersMap.put(chapter.getId(), chapter);
+                        
+                        if (chapter.getSceneIds() != null) {
+                            chapterScenesMap.put(chapter.getId(), new HashSet<>(chapter.getSceneIds()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 根据ID查找卷
+     */
+    private Act findActById(Novel novel, String actId) {
+        if (novel.getStructure() != null && novel.getStructure().getActs() != null) {
+            for (Act act : novel.getStructure().getActs()) {
+                if (act.getId().equals(actId)) {
+                    return act;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 智能合并章节列表
+     */
+    private List<Chapter> smartMergeChapters(
+        List<Chapter> existingChapters, 
+        List<Chapter> updatedChapters,
+        Map<String, Chapter> existingChaptersMap,
+        Map<String, Set<String>> existingChapterScenesMap
+    ) {
+        // 无需合并的情况
+        if (existingChapters == null || existingChapters.isEmpty()) {
+            return updatedChapters;
+        }
+        if (updatedChapters == null || updatedChapters.isEmpty()) {
+            return existingChapters;
+        }
+        
+        List<Chapter> mergedChapters = new ArrayList<>();
+        
+        // 对前端提交的章节列表进行处理
+        for (Chapter updatedChapter : updatedChapters) {
+            // 先判断是否是现有章节
+            Chapter existingChapter = existingChaptersMap.get(updatedChapter.getId());
+            
+            if (existingChapter == null) {
+                // 全新的章节，直接添加
+                mergedChapters.add(updatedChapter);
+                log.info("智能合并章节: 添加新章节 {}", updatedChapter.getId());
+                continue;
+            }
+            
+            // 章节已存在，需要合并场景信息
+            Chapter mergedChapter = new Chapter();
+            // 基本属性使用前端提交的版本
+            mergedChapter.setId(updatedChapter.getId());
+            mergedChapter.setTitle(updatedChapter.getTitle());
+            mergedChapter.setOrder(updatedChapter.getOrder());
+            mergedChapter.setMetadata(updatedChapter.getMetadata());
+            
+            // 智能合并场景ID列表
+            List<String> mergedSceneIds = smartMergeSceneIds(
+                existingChapter.getSceneIds(),
+                updatedChapter.getSceneIds(),
+                existingChapterScenesMap.get(updatedChapter.getId()),
+                isRecentGenerated(existingChapter)
+            );
+            
+            mergedChapter.setSceneIds(mergedSceneIds);
+            mergedChapters.add(mergedChapter);
+        }
+        
+        // 检查是否有需要保留的章节（前端删除但后台刚生成的）
+        for (Chapter existingChapter : existingChapters) {
+            boolean chapterExists = false;
+            for (Chapter updatedChapter : updatedChapters) {
+                if (updatedChapter.getId().equals(existingChapter.getId())) {
+                    chapterExists = true;
+                    break;
+                }
+            }
+            
+            if (!chapterExists && isRecentGenerated(existingChapter)) {
+                // 前端删除了一个最近生成的章节，需要保留
+                mergedChapters.add(existingChapter);
+                log.warn("智能合并章节: 保留前端已删除但最近生成的章节 {}", existingChapter.getId());
+            }
+        }
+        
+        return mergedChapters;
+    }
+
+    /**
+     * 判断章节是否是最近生成的
+     * 可以基于时间戳或特定的元数据标记
+     */
+    private boolean isRecentGenerated(Chapter chapter) {
+        if (chapter.getMetadata() != null) {
+            // 检查是否有自动生成的标记
+            Object isGenerated = chapter.getMetadata().get("isAutoGenerated");
+            if (isGenerated instanceof Boolean && (Boolean) isGenerated) {
+                // 检查生成时间
+                Object generatedTime = chapter.getMetadata().get("generatedTimestamp");
+                if (generatedTime instanceof Long) {
+                    long timestamp = (Long) generatedTime;
+                    // 检查是否在过去24小时内生成
+                    return System.currentTimeMillis() - timestamp < 24 * 60 * 60 * 1000;
+                }
+                return true; // 如果有生成标记但没有时间戳，默认保留
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 检查卷中是否有最近生成的章节
+     */
+    private boolean checkForRecentGeneratedChapters(Act act) {
+        if (act.getChapters() != null) {
+            for (Chapter chapter : act.getChapters()) {
+                if (isRecentGenerated(chapter)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 智能合并场景ID列表
+     */
+    private List<String> smartMergeSceneIds(
+        List<String> existingSceneIds, 
+        List<String> updatedSceneIds,
+        Set<String> originalSceneIdsSet,
+        boolean isRecentGenerated
+    ) {
+        // 无需合并的情况
+        if (existingSceneIds == null || existingSceneIds.isEmpty()) {
+            return updatedSceneIds;
+        }
+        if (updatedSceneIds == null || updatedSceneIds.isEmpty()) {
+            return existingSceneIds;
+        }
+        
+        // 如果是最近生成的章节，且场景列表有变化，需要保留原有场景
+        if (isRecentGenerated) {
+            Set<String> updatedSceneIdsSet = new HashSet<>(updatedSceneIds);
+            
+            // 检查是否有场景被删除
+            boolean hasSceneRemoved = false;
+            if (originalSceneIdsSet != null) {
+                for (String originalSceneId : originalSceneIdsSet) {
+                    if (!updatedSceneIdsSet.contains(originalSceneId)) {
+                        hasSceneRemoved = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (hasSceneRemoved) {
+                log.warn("智能合并场景: 前端尝试删除最近生成章节的场景，保留原有场景列表");
+                return existingSceneIds;
+            }
+        }
+        
+        // 默认使用前端提交的场景列表
+        return updatedSceneIds;
     }
 
 }

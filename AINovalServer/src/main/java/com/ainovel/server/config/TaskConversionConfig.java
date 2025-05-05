@@ -1,5 +1,7 @@
 package com.ainovel.server.config;
 
+import com.ainovel.server.task.dto.continuecontent.ContinueWritingContentParameters;
+import com.ainovel.server.task.dto.continuecontent.GenerateSingleChapterParameters;
 import com.ainovel.server.task.dto.scenegeneration.GenerateSceneParameters;
 import com.ainovel.server.task.dto.scenegeneration.GenerateSceneResult;
 import com.ainovel.server.task.dto.summarygeneration.GenerateSummaryParameters;
@@ -57,6 +59,10 @@ public class TaskConversionConfig {
         // 场景生成任务
         parameterTypeMap.put("GENERATE_SCENE", GenerateSceneParameters.class);
         resultTypeMap.put("GENERATE_SCENE", GenerateSceneResult.class);
+
+         // 添加任务类型到参数类的映射
+         parameterTypeMap.put("CONTINUE_WRITING_CONTENT", ContinueWritingContentParameters.class);
+         parameterTypeMap.put("GENERATE_SINGLE_CHAPTER", GenerateSingleChapterParameters.class); // 添加这一行
         
         // 批量摘要生成任务
         // 需要定义 BatchGenerateSummaryParameters 和 BatchGenerateSummaryResult 类

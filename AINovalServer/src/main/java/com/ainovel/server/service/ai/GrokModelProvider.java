@@ -283,7 +283,7 @@ public class GrokModelProvider extends AbstractAIModelProvider {
                                             //log.debug("解析到内容片段: {}", content);
                                             sink.tryEmitNext(content);
                                         } else {
-                                            log.debug("解析到空内容片段, delta: {}", choice.getDelta());
+                                            //log.debug("解析到空内容片段, delta: {}", choice.getDelta());
                                         }
                                     } else {
                                         log.debug("选择项没有delta字段: {}", choice);
