@@ -253,6 +253,21 @@ class DeleteScene extends EditorEvent {
   List<Object?> get props => [novelId, actId, chapterId, sceneId];
 }
 
+// 删除章节事件
+class DeleteChapter extends EditorEvent {
+  const DeleteChapter({
+    required this.novelId,
+    required this.actId,
+    required this.chapterId,
+  });
+  final String novelId;
+  final String actId;
+  final String chapterId;
+
+  @override
+  List<Object?> get props => [novelId, actId, chapterId];
+}
+
 // 生成场景摘要事件
 class GenerateSceneSummaryRequested extends EditorEvent {
   final String sceneId;

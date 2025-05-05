@@ -7,6 +7,7 @@ import com.ainovel.server.domain.model.Character;
 import com.ainovel.server.domain.model.Novel;
 import com.ainovel.server.domain.model.Scene;
 import com.ainovel.server.domain.model.Setting;
+import com.ainovel.server.web.dto.CreatedChapterInfo;
 import com.ainovel.server.web.dto.NovelWithScenesDto;
 import com.ainovel.server.web.dto.NovelWithSummariesDto;
 
@@ -277,4 +278,36 @@ public interface NovelService {
      * @return 拼接后的摘要字符串
      */
     Mono<String> getChapterRangeSummaries(String novelId, String startChapterId, String endChapterId);
+
+    /**
+     * 添加一个新章节到最后一卷的末尾，并创建一个包含初始摘要的空场景。
+     *
+     * @param novelId           小说ID
+     * @param chapterTitle      新章节标题
+     * @param initialSceneSummary 新场景的初始摘要 (会被放入第一个 Scene 的 summary 字段)
+     * @param initialSceneTitle 新场景的标题
+     * @return 包含新章节ID和新场景ID的 Mono<CreatedChapterInfo>
+     */
+    Mono<CreatedChapterInfo> addChapterWithInitialScene(String novelId, String chapterTitle, String initialSceneSummary, String initialSceneTitle);
+
+    /**
+     * 更新指定场景的内容。
+     *
+     * @param novelId   小说ID (用于验证或日志记录)
+     * @param chapterId 章节ID (用于验证或日志记录)
+     * @param sceneId   要更新的场景ID
+     * @param content   新的场景内容
+     * @return 更新后的场景 Mono<Scene>
+     */
+    Mono<Scene> updateSceneContent(String novelId, String chapterId, String sceneId, String content);
+
+    /**
+     * 删除章节及其所有场景
+     *
+     * @param novelId   小说ID
+     * @param actId     卷ID
+     * @param chapterId 章节ID
+     * @return 更新后的小说 Mono<Novel>
+     */
+    Mono<Novel> deleteChapter(String novelId, String actId, String chapterId);
 }

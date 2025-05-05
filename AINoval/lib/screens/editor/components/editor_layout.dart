@@ -32,11 +32,13 @@ class EditorLayout extends StatelessWidget {
     required this.controller,
     required this.layoutManager,
     required this.stateManager,
+    this.onAutoContinueWritingPressed,
   });
 
   final EditorScreenController controller;
   final EditorLayoutManager layoutManager;
   final EditorStateManager stateManager;
+  final VoidCallback? onAutoContinueWritingPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -314,6 +316,7 @@ class EditorLayout extends StatelessWidget {
                         onNextOutlinePressed: controllerState.toggleNextOutlineView,
                         onAIGenerationPressed: layoutState.toggleAISceneGenerationPanel,
                         onAISummaryPressed: layoutState.toggleAISummaryPanel,
+                        onAutoContinueWritingPressed: onAutoContinueWritingPressed,
                         isAIGenerationActive: layoutState.isAISceneGenerationPanelVisible || layoutState.isAISummaryPanelVisible,
                         isNextOutlineActive: controllerState.isNextOutlineViewActive,
                       ),

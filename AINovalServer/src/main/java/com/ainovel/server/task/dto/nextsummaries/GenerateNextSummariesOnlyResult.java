@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * 自动续写小说章节摘要任务结果
+ * 生成后续章节摘要任务结果
  */
 @Data
 @Builder
@@ -22,20 +22,35 @@ public class GenerateNextSummariesOnlyResult {
     private List<String> newChapterIds;
     
     /**
-     * 成功生成摘要的数量
+     * 生成的摘要内容列表
+     */
+    private List<String> summaries;
+    
+    /**
+     * 成功生成的摘要数量
      */
     private int summariesGeneratedCount;
     
     /**
-     * 最终任务状态
-     * COMPLETED: 所有摘要生成成功
-     * COMPLETED_WITH_ERRORS: 部分摘要生成成功
-     * FAILED: 所有摘要生成失败
+     * 总共需要生成的章节数
+     */
+    private int totalChapters;
+    
+    /**
+     * 失败的生成步骤信息
+     */
+    private List<String> failedChapters;
+    
+    /**
+     * 任务状态
+     * COMPLETED: 全部成功完成
+     * COMPLETED_WITH_ERRORS: 部分成功，部分失败
+     * FAILED: 全部失败
      */
     private String status;
     
     /**
-     * 记录失败的章节ID或步骤
+     * 失败的步骤列表
      */
     private List<String> failedSteps;
 } 

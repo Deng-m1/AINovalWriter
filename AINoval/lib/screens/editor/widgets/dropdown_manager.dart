@@ -171,12 +171,12 @@ class DropdownManager {
     Function()? onRenamePressed,
   ) {
     // 特殊处理重命名操作，因为需要直接访问State
-    VoidCallback? onTapHandler;
+    Future<void> Function()? onTapHandler;
     if (item.label == '重命名Act' || item.label == '重命名章节') {
-      onTapHandler = onRenamePressed;
+      onTapHandler = null;
     } else if (item.onTap != null) {
-      onTapHandler = () {
-        item.onTap!(context, editorBloc, id, secondaryId, tertiaryId);
+      onTapHandler = () async {
+        await item.onTap!(context, editorBloc, id, secondaryId, tertiaryId);
       };
     }
 

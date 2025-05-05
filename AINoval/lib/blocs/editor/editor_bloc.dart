@@ -37,6 +37,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     on<AddNewChapter>(_onAddNewChapter);
     on<AddNewScene>(_onAddNewScene);
     on<DeleteScene>(_onDeleteScene);
+    on<DeleteChapter>(_onDeleteChapter);
     on<GenerateSceneSummaryRequested>(_onGenerateSceneSummaryRequested);
     on<GenerateSceneFromSummaryRequested>(_onGenerateSceneFromSummaryRequested);
     on<UpdateGeneratedSceneContent>(_onUpdateGeneratedSceneContent);
@@ -2036,6 +2037,152 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       
       AppLogger.i('EditorBloc', '设置待处理摘要: ${event.summary.substring(0, math.min(30, event.summary.length))}...');
     }
+  }
+
+  // 处理删除章节事件
+  Future<void> _onDeleteChapter(
+      DeleteChapter event, Emitter<EditorState> emit) async {
+    final currentState = state;
+    if (currentState is EditorLoaded) {
+      // 保存原始小说数据，以便在失败时恢复
+      final originalNovel = currentState.novel;
+
+      // 查找章节在哪个Act中以及对应的索引
+      int actIndex = -1;
+      int chapterIndex = -1;
+      novel_models.Act? act;
+
+      for (int i = 0; i < originalNovel.acts.length; i++) {
+        final currentAct = originalNovel.acts[i];
+        if (currentAct.id == event.actId) {
+          actIndex = i;
+          act = currentAct;
+          for (int j = 0; j < currentAct.chapters.length; j++) {
+            if (currentAct.chapters[j].id == event.chapterId) {
+              chapterIndex = j;
+              break;
+            }
+          }
+          break;
+        }
+      }
+
+      if (actIndex == -1 || chapterIndex == -1 || act == null) {
+        AppLogger.e('Blocs/editor/editor_bloc',
+            '找不到要删除的章节: ${event.chapterId}');
+        // 保持当前状态，但显示错误信息
+        emit(currentState.copyWith(errorMessage: '找不到要删除的章节'));
+        return;
+      }
+
+      // 确定删除后的下一个活动Chapter ID
+      String? nextActiveChapterId;
+      novel_models.Chapter? nextActiveChapter;
+      if (act.chapters.length > 1) {
+        // 如果删除后Act还有其他章节
+        if (chapterIndex > 0) {
+          // 优先选前一个章节
+          nextActiveChapter = act.chapters[chapterIndex - 1];
+        } else {
+          // 否则选后一个章节
+          nextActiveChapter = act.chapters[1];
+        }
+        nextActiveChapterId = nextActiveChapter.id;
+      } else if (originalNovel.acts.length > 1) {
+        // 如果当前Act没有其他章节了，但还有其他Act
+        // 尝试选择前一个Act的最后一个章节或后一个Act的第一个章节
+        int nextActIndex;
+        if (actIndex > 0) {
+          nextActIndex = actIndex - 1;
+          final nextAct = originalNovel.acts[nextActIndex];
+          if (nextAct.chapters.isNotEmpty) {
+            nextActiveChapter = nextAct.chapters.last;
+            nextActiveChapterId = nextActiveChapter.id;
+          }
+        } else if (actIndex < originalNovel.acts.length - 1) {
+          nextActIndex = actIndex + 1;
+          final nextAct = originalNovel.acts[nextActIndex];
+          if (nextAct.chapters.isNotEmpty) {
+            nextActiveChapter = nextAct.chapters.first;
+            nextActiveChapterId = nextActiveChapter.id;
+          }
+        }
+      }
+
+      // 更新本地小说模型 (不可变方式)
+      final updatedChapters = List<novel_models.Chapter>.from(act.chapters)
+        ..removeAt(chapterIndex);
+      final updatedAct = act.copyWith(chapters: updatedChapters);
+      final updatedActs = List<novel_models.Act>.from(originalNovel.acts)
+        ..[actIndex] = updatedAct;
+      final updatedNovel = originalNovel.copyWith(
+        acts: updatedActs,
+        updatedAt: DateTime.now(),
+      );
+
+      // 更新UI状态为 "正在保存"，并设置新的活动章节
+      emit(currentState.copyWith(
+        novel: updatedNovel, // 显示删除后的状态
+        isDirty: true, // 标记为脏
+        isSaving: true, // 标记正在保存
+        // 更新活动章节ID
+        activeChapterId: currentState.activeChapterId == event.chapterId
+            ? nextActiveChapterId
+            : currentState.activeChapterId,
+        // 如果活动章节变了，也要更新活动Act
+        activeActId: (currentState.activeChapterId == event.chapterId && nextActiveChapter != null)
+            ? (nextActiveChapter != null ? _findActIdForChapter(originalNovel, nextActiveChapterId!) : currentState.activeActId)
+            : currentState.activeActId,
+        // 如果删除的是当前活动章节，把活动场景设为null
+        activeSceneId: currentState.activeChapterId == event.chapterId
+            ? null
+            : currentState.activeSceneId,
+      ));
+
+      try {
+        // 调用repository接口方法
+        await repository.deleteChapter(event.novelId, event.actId, event.chapterId);
+        
+        // 保存更新后的小说数据
+        final saveResult = await repository.saveNovel(updatedNovel);
+
+        if (saveResult) {
+          // 保存成功后，更新状态为已保存
+          emit((state as EditorLoaded).copyWith(
+            isDirty: false,
+            isSaving: false,
+            lastSaveTime: DateTime.now(),
+          ));
+          AppLogger.i('Blocs/editor/editor_bloc',
+              '章节删除成功: ${event.chapterId}');
+        } else {
+          throw Exception('保存小说数据失败');
+        }
+      } catch (e) {
+        AppLogger.e('Blocs/editor/editor_bloc', '删除章节失败', e);
+        // 删除失败，恢复原始数据
+        emit((state as EditorLoaded).copyWith(
+          novel: originalNovel,
+          isSaving: false,
+          errorMessage: '删除章节失败: ${e.toString()}',
+          activeActId: currentState.activeActId,
+          activeChapterId: currentState.activeChapterId,
+          activeSceneId: currentState.activeSceneId,
+        ));
+      }
+    }
+  }
+
+  // 辅助方法：查找章节所属的Act ID
+  String? _findActIdForChapter(novel_models.Novel novel, String chapterId) {
+    for (final act in novel.acts) {
+      for (final chapter in act.chapters) {
+        if (chapter.id == chapterId) {
+          return act.id;
+        }
+      }
+    }
+    return null;
   }
 
   @override

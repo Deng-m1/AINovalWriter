@@ -1,12 +1,16 @@
 import 'dart:async';
 
 import 'package:ainoval/blocs/editor/editor_bloc.dart' as editor_bloc;
+import 'package:ainoval/config/app_config.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/screens/editor/components/editor_layout.dart';
 import 'package:ainoval/screens/editor/controllers/editor_screen_controller.dart';
 import 'package:ainoval/screens/editor/managers/editor_layout_manager.dart';
 import 'package:ainoval/screens/editor/managers/editor_state_manager.dart';
+import 'package:ainoval/screens/editor/widgets/continue_writing_form.dart';
+import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
+import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -40,6 +44,9 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
   // 记录上次加载的时间，用于节流控制
   DateTime? _lastUpLoadTime;
   DateTime? _lastDownLoadTime;
+  
+  // 自动续写对话框控制
+  bool _showContinueWritingForm = false;
 
   @override
   void initState() {
@@ -217,6 +224,67 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
       }
     });
   }
+  
+  // 自动续写对话框显示控制
+  void _showAutoContinueWritingDialog() {
+    setState(() {
+      _showContinueWritingForm = true;
+    });
+  }
+  
+  // 隐藏自动续写对话框
+  void _hideAutoContinueWritingDialog() {
+    setState(() {
+      _showContinueWritingForm = false;
+    });
+  }
+  
+  // 处理自动续写表单提交
+  void _handleContinueWritingSubmit(Map<String, dynamic> parameters) async {
+    try {
+      // 直接使用控制器中的编辑器仓库
+      final editorRepository = _controller.editorRepository;
+      
+      // 提交任务
+      final taskId = await editorRepository.submitContinueWritingTask(
+        novelId: parameters['novelId'],
+        numberOfChapters: parameters['numberOfChapters'],
+        aiConfigIdSummary: parameters['aiConfigIdSummary'],
+        aiConfigIdContent: parameters['aiConfigIdContent'],
+        startContextMode: parameters['startContextMode'],
+        contextChapterCount: parameters['contextChapterCount'],
+        customContext: parameters['customContext'],
+        writingStyle: parameters['writingStyle'],
+      );
+      
+      // 隐藏对话框
+      _hideAutoContinueWritingDialog();
+      
+      // 显示提交成功提示
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('自动续写任务已提交，任务ID: $taskId'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      AppLogger.e('EditorScreen', '提交自动续写任务失败', e);
+      
+      // 显示错误提示
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('提交自动续写任务失败: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -244,7 +312,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
       _buildStopwatch.start();
     }
     
-    final widget = MultiProvider(
+    final editorWidget = MultiProvider(
       providers: [
         BlocProvider.value(value: _controller.editorBloc),
         ChangeNotifierProvider.value(value: _controller),
@@ -338,6 +406,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
           controller: _controller,
           layoutManager: _layoutManager,
           stateManager: _stateManager,
+          onAutoContinueWritingPressed: _showAutoContinueWritingDialog,
         ),
       ),
     );
@@ -355,6 +424,34 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
       }
     }
     
-    return widget;
+    // 最终的布局，包含编辑器和可能的自动续写对话框
+    return Scaffold(
+      body: Stack(
+        children: [
+          // 编辑器主体
+          editorWidget,
+          
+          // 自动续写表单对话框
+          if (_showContinueWritingForm)
+            Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 600),
+                padding: const EdgeInsets.all(16),
+                child: Material(
+                  elevation: 24,
+                  borderRadius: BorderRadius.circular(16),
+                  child: ContinueWritingForm(
+                    novelId: widget.novel.id,
+                    userId: AppConfig.userId ?? '',
+                    onCancel: _hideAutoContinueWritingDialog,
+                    onSubmit: _handleContinueWritingSubmit,
+                    userAiModelConfigRepository: context.read<UserAIModelConfigRepository>(),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

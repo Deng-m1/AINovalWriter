@@ -261,7 +261,7 @@ public class GrokModelProvider extends AbstractAIModelProvider {
                                     log.info("Grok: 收到首个响应, 耗时: {}ms, 模型: {}, 内容: {}",
                                             firstChunkTime.get() - requestStartTime, modelName, chunk);
                                 } else {
-                                    log.debug("Grok: 收到流式响应块: {}", chunk);
+                                    //log.debug("Grok: 收到流式响应块: {}", chunk);
                                 }
                                 
                                 // 解析流式响应
@@ -280,7 +280,7 @@ public class GrokModelProvider extends AbstractAIModelProvider {
                                     if (choice.getDelta() != null) {
                                         String content = choice.getDelta().getContent();
                                         if (content != null) {
-                                            log.debug("解析到内容片段: {}", content);
+                                            //log.debug("解析到内容片段: {}", content);
                                             sink.tryEmitNext(content);
                                         } else {
                                             log.debug("解析到空内容片段, delta: {}", choice.getDelta());

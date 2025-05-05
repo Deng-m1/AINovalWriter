@@ -1242,6 +1242,25 @@ class EditorRepositoryImpl implements EditorRepository {
     }
   }
 
+  /// 删除章节
+  @override
+  Future<Novel?> deleteChapter(
+    String novelId,
+    String actId,
+    String chapterId,
+  ) async {
+    try {
+      final response = await _apiClient.deleteChapter(novelId, actId, chapterId);
+      if (response != null) {
+        return _convertBackendNovelWithScenesToFrontend(response);
+      }
+      return null;
+    } catch (e) {
+      AppLogger.e('EditorRepositoryImpl', '删除章节失败', e);
+      throw ApiException(-1, '删除章节失败: $e');
+    }
+  }
+
   /// 将后端返回的带场景摘要的小说数据转换为前端模型
   Novel _convertBackendNovelWithSummariesToFrontend(
       Map<String, dynamic> backendData) {
@@ -1720,6 +1739,56 @@ class EditorRepositoryImpl implements EditorRepository {
     } catch (e) {
       AppLogger.e('EditorRepositoryImpl', '从本地获取章节场景失败', e);
       return [];
+    }
+  }
+
+  @override
+  Future<String> submitContinueWritingTask({
+    required String novelId,
+    required int numberOfChapters,
+    required String aiConfigIdSummary,
+    required String aiConfigIdContent,
+    required String startContextMode,
+    int? contextChapterCount,
+    String? customContext,
+    String? writingStyle,
+  }) async {
+    try {
+      // 构建请求参数
+      final Map<String, dynamic> params = {
+        'novelId': novelId,
+        'numberOfChapters': numberOfChapters,
+        'aiConfigIdSummary': aiConfigIdSummary,
+        'aiConfigIdContent': aiConfigIdContent,
+        'startContextMode': startContextMode,
+      };
+      
+      // 根据上下文模式添加对应参数
+      if (startContextMode == 'LAST_N_CHAPTERS' && contextChapterCount != null) {
+        params['contextChapterCount'] = contextChapterCount;
+      } else if (startContextMode == 'CUSTOM' && customContext != null) {
+        params['customContext'] = customContext;
+      }
+      
+      // 添加写作风格参数（如果有）
+      if (writingStyle != null && writingStyle.isNotEmpty) {
+        params['writingStyle'] = writingStyle;
+      }
+      
+      // 发送请求
+      final response = await _apiClient.post('/api/tasks/continue-writing', data: params);
+      
+      // 解析响应
+      if (response != null && response.containsKey('taskId')) {
+        final String taskId = response['taskId'];
+        AppLogger.i('EditorRepositoryImpl', '自动续写任务提交成功，任务ID: $taskId');
+        return taskId;
+      } else {
+        throw ApiException(-1, '服务器响应格式错误，缺少taskId');
+      }
+    } catch (e) {
+      AppLogger.e('EditorRepositoryImpl', '提交自动续写任务失败', e);
+      throw ApiException(-1, '提交自动续写任务失败: $e');
     }
   }
 }

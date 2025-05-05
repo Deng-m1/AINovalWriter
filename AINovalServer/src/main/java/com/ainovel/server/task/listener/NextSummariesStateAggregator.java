@@ -131,7 +131,7 @@ public class NextSummariesStateAggregator {
                 // 创建一个空的结果，用于更新父任务进度
                 GenerateSingleSummaryResult failedResult = GenerateSingleSummaryResult.builder()
                         .chapterIndex(chapterIndex)
-                        .newChapterId(null)
+                        .chapterId(null)
                         .summary(null)
                         .chapterTitle(null)
                         .build();
@@ -225,8 +225,8 @@ public class NextSummariesStateAggregator {
                     for (BackgroundTask task : tasksMap.get(TaskStatus.COMPLETED)) {
                         if (task.getResult() instanceof GenerateSingleSummaryResult) {
                             GenerateSingleSummaryResult subResult = (GenerateSingleSummaryResult) task.getResult();
-                            if (subResult.getNewChapterId() != null) {
-                                newChapterIds.add(subResult.getNewChapterId());
+                            if (subResult.getChapterId() != null) {
+                                newChapterIds.add(subResult.getChapterId());
                             }
                         }
                     }

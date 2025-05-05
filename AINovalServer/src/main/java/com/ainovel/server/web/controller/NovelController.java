@@ -197,6 +197,31 @@ public class NovelController extends ReactiveBaseController {
     }
 
     /**
+     * 删除章节及其场景
+     *
+     * @param request 包含novelId, actId, chapterId的请求
+     * @return 更新后的小说数据，包含场景
+     */
+    @PostMapping("/delete-chapter")
+    public Mono<NovelWithScenesDto> deleteChapter(@RequestBody Map<String, String> request) {
+        String novelId = request.get("novelId");
+        String actId = request.get("actId");
+        String chapterId = request.get("chapterId");
+        
+        log.info("收到删除章节请求: novelId={}, actId={}, chapterId={}", novelId, actId, chapterId);
+        
+        if (novelId == null || actId == null || chapterId == null) {
+            return Mono.error(new IllegalArgumentException("novelId, actId 和 chapterId 不能为空"));
+        }
+        
+        return novelService.deleteChapter(novelId, actId, chapterId)
+                .flatMap(novel -> novelService.getNovelWithAllScenes(novelId))
+                .doOnSuccess(dto -> log.info("章节删除成功并返回更新后的小说数据: novelId={}", novelId))
+                .doOnError(e -> log.error("章节删除失败: novelId={}, actId={}, chapterId={}, 错误={}", 
+                        novelId, actId, chapterId, e.getMessage()));
+    }
+
+    /**
      * 获取作者的所有小说
      *
      * @param authorIdDto 包含作者ID的DTO

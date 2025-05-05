@@ -22,7 +22,7 @@ import reactor.core.publisher.Mono;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/tasks")
+@RequestMapping("/api/v1/api/tasks")
 @RequiredArgsConstructor
 public class TaskContinueWritingController {
 

@@ -57,6 +57,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import com.ainovel.server.domain.model.Novel;
+import com.ainovel.server.domain.model.Scene; // Import Scene
 
 /**
  * 小说AI服务实现类 专门处理与小说创作相关的AI功能
@@ -1278,80 +1279,72 @@ public class NovelAIServiceImpl implements NovelAIService {
      */
     @Override
     public Mono<SummarizeSceneResponse> summarizeScene(String userId, String sceneId, SummarizeSceneRequest request) {
+        // Find the scene first to get novelId and content
         return sceneService.findSceneById(sceneId)
                 .flatMap(scene -> {
-                    // 权限校验
-                    return novelService.findNovelById(scene.getNovelId())
+                    final String novelId = scene.getNovelId(); // Get novelId here
+                    final String sceneContent = scene.getContent();
+
+                    // Then, check novel access permission
+                    return novelService.findNovelById(novelId)
                             .flatMap(novel -> {
                                 if (!novel.getAuthor().getId().equals(userId)) {
-                                    return Mono.error(new AccessDeniedException("用户无权访问该场景"));
+                                    return Mono.error(new AccessDeniedException("用户无权访问该场景对应的小说"));
                                 }
 
-                                // 并行获取RAG上下文和用户Prompt模板
+                                // Fetch context and prompt template in parallel
                                 Mono<String> contextMono = ragService.retrieveRelevantContext(
-                                        scene.getNovelId(), sceneId, AIFeatureType.SCENE_TO_SUMMARY);
-
+                                        novelId, sceneId, AIFeatureType.SCENE_TO_SUMMARY);
                                 Mono<String> promptTemplateMono = userPromptService.getPromptTemplate(
                                         userId, AIFeatureType.SCENE_TO_SUMMARY);
 
-                                // 返回包含场景、上下文、模板的Tuple
-                                return Mono.zip(Mono.just(scene.getContent()), contextMono, promptTemplateMono);
+                                // Pass novelId and sceneContent along with context and template
+                                return Mono.zip(Mono.just(novelId), Mono.just(sceneContent), contextMono, promptTemplateMono);
                             });
                 })
                 .flatMap(tuple -> {
-                    String sceneContent = tuple.getT1();
-                    String context = tuple.getT2();
-                    String promptTemplate = tuple.getT3();
+                    // Unpack the tuple
+                    String novelId = tuple.getT1();
+                    String sceneContent = tuple.getT2();
+                    String context = tuple.getT3();
+                    String promptTemplate = tuple.getT4();
 
-                    // 构建最终Prompt
                     String finalPrompt = buildFinalPrompt(promptTemplate, context, sceneContent);
 
-                    // 获取AI配置并调用LLM
+                    // Get AI config and call LLM
                     return userAIModelConfigService.getValidatedDefaultConfiguration(userId)
                             .flatMap(aiConfig -> {
                                 AIRequest aiRequest = new AIRequest();
                                 aiRequest.setUserId(userId);
+                                aiRequest.setNovelId(novelId); // Use the novelId passed from the previous step
                                 aiRequest.setModel(aiConfig.getModelName());
 
-                                // 创建系统消息
+                                // System message
                                 AIRequest.Message systemMessage = new AIRequest.Message();
                                 systemMessage.setRole("system");
-                                // 修改提示词：要求只输出纯摘要内容
                                 systemMessage.setContent("你是一个专业的小说编辑。请根据用户提供的场景内容和上下文信息，生成一个简洁的场景摘要。你的任务是只输出摘要本身，不包含任何标题、小标题、格式标记（如Markdown）、或其他解释性文字。");
                                 aiRequest.getMessages().add(systemMessage);
 
-                                // 创建用户消息
+                                // User message
                                 AIRequest.Message userMessage = new AIRequest.Message();
                                 userMessage.setRole("user");
                                 userMessage.setContent(finalPrompt);
                                 aiRequest.getMessages().add(userMessage);
 
-                                // 设置生成参数
                                 aiRequest.setTemperature(0.7);
-                                //aiRequest.setMaxTokens(500);
 
-                                // 获取AI模型提供商
                                 return getAIModelProvider(userId, aiConfig.getModelName())
                                         .flatMap(provider -> {
-                                            // 添加请求日志
                                             log.info("开始向AI模型发送摘要生成请求，用户ID: {}, 模型: {}", userId, aiConfig.getModelName());
-
-                                            // 使用Mono.fromFuture或unsubscribeOn确保即使订阅被取消，任务也会继续执行
                                             return provider.generateContent(aiRequest)
-                                                .doOnCancel(() -> {
-                                                    log.info("客户端取消了连接，但AI生成会在后台继续完成, 用户: {}, 模型: {}",
-                                                            userId, aiConfig.getModelName());
-                                                })
-                                                .timeout(Duration.ofSeconds(600)) // 添加超时设置
-                                                .doOnSuccess(resp -> {
-                                                    log.info("AI摘要生成成功完成，用户ID: {}, 模型: {}", userId, aiConfig.getModelName());
-                                                })
+                                                .doOnCancel(() -> log.info("客户端取消了连接，但AI生成会在后台继续完成, 用户: {}, 模型: {}", userId, aiConfig.getModelName()))
+                                                .timeout(Duration.ofSeconds(600))
+                                                .doOnSuccess(resp -> log.info("AI摘要生成成功完成，用户ID: {}, 模型: {}", userId, aiConfig.getModelName()))
                                                 .onErrorResume(e -> {
                                                     log.error("AI内容生成出错: {}", e.getMessage(), e);
                                                     return Mono.error(new RuntimeException("AI生成摘要失败: " + e.getMessage(), e));
                                                 });
                                         })
-                                        // 添加重试逻辑处理临时性网络错误
                                         .retry(3);
                             })
                             .map(response -> new SummarizeSceneResponse(response.getContent()));
@@ -1360,6 +1353,11 @@ public class NovelAIServiceImpl implements NovelAIService {
                     log.error("生成场景摘要时出错", e);
                     if (e instanceof AccessDeniedException) {
                         return Mono.error(e);
+                    }
+                     // Check for ResourceNotFoundException from sceneService.findSceneById
+                    if (e instanceof com.ainovel.server.common.exception.ResourceNotFoundException) {
+                         log.warn("请求摘要的场景未找到: {}", sceneId);
+                         return Mono.error(new RuntimeException("找不到指定的场景: " + sceneId)); 
                     }
                     return Mono.error(new RuntimeException("生成摘要失败: " + e.getMessage()));
                 });
@@ -1510,7 +1508,7 @@ public class NovelAIServiceImpl implements NovelAIService {
                                                     })
                                                     .doOnNext(content -> {
                                                         if (!"heartbeat".equals(content)) {
-                                                            log.debug("收到模型生成内容，更新活动时间戳, userId: {}, novelId: {}", userId, novelId);
+                                                            //log.debug("收到模型生成内容，更新活动时间戳, userId: {}, novelId: {}", userId, novelId);
                                                             lastActivityTimestamp.set(System.currentTimeMillis());
                                                         }
                                                     })
@@ -1548,7 +1546,7 @@ public class NovelAIServiceImpl implements NovelAIService {
                 .onErrorResume(e -> {
                     log.error("生成场景内容时出错", e);
                     if (e instanceof AccessDeniedException) {
-                        return Flux.error(e);
+                        return Flux.error(e); // Propagate AccessDeniedException
                     }
                     return Flux.just("生成场景内容时出错: " + e.getMessage(), "[DONE]");
                 });
@@ -1568,6 +1566,7 @@ public class NovelAIServiceImpl implements NovelAIService {
 
         // 使用流式API并收集结果
         return generateSceneFromSummaryStream(userId, novelId, request)
+                .filter(chunk -> !"[DONE]".equals(chunk)) // Filter out the DONE marker
                 .collect(StringBuilder::new, StringBuilder::append)
                 .map(sb -> {
                     GenerateSceneFromSummaryResponse response = new GenerateSceneFromSummaryResponse();
@@ -1696,7 +1695,7 @@ public class NovelAIServiceImpl implements NovelAIService {
                 .flatMap(config -> {
                     // 检查配置是否有效 (虽然 getConfiguration 内部可能已检查，但多一层保险)
                     if (!config.getIsValidated()) {
-                         log.warn("配置ID {} 对应的模型配置未验证，但仍尝试创建 Provider (用户ID: {})".formatted(configId, userId));
+                         log.warn("配置ID {} 对应的模型配置未验证，但仍尝试创建 Provider (用户ID: {})", configId, userId);
                          // 或者可以根据业务逻辑决定是否抛出错误
                          // return Mono.error(new IllegalArgumentException("指定的AI模型配置未验证: " + configId));
                     }
@@ -1706,6 +1705,112 @@ public class NovelAIServiceImpl implements NovelAIService {
                     log.warn("找不到用户 {} 指定的AI模型配置ID: {}", userId, configId);
                     return Mono.error(new IllegalArgumentException("找不到指定的AI模型配置ID: " + configId));
                 }));
+    }
+
+    // --- NEW METHOD IMPLEMENTATION --- 
+    @Override
+    public Mono<String> generateNextSingleSummary(String userId, String novelId, String currentContext, String aiConfigIdSummary, String writingStyle) {
+        log.info("生成下一个单章摘要, userId={}, novelId={}, configId={}, contextLength={}, style='{}'",
+                 userId, novelId, aiConfigIdSummary != null ? aiConfigIdSummary : "default", 
+                 currentContext != null ? currentContext.length() : 0, writingStyle != null ? writingStyle : "none");
+        
+        // 如果上下文为空，返回错误
+        if (currentContext == null || currentContext.isEmpty()) {
+            log.error("上下文内容为空，无法生成下一章摘要");
+            return Mono.error(new IllegalArgumentException("上下文内容不能为空"));
+        }
+
+        // 1. 获取AI配置
+        Mono<UserAIModelConfig> configMono = Mono.justOrEmpty(aiConfigIdSummary)
+            .flatMap(configId -> userAIModelConfigService.getConfigurationById(userId, configId))
+            .switchIfEmpty(userAIModelConfigService.getValidatedDefaultConfiguration(userId))
+            .switchIfEmpty(Mono.error(new RuntimeException("无法找到有效的AI配置")));
+
+        // 2. 构建作者引导（如果有写作风格）
+        String authorGuidance = "";
+        if (writingStyle != null && !writingStyle.isEmpty()) {
+            authorGuidance = "写作风格: " + writingStyle;
+        }
+
+        // 3. 创建单个大纲生成请求
+        String finalAuthorGuidance = authorGuidance;
+        return configMono.flatMap(config -> {
+            // 3.1 获取配置ID
+            String configId = config.getId();
+            
+            // 3.2 生成一个UUID作为临时选项ID
+            String optionId = UUID.randomUUID().toString();
+            
+            // 3.3 使用NextOutline生成逻辑生成单个大纲选项
+            return generateSingleOutlineOptionStream(
+                    userId, 
+                    novelId, 
+                    currentContext, 
+                    finalAuthorGuidance, 
+                    0, // 单一选项时索引为0
+                    configId
+                )
+                .reduce(new StringBuilder(), (sb, chunk) -> {
+                    if (chunk.getError() != null) {
+                        log.error("生成摘要出错: {}", chunk.getError());
+                        throw new RuntimeException("生成摘要失败: " + chunk.getError());
+                    }
+                    return sb.append(chunk.getTextChunk());
+                })
+                .map(StringBuilder::toString)
+                .flatMap(outlineContent -> {
+                    // 4. 解析生成的内容，提取出适合作为章节摘要的部分
+                    return processOutlineToSummary(outlineContent);
+                })
+                .doOnSuccess(summary -> {
+                    log.info("成功生成下一章摘要, 长度: {}, 开头: {}", 
+                             summary.length(), 
+                             summary.substring(0, Math.min(50, summary.length())));
+                })
+                .onErrorResume(e -> {
+                    log.error("生成下一章摘要失败: {}", e.getMessage(), e);
+                    return Mono.error(new RuntimeException("生成摘要失败: " + e.getMessage()));
+                });
+        });
+    }
+
+    /**
+     * 处理大纲内容，提取出适合作为章节摘要的部分
+     */
+    private Mono<String> processOutlineToSummary(String outlineContent) {
+        if (outlineContent == null || outlineContent.isEmpty()) {
+            return Mono.error(new RuntimeException("生成的大纲内容为空"));
+        }
+        
+        // 尝试提取标题和内容
+        Pattern titleContentPattern = Pattern.compile(
+            "(?im)^\\s*(标题|TITLE|Title)\\s*[:\\：]\\s*(.*?)\\s*(?:\\n|$)\\s*(内容|CONTENT|Content)\\s*[:\\：]\\s*(.+)", 
+            Pattern.DOTALL
+        );
+        
+        Matcher titleContentMatcher = titleContentPattern.matcher(outlineContent);
+        if (titleContentMatcher.find()) {
+            // 如果匹配到标准的"标题:...内容:..."格式，提取内容部分
+            String content = titleContentMatcher.group(4).trim();
+            return Mono.just(content);
+        }
+        
+        // 尝试识别大纲格式的内容
+        Pattern outlinePattern = Pattern.compile("(?im)^\\s*(选项|大纲|剧情选项)\\s*\\d+\\s*[:\\：]\\s*(.+)$", Pattern.DOTALL);
+        Matcher outlineMatcher = outlinePattern.matcher(outlineContent);
+        if (outlineMatcher.find()) {
+            String content = outlineMatcher.group(2).trim();
+            return Mono.just(content);
+        }
+        
+        // 如果没有找到特定格式，检查内容长度是否合理
+        if (outlineContent.length() > 1000) {
+            // 内容太长，可能不是摘要，进行简单截取
+            return Mono.just(outlineContent.substring(0, 1000) + "...");
+        }
+        
+        // 都不满足时，返回原始内容
+        return Mono.just(outlineContent.trim());
     }
 
 }

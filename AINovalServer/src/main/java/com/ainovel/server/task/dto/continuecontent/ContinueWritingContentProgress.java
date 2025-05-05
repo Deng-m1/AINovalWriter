@@ -1,22 +1,32 @@
 package com.ainovel.server.task.dto.continuecontent;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 自动续写小说章节内容任务进度
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class ContinueWritingContentProgress {
+    
+    /**
+     * 总共需要生成的章节数
+     */
+    private int totalChapters;
+    
+    /**
+     * 已成功生成章节数
+     */
+    private int chaptersCompleted;
+    
+    /**
+     * 失败的章节数
+     */
+    private int failedChapters;
     
     /**
      * 当前阶段
@@ -25,62 +35,15 @@ public class ContinueWritingContentProgress {
      * GENERATING_CONTENT: 正在生成内容
      * COMPLETED: 任务已完成
      */
-    private String stage;
+    private String currentStep; // e.g., STARTING, GENERATING_SUMMARY_1, GENERATING_CONTENT_1, GENERATING_SUMMARY_2, ... FINISHED
     
     /**
-     * 总共需要生成的章节数
+     * 最后一次错误消息
      */
-    private int totalChapters;
+    private String lastError; // Store last relevant error message
     
     /**
-     * 已成功生成摘要的章节数
+     * 已成功生成章节的ID列表
      */
-    private int summariesCompleted;
-    
-    /**
-     * 已成功生成内容的章节数
-     */
-    private int contentsCompleted;
-    
-    /**
-     * 失败的章节数
-     */
-    private int failed;
-    
-    /**
-     * 当前处理的章节索引（从0开始）
-     */
-    private int currentIndex;
-    
-    /**
-     * 当前阶段完成百分比（0-100）
-     */
-    private int percentComplete;
-    
-    /**
-     * 大纲是否已生成完成
-     */
-    private boolean outlinesGenerated;
-    
-    /**
-     * 生成的大纲列表（使用Map存储而不是依赖特定类）
-     */
-    @Builder.Default
-    private List<Map<String, Object>> outlines = new ArrayList<>();
-    
-    /**
-     * 已完成的章节数量（响应式架构）
-     */
-    private int completedChapters;
-    
-    /**
-     * 失败的章节数量（响应式架构）
-     */
-    private int failedChapters;
-    
-    /**
-     * 章节生成结果列表（使用Map存储而不是依赖特定类）
-     */
-    @Builder.Default
-    private List<Map<String, Object>> chapterResults = new ArrayList<>();
+    private List<String> completedChapterIds = new ArrayList<>();
 } 

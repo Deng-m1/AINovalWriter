@@ -180,9 +180,10 @@ public class RabbitMQConfig {
     }
     
     // 交换机定义
-    
+
     /**
-     * 任务主交换机（直连）
+     * 任务主交换机（主题交换机）
+     * 注意：改回TopicExchange以支持通配符，简化任务路由配置
      */
     @Bean
     public DirectExchange tasksExchange() {
@@ -357,43 +358,100 @@ public class RabbitMQConfig {
                 .with("task.event.#"); // 使用通配符匹配所有task.event开头的路由键
     }
     
+    // /**
+    //  * 通用任务绑定 - 捕获所有任务类型
+    //  * 使用通配符将所有task.前缀的消息路由到任务队列
+    //  * 这是推荐的绑定方式，可以自动处理新的任务类型。
+    //  */
+    // @Bean
+    // public Binding allTasksBinding() {
+    //     return BindingBuilder.bind(tasksQueue())
+    //             .to(tasksExchange()) // 确保绑定到TopicExchange
+    //             .with(TASK_TYPE_PREFIX + "#"); // 匹配所有task.前缀的路由键
+    // }
+    
     /**
      * 创建任务生成摘要类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
      */
     @Bean
     public Binding generateSummaryBinding() {
         return BindingBuilder.bind(tasksQueue())
                 .to(tasksExchange())
-                .with(TASK_TYPE_PREFIX + "GENERATE_SUMMARY"); // 使用实际的任务类型字符串
+                .with(TASK_TYPE_PREFIX + "GENERATE_SUMMARY");
     }
     
     /**
      * 创建任务生成场景类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
      */
     @Bean
     public Binding generateSceneBinding() {
         return BindingBuilder.bind(tasksQueue())
                 .to(tasksExchange())
-                .with(TASK_TYPE_PREFIX + "GENERATE_SCENE"); // 使用实际的任务类型字符串
+                .with(TASK_TYPE_PREFIX + "GENERATE_SCENE");
     }
     
     /**
      * 创建批量生成摘要任务类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
      */
     @Bean
     public Binding batchGenerateSummaryBinding() {
         return BindingBuilder.bind(tasksQueue())
                 .to(tasksExchange())
-                .with(TASK_TYPE_PREFIX + "BATCH_GENERATE_SUMMARY"); // 使用与生产者一致的路由键
+                .with(TASK_TYPE_PREFIX + "BATCH_GENERATE_SUMMARY");
     }
     
     /**
      * 创建批量生成场景任务类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
      */
     @Bean
     public Binding batchGenerateSceneBinding() {
         return BindingBuilder.bind(tasksQueue())
                 .to(tasksExchange())
-                .with(TASK_TYPE_PREFIX + "BATCH_GENERATE_SCENE"); // 使用实际的任务类型字符串
+                .with(TASK_TYPE_PREFIX + "BATCH_GENERATE_SCENE");
+    }
+    
+    /**
+     * 创建续写内容任务类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
+     */
+    @Bean
+    public Binding continueWritingContentBinding() {
+        return BindingBuilder.bind(tasksQueue())
+                .to(tasksExchange())
+                .with(TASK_TYPE_PREFIX + "CONTINUE_WRITING_CONTENT");
+    }
+    
+    /**
+     * 创建生成下一章摘要任务类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
+     */
+    @Bean
+    public Binding generateNextSummariesOnlyBinding() {
+        return BindingBuilder.bind(tasksQueue())
+                .to(tasksExchange())
+                .with(TASK_TYPE_PREFIX + "GENERATE_NEXT_SUMMARIES_ONLY");
+    }
+
+    @Bean
+    public Binding generateSingleChapterOnlyBinding() {
+        return BindingBuilder.bind(tasksQueue())
+                .to(tasksExchange())
+                .with(TASK_TYPE_PREFIX + "GENERATE_SINGLE_CHAPTER");
+    }
+
+    
+    /**
+     * 创建生成单个摘要任务类型的绑定 (子任务)
+     * (冗余，已被 allTasksBinding 覆盖)
+     */
+    @Bean
+    public Binding generateSingleSummaryBinding() {
+        return BindingBuilder.bind(tasksQueue())
+                .to(tasksExchange())
+                .with(TASK_TYPE_PREFIX + "GENERATE_SINGLE_SUMMARY"); // 添加这个子任务的绑定(虽然冗余)
     }
 } 

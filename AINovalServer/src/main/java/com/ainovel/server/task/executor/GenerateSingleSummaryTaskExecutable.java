@@ -58,184 +58,118 @@ public class GenerateSingleSummaryTaskExecutable implements BackgroundTaskExecut
 
         // 要生成的章节标题
         String chapterTitle = "第" + chapterOrder + "章";
-
-        return novelService.findNovelById(novelId)
-            .switchIfEmpty(Mono.error(new IllegalArgumentException("找不到小说: " + novelId)))
-            .flatMap(novel -> {
-                // 构建生成摘要请求
-                GenerateSceneFromSummaryRequest.GenerateSceneFromSummaryRequestBuilder requestBuilder = GenerateSceneFromSummaryRequest.builder()
-                        .summary(contextContent) // 将上下文内容作为摘要输入
-                        .chapterId(null); // 不指定章节ID
-                
-                // 在构建器上添加style指令
-                String styleInstruction = "生成下一章节的摘要，章节标题：" + chapterTitle;
-                // 假设GenerateSceneFromSummaryRequest有一个style方法
-                try {
-                    // 尝试使用反射查找style方法
-                    java.lang.reflect.Method styleMethod = requestBuilder.getClass().getMethod("style", String.class);
-                    styleMethod.invoke(requestBuilder, styleInstruction);
-                } catch (Exception e) {
-                    log.warn("无法设置style指令，将使用默认方式: {}", e.getMessage());
-                }
-                
-                GenerateSceneFromSummaryRequest request = requestBuilder.build();
-
-                // 调用AI服务生成摘要
-                return novelAIService.generateSceneFromSummary(context.getUserId(), novelId, request)
-                    .switchIfEmpty(Mono.error(new RuntimeException("生成章节摘要失败")))
-                    .flatMap(response -> {
-                        // 从响应中获取内容，作为摘要 
-                        return getSummaryFromResponse(response)
-                            .flatMap(generatedSummary -> {
-                                log.info("生成章节摘要成功，小说ID: {}，章节序号: {}, 摘要内容前100字: {}", 
-                                        novelId, chapterOrder, generatedSummary.substring(0, Math.min(100, generatedSummary.length())));
-
-                                // 创建新章节并添加到小说中
-                                return addChapterToNovel(novel, chapterOrder, chapterTitle, generatedSummary)
-                                    .flatMap(newChapterId -> {
-                                        // 如果还有下一章需要生成，提交下一个子任务
-                                        if (context.getParentTaskId() != null) {
-                                            return getParentTaskParameters(context.getParentTaskId())
-                                                .flatMap(parentParams -> {
-                                                    int nextChapterIndex = chapterIndex + 1;
-                                                    if (nextChapterIndex < parentParams.getNumberOfChapters()) {
-                                                        log.info("准备生成下一章摘要，小说ID: {}，下一章序号: {}", novelId, chapterOrder + 1);
-                                                        
-                                                        // 更新父任务进度
-                                                        GenerateNextSummariesOnlyProgress progress = new GenerateNextSummariesOnlyProgress();
-                                                        progress.setTotal(parentParams.getNumberOfChapters());
-                                                        progress.setCompleted(nextChapterIndex);
-                                                        progress.setFailed(0);
-                                                        progress.setCurrentIndex(nextChapterIndex);
-                                                        
-                                                        return updateParentProgress(context.getParentTaskId(), progress)
-                                                            .then(Mono.defer(() -> {
-                                                                // 创建下一章参数
-                                                                GenerateSingleSummaryParameters nextChapterParams = GenerateSingleSummaryParameters.builder()
-                                                                        .novelId(novelId)
-                                                                        .chapterIndex(nextChapterIndex)
-                                                                        .chapterOrder(chapterOrder + 1)
-                                                                        .aiConfigIdSummary(parentParams.getAiConfigIdSummary())
-                                                                        .context(contextContent + "\n\n" + chapterTitle + ": " + generatedSummary)
-                                                                        .previousSummary(generatedSummary)
-                                                                        .build();
-                                                                
-                                                                // 提交下一章子任务
-                                                                return context.submitSubTask("GENERATE_SINGLE_SUMMARY", nextChapterParams)
-                                                                    .doOnNext(taskId -> 
-                                                                        log.info("已提交生成下一章摘要的子任务，父任务ID: {}，子任务ID: {}", 
-                                                                                context.getParentTaskId(), taskId))
-                                                                    .then();
-                                                            }));
-                                                    }
-                                                    return Mono.empty();
-                                                })
-                                                .then(Mono.just(newChapterId));
-                                        }
-                                        return Mono.just(newChapterId);
-                                    })
-                                    .map(newChapterId -> {
-                                        // 返回当前章节的生成结果
-                                        return GenerateSingleSummaryResult.builder()
-                                                .newChapterId(newChapterId)
-                                                .summary(generatedSummary)
-                                                .chapterIndex(chapterIndex)
-                                                .chapterTitle(chapterTitle)
-                                                .build();
-                                    });
-                            });
-                    });
+        
+        return Mono.just(context.getUserId())
+            .flatMap(userId -> {
+                // 调用NovelAIService生成摘要
+                return novelAIService.generateNextSingleSummary(
+                    userId,
+                    novelId,
+                    contextContent,
+                    aiConfigId,
+                    null // 暂不提供写作风格
+                )
+                .flatMap(generatedSummary -> {
+                    log.info("章节摘要生成成功，小说ID: {}，章节序号: {}，摘要长度: {}", 
+                        novelId, chapterOrder, generatedSummary.length());
+                    
+                    // 创建新章节
+                    return createNewChapter(novelId, chapterTitle, generatedSummary, chapterOrder)
+                        .flatMap(newChapterId -> {
+                            // 构建结果
+                            GenerateSingleSummaryResult result = GenerateSingleSummaryResult.builder()
+                                .novelId(novelId)
+                                .chapterId(newChapterId)
+                                .summary(generatedSummary)
+                                .chapterIndex(chapterIndex)
+                                .chapterOrder(chapterOrder)
+                                .chapterTitle(chapterTitle)
+                                .build();
+                            
+                            // 如果是批量任务的一部分，检查是否需要提交下一个任务
+                            if (parameters.getTotalChapters() != null && 
+                                chapterIndex < parameters.getTotalChapters() - 1) {
+                                
+                                // 构建下一个章节的上下文（当前上下文+新生成的摘要）
+                                String nextContext = contextContent;
+                                if (nextContext != null && !nextContext.isEmpty()) {
+                                    nextContext += "\n\n";
+                                }
+                                nextContext += "第" + chapterOrder + "章: " + generatedSummary;
+                                
+                                // 创建下一个章节的参数
+                                GenerateSingleSummaryParameters nextParams = GenerateSingleSummaryParameters.builder()
+                                    .novelId(novelId)
+                                    .chapterIndex(chapterIndex + 1)
+                                    .chapterOrder(chapterOrder + 1)
+                                    .aiConfigIdSummary(aiConfigId)
+                                    .context(nextContext)
+                                    .previousSummary(generatedSummary)
+                                    .totalChapters(parameters.getTotalChapters())
+                                    .parentTaskId(parameters.getParentTaskId())
+                                    .build();
+                                
+                                // 提交下一个子任务
+                                log.info("提交下一个摘要生成子任务，小说ID: {}，章节序号: {}", 
+                                    novelId, chapterOrder + 1);
+                                    
+                                return context.submitSubTask("GENERATE_SINGLE_SUMMARY", nextParams)
+                                    .thenReturn(result);
+                            }
+                            
+                            return Mono.just(result);
+                        });
+                })
+                .onErrorResume(e -> {
+                    log.error("生成章节摘要失败，小说ID: {}，章节序号: {}, 错误: {}", 
+                        novelId, chapterOrder, e.getMessage(), e);
+                    return Mono.error(
+                        new RuntimeException("生成章节摘要失败: " + e.getMessage(), e)
+                    );
+                });
             });
     }
-
+    
     /**
-     * 从响应中提取摘要内容
+     * 创建新章节并添加到小说结构中
      */
-    private Mono<String> getSummaryFromResponse(GenerateSceneFromSummaryResponse response) {
-        try {
-            // 尝试使用getContent方法
-            String summary = response.getContent();
-            if (summary != null && !summary.isEmpty()) {
-                return Mono.just(summary);
-            }
-        } catch (Exception ignored) {
-            // 忽略异常，尝试下一种方法
-        }
-        
-        try {
-            // 尝试使用getGeneratedContent方法
-            java.lang.reflect.Method getContentMethod = response.getClass().getMethod("getGeneratedContent");
-            String summary = (String) getContentMethod.invoke(response);
-            if (summary != null && !summary.isEmpty()) {
-                return Mono.just(summary);
-            }
-            log.error("无法获取生成的内容: 内容为空");
-            return Mono.error(new RuntimeException("无法获取生成的内容"));
-        } catch (Exception ex) {
-            log.error("无法获取生成的内容: {}", ex.getMessage());
-            return Mono.error(new RuntimeException("无法获取生成的内容"));
-        }
-    }
-
-    /**
-     * 获取父任务参数
-     */
-    private Mono<GenerateNextSummariesOnlyParameters> getParentTaskParameters(String parentTaskId) {
-        return taskStateService.getTask(parentTaskId)
-            .filter(task -> task.getParameters() instanceof GenerateNextSummariesOnlyParameters)
-            .map(task -> (GenerateNextSummariesOnlyParameters) task.getParameters());
-    }
-
-    /**
-     * 更新父任务进度
-     */
-    private Mono<Void> updateParentProgress(String parentTaskId, GenerateNextSummariesOnlyProgress progress) {
-        return taskStateService.recordProgress(parentTaskId, progress);
-    }
-
-    /**
-     * 将新章节添加到小说中
-     */
-    private Mono<String> addChapterToNovel(Novel novel, int chapterOrder, String chapterTitle, String summary) {
-        String chapterId = UUID.randomUUID().toString();
-        
-        // 创建新章节
-        Chapter newChapter = new Chapter();
-        newChapter.setId(chapterId);
-        newChapter.setTitle(chapterTitle);
-        newChapter.setDescription(summary);
-        newChapter.setOrder(chapterOrder);
-        newChapter.setSceneIds(new ArrayList<>());
-        
-        // 找到最后一个Act，将新章节添加到其中
-        // 如果没有Act，则创建一个新的
-        if (novel.getStructure() == null) {
-            novel.setStructure(new Novel.Structure());
-        }
-        
-        List<Act> acts = novel.getStructure().getActs();
-        if (acts == null || acts.isEmpty()) {
-            Act act = new Act();
-            act.setId(UUID.randomUUID().toString());
-            act.setTitle("第一卷");
-            act.setOrder(1);
-            act.setChapters(new ArrayList<>());
-            acts = new ArrayList<>();
-            acts.add(act);
-            novel.getStructure().setActs(acts);
-        }
-        
-        // 获取最后一个Act
-        Act lastAct = acts.get(acts.size() - 1);
-        if (lastAct.getChapters() == null) {
-            lastAct.setChapters(new ArrayList<>());
-        }
-        
-        // 添加新章节到最后一个Act
-        lastAct.getChapters().add(newChapter);
-        
-        // 更新小说
-        return novelService.updateNovel(novel.getId(), novel)
-            .thenReturn(chapterId);
+    private Mono<String> createNewChapter(String novelId, String title, String summary, int order) {
+        return novelService.findNovelById(novelId)
+            .flatMap(novel -> {
+                // 如果没有卷，先创建一个默认卷
+                if (novel.getStructure() == null || 
+                    novel.getStructure().getActs() == null || 
+                    novel.getStructure().getActs().isEmpty()) {
+                    
+                    return novelService.addAct(novelId, "第一卷", null)
+                        .flatMap(updatedNovel -> {
+                            String actId = updatedNovel.getStructure().getActs().get(0).getId();
+                            // 创建章节，使用摘要作为章节描述
+                            return novelService.addChapter(novelId, actId, title, null);
+                        });
+                } else {
+                    // 使用第一个卷添加章节
+                    String actId = novel.getStructure().getActs().get(0).getId();
+                    return novelService.addChapter(novelId, actId, title, null);
+                }
+            })
+            .map(updatedNovel -> {
+                // 找到新添加的章节
+                for (Act act : updatedNovel.getStructure().getActs()) {
+                    List<Chapter> chapters = act.getChapters();
+                    if (chapters != null && !chapters.isEmpty()) {
+                        // 查找最后一个章节或匹配章节名的章节
+                        for (Chapter chapter : chapters) {
+                            if (chapter.getTitle().equals(title)) {
+                                return chapter.getId();
+                            }
+                        }
+                        // 如果没找到匹配的，则返回最后一个
+                        return chapters.get(chapters.size() - 1).getId();
+                    }
+                }
+                // 如果未找到章节，抛出异常
+                throw new RuntimeException("无法找到新创建的章节");
+            });
     }
 } 

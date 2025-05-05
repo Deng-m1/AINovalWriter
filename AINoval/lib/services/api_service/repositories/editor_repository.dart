@@ -1,4 +1,3 @@
-
 import 'package:ainoval/models/editor_content.dart';
 import 'package:ainoval/models/novel_structure.dart';
 
@@ -114,4 +113,47 @@ abstract class EditorRepository {
     String summary, 
     {String? chapterId, String? styleInstructions}
   );
+
+  /// 获取小说详情，包含场景摘要（适用于Plan视图）
+  Future<Novel?> getNovelWithSceneSummaries(String novelId);
+
+  /// 提交自动续写任务
+  /// 
+  /// [novelId] 小说ID
+  /// [numberOfChapters] 续写章节数
+  /// [aiConfigIdSummary] 摘要模型配置ID
+  /// [aiConfigIdContent] 内容模型配置ID
+  /// [startContextMode] 上下文模式，可选值: AUTO, LAST_N_CHAPTERS, CUSTOM
+  /// [contextChapterCount] 上下文章节数，仅当startContextMode为LAST_N_CHAPTERS时有效
+  /// [customContext] 自定义上下文，仅当startContextMode为CUSTOM时有效
+  /// [writingStyle] 写作风格提示，可选
+  /// 
+  /// 返回提交的任务ID
+  Future<String> submitContinueWritingTask({
+    required String novelId,
+    required int numberOfChapters,
+    required String aiConfigIdSummary,
+    required String aiConfigIdContent,
+    required String startContextMode,
+    int? contextChapterCount,
+    String? customContext,
+    String? writingStyle,
+  });
+
+  /// 删除场景
+  Future<Novel?> deleteScene(
+    String novelId,
+    String actId,
+    String chapterId,
+    String sceneId,
+  );
+
+  /// 删除章节
+  Future<Novel?> deleteChapter(
+    String novelId,
+    String actId,
+    String chapterId,
+  );
+
+  /// 将后端返回的带场景摘要的小说数据转换为前端模型
 }

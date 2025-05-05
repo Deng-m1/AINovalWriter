@@ -1585,4 +1585,58 @@ class ApiClient {
       throw ApiException(-1, '归档小说失败: ${e.toString()}');
     }
   }
+
+  /// 删除场景
+  Future<Map<String, dynamic>?> deleteScene(
+    String novelId,
+    String actId,
+    String chapterId,
+    String sceneId,
+  ) async {
+    try {
+      final data = {
+        'novelId': novelId,
+        'actId': actId,
+        'chapterId': chapterId,
+        'sceneId': sceneId,
+      };
+      
+      final response = await _dio.post(
+        '/novels/delete-scene',
+        data: data,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '删除场景失败: $novelId', e);
+      throw ApiException(-1, '删除场景失败: ${e.toString()}');
+    }
+  }
+
+  /// 删除章节
+  Future<Map<String, dynamic>?> deleteChapter(
+    String novelId,
+    String actId,
+    String chapterId,
+  ) async {
+    try {
+      final data = {
+        'novelId': novelId,
+        'actId': actId,
+        'chapterId': chapterId,
+      };
+      
+      final response = await _dio.post(
+        '/novels/delete-chapter',
+        data: data,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '删除章节失败: $novelId, $chapterId', e);
+      throw ApiException(-1, '删除章节失败: ${e.toString()}');
+    }
+  }
 }

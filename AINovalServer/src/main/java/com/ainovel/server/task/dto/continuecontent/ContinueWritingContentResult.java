@@ -1,10 +1,8 @@
 package com.ainovel.server.task.dto.continuecontent;
 
-import com.ainovel.server.domain.model.Novel.Chapter;
-import lombok.AllArgsConstructor;
+import com.ainovel.server.task.model.TaskStatus;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 import java.util.List;
 
@@ -13,37 +11,35 @@ import java.util.List;
  */
 @Data
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
 public class ContinueWritingContentResult {
     
     /**
      * 生成的章节列表
      */
-    private List<Chapter> generatedChapters;
+    private List<String> newChapterIds;
     
     /**
-     * 任务是否成功完成
+     * 成功生成的摘要数量
      */
-    private boolean success;
+    private int summariesGeneratedCount;
     
     /**
-     * 错误信息（如果有）
+     * 成功生成的内容数量
      */
-    private String errorMessage;
+    private int contentGeneratedCount;
     
     /**
-     * 任务当前状态
+     * 失败的章节数量
      */
-    private String status;
+    private int failedChaptersCount;
     
     /**
-     * 当前阶段已完成的章节数量
+     * 任务最终状态
      */
-    private int completedChapters;
+    private TaskStatus status;
     
     /**
-     * 总章节数量
+     * 最后一次错误信息（如果有）
      */
-    private int totalChapters;
+    private String lastErrorMessage;
 } 
