@@ -48,6 +48,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import org.springframework.util.StringUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 小说控制器
@@ -861,5 +863,48 @@ public class NovelController extends ReactiveBaseController {
     @PostMapping("/update-word-count")
     public Mono<Novel> updateNovelWordCount(@RequestBody IdDto idDto) {
         return novelService.updateNovelWordCount(idDto.getId());
+    }
+
+    @PostMapping("/update-last-edited-chapter")
+    public Mono<Void> updateLastEditedChapter(@RequestBody Map<String, String> requestData) {
+        String novelId = requestData.get("novelId");
+        String chapterId = requestData.get("chapterId");
+        
+        if (StringUtils.isEmpty(novelId) || StringUtils.isEmpty(chapterId)) {
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "小说ID和章节ID不能为空"));
+        }
+        
+        log.info("更新小说最后编辑章节ID: novelId={}, chapterId={}", novelId, chapterId);
+        return novelService.updateLastEditedChapter(novelId, chapterId)
+                .then();
+    }
+    
+    @PostMapping("/update-word-counts")
+    public Mono<Novel> updateNovelWordCounts(@RequestBody Map<String, Object> requestData) {
+        String novelId = (String) requestData.get("novelId");
+        
+        if (StringUtils.isEmpty(novelId)) {
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "小说ID不能为空"));
+        }
+        
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Integer> sceneWordCounts = (Map<String, Integer>) requestData.get("sceneWordCounts");
+            
+            if (sceneWordCounts == null || sceneWordCounts.isEmpty()) {
+                return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "场景字数数据不能为空"));
+            }
+            
+            log.info("批量更新小说字数统计: novelId={}, 场景数量={}", novelId, sceneWordCounts.size());
+            
+            // 这里需要先实现批量更新场景字数的service方法
+            return Mono.just(sceneWordCounts.entrySet())
+                    .flatMapMany(Flux::fromIterable)
+                    .flatMap(entry -> sceneService.updateSceneWordCount(entry.getKey(), entry.getValue()))
+                    .then(novelService.updateNovelWordCount(novelId));
+        } catch (Exception e) {
+            log.error("更新小说字数统计失败", e);
+            return Mono.error(new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新小说字数统计失败: " + e.getMessage()));
+        }
     }
 }

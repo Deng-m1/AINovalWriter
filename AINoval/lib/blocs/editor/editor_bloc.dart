@@ -610,7 +610,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         final sceneSummary =
             chapter.scenes.firstWhere((s) => s.id == event.sceneId).summary;
 
-        // 保存场景内容
+        // 保存场景内容 - 使用细粒度更新方法
         final updatedScene = await repository.saveSceneContent(
           event.novelId,
           event.actId,
@@ -633,8 +633,14 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         AppLogger.i('EditorBloc',
             '场景保存成功，更新状态 - 场景ID: ${event.sceneId}, 最终字数: ${updatedScene.wordCount}');
 
-        // 保存小说，包括lastEditedChapterId更新
-        await repository.saveNovel(finalNovel);
+        // 如果lastEditedChapterId发生变化，使用细粒度更新方法
+        if (finalNovel.lastEditedChapterId != currentState.novel.lastEditedChapterId) {
+          AppLogger.i('EditorBloc', '更新最后编辑章节ID: ${finalNovel.lastEditedChapterId}');
+          await repository.updateLastEditedChapterId(
+            finalNovel.id, 
+            finalNovel.lastEditedChapterId ?? ''
+          );
+        }
 
         emit(currentState.copyWith(
           novel: finalNovel,
@@ -642,11 +648,6 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           isSaving: false,
           lastSaveTime: DateTime.now(),
         ));
-
-        if (finalNovel.lastEditedChapterId != currentState.novel.lastEditedChapterId) {
-          AppLogger.i('EditorBloc',
-              '已更新最后编辑章节ID: ${finalNovel.lastEditedChapterId}');
-        }
       } catch (e) {
         AppLogger.e('Blocs/editor/editor_bloc', '保存场景内容失败', e);
         emit(currentState.copyWith(
@@ -722,16 +723,18 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           // 更新小说
           _novel = updatedNovel.copyWith(acts: updatedActs);
 
-          // 保存小说，包括lastEditedChapterId更新
-          await repository.saveNovel(_novel!);
+          // 使用细粒度更新方法更新lastEditedChapterId
+          if (_novel!.lastEditedChapterId != currentState.novel.lastEditedChapterId) {
+            AppLogger.i('EditorBloc',
+                '使用细粒度更新最后编辑章节ID: ${_novel!.lastEditedChapterId} (不触发UI重建)');
+            await repository.updateLastEditedChapterId(
+              _novel!.id, 
+              _novel!.lastEditedChapterId ?? ''
+            );
+          }
 
           _isDirty = false;
           _lastSaveTime = DateTime.now();
-
-          if (_novel!.lastEditedChapterId != currentState.novel.lastEditedChapterId) {
-            AppLogger.i('EditorBloc',
-                '已更新最后编辑章节ID: ${_novel!.lastEditedChapterId} (不触发UI重建)');
-          }
         } catch (e) {
           AppLogger.e('Blocs/editor/editor_bloc', '保存摘要失败', e);
         }
@@ -795,8 +798,15 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           updatedAt: DateTime.now(),
         );
 
-        // 保存小说，包括lastEditedChapterId更新
-        await repository.saveNovel(finalNovel);
+        // 使用细粒度更新方法更新lastEditedChapterId
+        if (finalNovel.lastEditedChapterId != currentState.novel.lastEditedChapterId) {
+          AppLogger.i('EditorBloc',
+              '使用细粒度更新最后编辑章节ID: ${finalNovel.lastEditedChapterId}');
+          await repository.updateLastEditedChapterId(
+            finalNovel.id, 
+            finalNovel.lastEditedChapterId ?? ''
+          );
+        }
 
         // 保存成功后，更新状态为已保存
         emit((state as EditorLoaded).copyWith(
@@ -805,11 +815,6 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           isSaving: false,
           lastSaveTime: DateTime.now(),
         ));
-
-        if (finalNovel.lastEditedChapterId != currentState.novel.lastEditedChapterId) {
-          AppLogger.i('EditorBloc',
-              '已更新最后编辑章节ID: ${finalNovel.lastEditedChapterId}');
-        }
       } catch (e) {
         AppLogger.e('Blocs/editor/editor_bloc', '保存摘要失败', e);
         emit((state as EditorLoaded).copyWith(
@@ -897,9 +902,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           activeSceneId: event.sceneId,
         ));
 
-        // 在用户选择新场景时，自动保存lastEditedChapterId的更新
+        // 在用户选择新场景时，使用细粒度更新方法更新lastEditedChapterId
         try {
-          await repository.saveNovel(updatedNovel);
+          await repository.updateLastEditedChapterId(updatedNovel.id, event.chapterId);
           // 不需要额外的emit状态更新操作，因为这不影响UI
         } catch (e) {
           AppLogger.e('Blocs/editor/editor_bloc',
@@ -1249,7 +1254,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
 
     // 创建新计时器，3秒后自动保存
     _autoSaveTimer = Timer(const Duration(seconds: 3), () {
-      add(const SaveContent());
+      // 使用优化后的自动保存方法替代SaveContent事件
+      _optimizedAutoSave();
       _autoSaveTimer = null;
     });
   }
@@ -1622,11 +1628,19 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
               : currentState.activeActId,
         ));
 
-        // 4. 保存更新后的小说数据 (这应该会处理后端删除)
-        final saveResult = await repository.saveNovel(updatedNovel);
+        // 4. 使用细粒度更新方法删除场景并更新小说结构
+        final bool deleteSuccess = await repository.deleteScene(
+          event.novelId,
+          event.actId,
+          event.chapterId,
+          event.sceneId,
+        );
+        
+        // 5. 使用细粒度更新方法更新小说结构
+        final bool saveResult = await repository.updateNovelStructure(updatedNovel);
 
-        if (saveResult) {
-          // 5. 保存成功，更新最终状态
+        if (deleteSuccess && saveResult) {
+          // 6. 保存成功，更新最终状态
           emit((state as EditorLoaded).copyWith(
             isDirty: false,
             isSaving: false,
@@ -1636,7 +1650,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           AppLogger.i('Blocs/editor/editor_bloc',
               'Scene 删除成功并已保存, ID: ${event.sceneId}');
         } else {
-          // 6. 保存失败
+          // 7. 保存失败
           AppLogger.e('Blocs/editor/editor_bloc', '删除 Scene 后保存小说结构失败');
           // 恢复到原始状态，并显示错误
           emit(currentState.copyWith(
@@ -2190,5 +2204,94 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     _autoSaveTimer?.cancel();
     _generationStreamSubscription?.cancel();
     return super.close();
+  }
+
+  // 批量保存多个场景内容的辅助方法
+  Future<bool> _batchSaveScenes(List<Map<String, dynamic>> sceneUpdates, String novelId) async {
+    if (sceneUpdates.isEmpty) return true;
+    
+    try {
+      final result = await repository.batchSaveSceneContents(novelId, sceneUpdates);
+      if (result) {
+        AppLogger.i('EditorBloc/_batchSaveScenes', '批量保存场景成功: ${sceneUpdates.length}个场景');
+      } else {
+        AppLogger.e('EditorBloc/_batchSaveScenes', '批量保存场景失败');
+      }
+      return result;
+    } catch (e) {
+      AppLogger.e('EditorBloc/_batchSaveScenes', '批量保存场景出错', e);
+      return false;
+    }
+  }
+
+  // 优化的自动保存方法
+  void _optimizedAutoSave() {
+    // 被修改的内容优先级：场景内容 > 摘要 > 结构 > 元数据
+    final currentState = state;
+    if (currentState is! EditorLoaded || !_isDirty) return;
+    
+    // 场景内容和摘要变更时使用批量场景更新
+    // 结构变更时使用结构更新
+    // 元数据变更时使用元数据更新
+    
+    Set<String> changedComponents = {};
+    
+    // 检测变更类型
+    if (_novel != null) {
+      // 检测元数据变更
+      if (_novel!.title != currentState.novel.title || 
+          _novel!.author?.username != currentState.novel.author?.username) {
+        changedComponents.add('metadata');
+      }
+      
+      // 检测最后编辑章节变更
+      if (_novel!.lastEditedChapterId != currentState.novel.lastEditedChapterId) {
+        changedComponents.add('lastEditedChapterId');
+      }
+      
+      // 检测Act标题变更
+      bool actTitlesChanged = false;
+      for (int i = 0; i < _novel!.acts.length && i < currentState.novel.acts.length; i++) {
+        if (_novel!.acts[i].title != currentState.novel.acts[i].title) {
+          actTitlesChanged = true;
+          break;
+        }
+      }
+      if (actTitlesChanged) {
+        changedComponents.add('actTitles');
+      }
+      
+      // 检测Chapter标题变更
+      bool chapterTitlesChanged = false;
+      for (int i = 0; i < _novel!.acts.length && i < currentState.novel.acts.length; i++) {
+        final oldAct = _novel!.acts[i];
+        final newAct = currentState.novel.acts[i];
+        for (int j = 0; j < oldAct.chapters.length && j < newAct.chapters.length; j++) {
+          if (oldAct.chapters[j].title != newAct.chapters[j].title) {
+            chapterTitlesChanged = true;
+            break;
+          }
+        }
+        if (chapterTitlesChanged) break;
+      }
+      if (chapterTitlesChanged) {
+        changedComponents.add('chapterTitles');
+      }
+    }
+    
+    // 使用智能同步方法，根据变更类型选择最优策略
+    repository.smartSyncNovel(currentState.novel, changedComponents: changedComponents)
+      .then((success) {
+        if (success) {
+          _isDirty = false;
+          _lastSaveTime = DateTime.now();
+          AppLogger.i('EditorBloc/_optimizedAutoSave', '智能同步成功，组件: $changedComponents');
+        } else {
+          AppLogger.e('EditorBloc/_optimizedAutoSave', '智能同步失败');
+        }
+      })
+      .catchError((e) {
+        AppLogger.e('EditorBloc/_optimizedAutoSave', '智能同步出错', e);
+      });
   }
 }

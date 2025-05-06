@@ -1639,4 +1639,39 @@ class ApiClient {
       throw ApiException(-1, '删除章节失败: ${e.toString()}');
     }
   }
+
+  /// 更新小说最后编辑的章节ID
+  Future<void> updateLastEditedChapter(String novelId, String chapterId) async {
+    final data = {
+      'novelId': novelId,
+      'chapterId': chapterId,
+    };
+    
+    await post('/novels/update-last-edited-chapter', data: data);
+  }
+
+  /// 批量更新场景内容
+  Future<void> updateScenesBatch(String novelId, List<Map<String, dynamic>> scenes) async {
+    final data = {
+      'novelId': novelId,
+      'scenes': scenes,
+    };
+    
+    await post('/scenes/update-batch', data: data);
+  }
+
+  /// 批量更新小说字数统计
+  Future<void> updateNovelWordCounts(String novelId, Map<String, int> sceneWordCounts) async {
+    final data = {
+      'novelId': novelId,
+      'sceneWordCounts': sceneWordCounts,
+    };
+    
+    await post('/novels/update-word-counts', data: data);
+  }
+
+  /// 更新小说结构（不包含场景内容）
+  Future<void> updateNovelStructure(Map<String, dynamic> novelStructure) async {
+    await post('/novels/update-structure', data: novelStructure);
+  }
 }

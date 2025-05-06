@@ -1,13 +1,17 @@
 package com.ainovel.server.web.controller;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.ainovel.server.domain.model.Scene;
 import com.ainovel.server.domain.model.Scene.HistoryEntry;
@@ -26,6 +30,8 @@ import com.ainovel.server.web.dto.SceneVersionCompareDto;
 import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * 场景控制器
@@ -242,5 +248,35 @@ public class SceneController extends ReactiveBaseController {
     public Mono<SceneVersionDiff> compareSceneVersions(@RequestBody SceneVersionCompareDto compareDto) {
         return sceneService.compareSceneVersions(compareDto.getId(), compareDto.getVersionIndex1(),
                 compareDto.getVersionIndex2());
+    }
+
+    @PostMapping("/update-batch")
+    public Mono<List<Scene>> updateScenesBatch(@RequestBody Map<String, Object> requestData) {
+        try {
+            String novelId = (String) requestData.get("novelId");
+            
+            if (StringUtils.isEmpty(novelId)) {
+                return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "小说ID不能为空"));
+            }
+            
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> scenes = (List<Map<String, Object>>) requestData.get("scenes");
+            
+            if (scenes == null || scenes.isEmpty()) {
+                return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "场景数据不能为空"));
+            }
+            
+            // 将Map列表转换为Scene对象列表
+            ObjectMapper mapper = new ObjectMapper();
+            List<Scene> sceneList = scenes.stream()
+                    .map(sceneMap -> mapper.convertValue(sceneMap, Scene.class))
+                    .collect(Collectors.toList());
+            
+            // 批量更新场景，返回更新后的场景列表
+            return sceneService.updateScenesBatch(sceneList);
+        } catch (Exception e) {
+            log.error("批量更新场景失败", e);
+            return Mono.error(new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "批量更新场景失败: " + e.getMessage()));
+        }
     }
 }

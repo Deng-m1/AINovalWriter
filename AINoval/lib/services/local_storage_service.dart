@@ -727,4 +727,32 @@ class LocalStorageService {
       return [];
     }
   }
+
+  /// 删除场景内容
+  Future<void> deleteSceneContent(
+    String novelId,
+    String actId,
+    String chapterId,
+    String sceneId,
+  ) async {
+    final sceneKey = '${novelId}_${actId}_${chapterId}_$sceneId';
+    try {
+      // 使用SharedPreferences删除场景内容
+      final prefs = await _ensureInitialized();
+      await prefs.remove('scene_$sceneKey');
+      
+      // 从场景索引中移除
+      final indexKey = 'scenes_index_${novelId}_${actId}_$chapterId';
+      final sceneIds = prefs.getStringList(indexKey) ?? [];
+      if (sceneIds.contains(sceneId)) {
+        sceneIds.remove(sceneId);
+        await prefs.setStringList(indexKey, sceneIds);
+      }
+      
+      AppLogger.i('LocalStorageService', '本地场景内容已删除: $sceneKey');
+    } catch (e) {
+      AppLogger.e('LocalStorageService', '删除场景内容失败: $sceneKey', e);
+      throw Exception('删除场景内容失败: $e');
+    }
+  }
 }

@@ -141,7 +141,7 @@ abstract class EditorRepository {
   });
 
   /// 删除场景
-  Future<Novel?> deleteScene(
+  Future<bool> deleteScene(
     String novelId,
     String actId,
     String chapterId,
@@ -156,4 +156,22 @@ abstract class EditorRepository {
   );
 
   /// 将后端返回的带场景摘要的小说数据转换为前端模型
+
+  /// 更新小说最后编辑的章节ID（细粒度更新）
+  Future<bool> updateLastEditedChapterId(String novelId, String chapterId);
+
+  /// 批量更新小说字数统计（细粒度更新）
+  Future<bool> updateNovelWordCounts(String novelId, Map<String, int> sceneWordCounts);
+
+  /// 智能同步小说（根据变更类型选择最优同步策略）
+  Future<bool> smartSyncNovel(Novel novel, {Set<String>? changedComponents});
+
+  /// 仅更新小说结构（不包含场景内容）
+  Future<bool> updateNovelStructure(Novel novel);
+
+  /// 批量保存场景内容（优化网络请求数量）
+  Future<bool> batchSaveSceneContents(
+    String novelId,
+    List<Map<String, dynamic>> sceneUpdates
+  );
 }
