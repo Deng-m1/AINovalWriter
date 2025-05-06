@@ -95,6 +95,11 @@ class EditorScreenController extends ChangeNotifier {
   // 用于滚动事件的节流控制
   DateTime? _lastScrollProcessTime;
 
+  // 添加摘要加载状态管理
+  bool _isLoadingSummaries = false;
+  DateTime? _lastSummaryLoadTime;
+  static const Duration _summaryLoadThrottleInterval = Duration(seconds: 60); // 1分钟内不重复加载
+
   // 初始化方法
   void _init() {
     // 创建必要的实例
@@ -1014,10 +1019,27 @@ class EditorScreenController extends ChangeNotifier {
     super.dispose();
   }
 
-  // 加载所有场景摘要
+  /// 加载所有场景摘要
   void loadAllSceneSummaries() {
-    AppLogger.i('EditorScreenController', '加载所有场景摘要');
-
+    // 防止重复加载，添加节流控制
+    final now = DateTime.now();
+    if (_isLoadingSummaries) {
+      AppLogger.i('EditorScreenController', '正在加载摘要，跳过重复请求');
+      return;
+    }
+    
+    if (_lastSummaryLoadTime != null && 
+        now.difference(_lastSummaryLoadTime!) < _summaryLoadThrottleInterval) {
+      AppLogger.i('EditorScreenController', 
+          '摘要加载过于频繁，上次加载时间: ${_lastSummaryLoadTime!.toString()}, 跳过此次请求');
+      return;
+    }
+    
+    _isLoadingSummaries = true;
+    _lastSummaryLoadTime = now;
+    
+    AppLogger.i('EditorScreenController', '开始加载所有场景摘要');
+    
     // 使用带有场景摘要的API直接加载完整小说数据
     editorRepository.getNovelWithSceneSummaries(novel.id).then((novelWithSummaries) {
       if (novelWithSummaries != null) {
@@ -1035,6 +1057,9 @@ class EditorScreenController extends ChangeNotifier {
       }
     }).catchError((error) {
       AppLogger.e('EditorScreenController', '加载所有场景摘要出错', error);
+    }).whenComplete(() {
+      // 无论成功失败，完成后更新状态
+      _isLoadingSummaries = false;
     });
   }
 }

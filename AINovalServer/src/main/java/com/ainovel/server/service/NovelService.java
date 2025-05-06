@@ -5,6 +5,8 @@ import java.util.Map;
 
 import com.ainovel.server.domain.model.Character;
 import com.ainovel.server.domain.model.Novel;
+import com.ainovel.server.domain.model.Novel.Act;
+import com.ainovel.server.domain.model.Novel.Chapter;
 import com.ainovel.server.domain.model.Scene;
 import com.ainovel.server.domain.model.Setting;
 import com.ainovel.server.web.dto.CreatedChapterInfo;
@@ -322,4 +324,44 @@ public interface NovelService {
      * @return 更新后的小说 Mono<Novel>
      */
     Mono<Novel> deleteChapter(String novelId, String actId, String chapterId);
+
+    /**
+     * 细粒度添加卷 - 只提供必要信息，不传整个结构
+     *
+     * @param novelId    小说ID
+     * @param title      卷标题
+     * @param description 卷描述 (可为null)
+     * @return 新创建的卷信息
+     */
+    Mono<Act> addActFine(String novelId, String title, String description);
+
+    /**
+     * 细粒度添加章节 - 只提供必要信息，不传整个结构
+     *
+     * @param novelId    小说ID
+     * @param actId      卷ID
+     * @param title      章节标题
+     * @param description 章节描述 (可为null)
+     * @return 新创建的章节信息
+     */
+    Mono<Chapter> addChapterFine(String novelId, String actId, String title, String description);
+
+    /**
+     * 细粒度删除卷 - 只提供ID，不传整个结构
+     *
+     * @param novelId    小说ID
+     * @param actId      卷ID
+     * @return 操作是否成功
+     */
+    Mono<Boolean> deleteActFine(String novelId, String actId);
+
+    /**
+     * 细粒度删除章节 - 只提供ID，不传整个结构
+     *
+     * @param novelId    小说ID
+     * @param actId      卷ID
+     * @param chapterId  章节ID
+     * @return 操作是否成功
+     */
+    Mono<Boolean> deleteChapterFine(String novelId, String actId, String chapterId);
 }

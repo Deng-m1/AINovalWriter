@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:ainoval/blocs/editor/editor_bloc.dart' as editor_bloc;
 import 'package:ainoval/screens/editor/widgets/selection_toolbar.dart';
@@ -25,6 +26,7 @@ import 'package:ainoval/screens/editor/widgets/menu_builder.dart';
 /// [controller] 场景内容编辑控制器
 /// [summaryController] 场景摘要编辑控制器
 /// [editorBloc] 编辑器状态管理
+/// [onContentChanged] 内容变更回调
 class SceneEditor extends StatefulWidget {
   const SceneEditor({
     super.key,
@@ -38,6 +40,7 @@ class SceneEditor extends StatefulWidget {
     required this.controller,
     required this.summaryController,
     required this.editorBloc,
+    this.onContentChanged, // 添加回调函数
   });
   final String title;
   final String wordCount;
@@ -49,6 +52,8 @@ class SceneEditor extends StatefulWidget {
   final QuillController controller;
   final TextEditingController summaryController;
   final editor_bloc.EditorBloc editorBloc;
+  // 添加内容变更回调
+  final Function(String content, int wordCount, {bool syncToServer})? onContentChanged;
 
   @override
   State<SceneEditor> createState() => _SceneEditorState();
@@ -79,6 +84,14 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
   // 添加一个延迟初始化标志
   bool _isEditorFullyInitialized = false;
 
+  // 添加防抖处理
+  String _pendingContent = '';
+  String _lastSavedContent = ''; // 添加最后保存的内容，用于比较变化
+  DateTime _lastChangeTime = DateTime.now(); // 添加最后变更时间
+  int _pendingWordCount = 0;
+  Timer? _syncTimer;
+  final int _minorChangeThreshold = 5; // 定义微小改动的字符数阈值
+
   @override
   void initState() {
     super.initState();
@@ -102,6 +115,9 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
     
     // 监听EditorBloc状态变化，确保摘要控制器内容与模型保持同步
     _setupBlocListener();
+    
+    // 初始化最后保存的内容
+    _lastSavedContent = widget.controller.document.toPlainText();
     
     // 延迟完整初始化，优先显示基础UI
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -224,51 +240,137 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
 
     // 使用防抖动机制，避免频繁发送保存请求
     _contentDebounceTimer?.cancel();
-    _contentDebounceTimer = Timer(const Duration(milliseconds: 350), () {
-      // 缩短为350毫秒防抖，在打字暂停时快速响应
-      _saveContent();
+    _contentDebounceTimer = Timer(const Duration(milliseconds: 800), () {
+      // 延长为800毫秒防抖，更好地应对快速输入
+      _onTextChanged(text);
     });
   }
 
-  // 保存内容的方法
-  void _saveContent() {
-    if (mounted &&
-        widget.actId != null &&
-        widget.chapterId != null &&
-        widget.sceneId != null) {
-      try {
-        // 获取Delta JSON并确保使用正确格式
-        final deltaJson = widget.controller.document.toDelta().toJson();
-        String jsonStr;
-        
-        // 确保保存的是包含ops字段的JSON对象格式
-        if (deltaJson is List) {
-          jsonStr = jsonEncode({"ops": deltaJson});
-        } else {
-          jsonStr = jsonEncode(deltaJson);
-        }
-        
-        // 计算新的字数统计
-        final text = widget.controller.document.toPlainText();
-        final wordCount = WordCountAnalyzer.countWords(text);
-
-        // 添加日志以便调试
-        AppLogger.i(
-            'SceneEditor', '保存场景: ${widget.sceneId} 内容已更新, 字数: $wordCount');
-
-        widget.editorBloc.add(editor_bloc.UpdateSceneContent(
+  // 添加防抖处理
+  void _onTextChanged(String newText) {
+    // 计算字数 
+    final wordCount = WordCountAnalyzer.countWords(newText);
+    
+    // 判断是否为微小改动
+    final bool isMinorChange = _isMinorTextChange(newText);
+    
+    // 记录变动信息
+    AppLogger.v('SceneEditor', '文本变更 - 字数: $wordCount, 是否微小改动: $isMinorChange');
+    
+    // 保存到本地变量，避免立即更新
+    _pendingContent = newText;
+    _pendingWordCount = wordCount;
+    _lastChangeTime = DateTime.now();
+    
+    // 如果是微小改动，直接使用UpdateSceneContent事件，标记为微小改动
+    // 这样EditorBloc可以智能决定UI刷新策略
+    if (widget.actId != null && widget.chapterId != null && widget.sceneId != null) {
+      widget.editorBloc.add(
+        editor_bloc.UpdateSceneContent(
           novelId: widget.editorBloc.novelId,
           actId: widget.actId!,
           chapterId: widget.chapterId!,
           sceneId: widget.sceneId!,
-          content: jsonStr,
-          wordCount: wordCount.toString(), // 添加字数统计
-          shouldRebuild: true, // 始终为true，确保UI会被更新
-        ));
-      } catch (e, stackTrace) {
-        AppLogger.e(
-            'SceneEditor', '更新场景内容失败: ${widget.sceneId}', e, stackTrace);
-      }
+          content: _pendingContent,
+          wordCount: _pendingWordCount.toString(),
+          isMinorChange: isMinorChange, // 传递是否为微小改动的标志
+        ),
+      );
+    }
+    
+    // 无论是否为微小改动，都更新最后保存的内容
+    _lastSavedContent = newText;
+    
+    // 重置防抖计时器 - 连续输入时只触发一次保存
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+    _debounceTimer = Timer(const Duration(seconds: 2), () {
+      // 等待2秒再保存本地，这样可以减少本地保存频率
+      _saveLocalOnly();
+    });
+    
+    // 设置同步计时器 - 每8秒同步一次到服务器
+    if (_syncTimer == null || !_syncTimer!.isActive) {
+      _syncTimer = Timer(const Duration(seconds: 8), () {
+        _syncToServer();
+      });
+    }
+  }
+  
+  // 检测是否为微小文本改动
+  bool _isMinorTextChange(String newText) {
+    if (_lastSavedContent.isEmpty) return false;
+    
+    // 1. 检查变化的字符数
+    final int lengthDiff = (newText.length - _lastSavedContent.length).abs();
+    
+    // 2. 计算编辑距离 (简化版 - 仅考虑长度变化)
+    // 对于完整的编辑距离(Levenshtein)需要更复杂的算法，这里简化处理
+    final int editDistance = min(lengthDiff, _minorChangeThreshold + 1);
+    
+    // 3. 检查时间间隔 (如果刚刚保存过，更可能是微小改动)
+    final timeSinceLastChange = DateTime.now().difference(_lastChangeTime);
+    final bool isRecentChange = timeSinceLastChange < const Duration(seconds: 3);
+    
+    // 4. 综合判断 (字符变化很小，或者最近刚改过且变化不大)
+    final bool isMinor = editDistance <= _minorChangeThreshold || 
+                         (isRecentChange && editDistance <= _minorChangeThreshold * 2);
+    
+    AppLogger.v('SceneEditor', '变更分析 - 字符差异: $lengthDiff, 编辑距离: $editDistance, 时间间隔: ${timeSinceLastChange.inMilliseconds}ms, 判定为${isMinor ? "微小" : "重要"}改动');
+    
+    return isMinor;
+  }
+
+  // 保存到本地
+  void _saveLocalOnly() {
+    if (widget.actId != null && widget.chapterId != null && widget.sceneId != null) {
+      // 直接调用EditorBloc保存，不触发同步
+      widget.editorBloc.add(
+        editor_bloc.SaveSceneContent(
+          novelId: widget.editorBloc.novelId,
+          actId: widget.actId!,
+          chapterId: widget.chapterId!,
+          sceneId: widget.sceneId!,
+          content: _pendingContent,
+          wordCount: _pendingWordCount.toString(),
+          localOnly: true, // 仅保存到本地
+        ),
+      );
+      
+      // 更新最后保存的内容
+      _lastSavedContent = _pendingContent;
+    } else if (widget.onContentChanged != null) {
+      // 如果提供了回调，使用回调函数
+      widget.onContentChanged!(_pendingContent, _pendingWordCount, syncToServer: false);
+      
+      // 更新最后保存的内容
+      _lastSavedContent = _pendingContent;
+    }
+  }
+  
+  // 同步到服务器
+  void _syncToServer() {
+    if (widget.actId != null && widget.chapterId != null && widget.sceneId != null) {
+      // 使用EditorBloc同步到服务器
+      widget.editorBloc.add(
+        editor_bloc.SaveSceneContent(
+          novelId: widget.editorBloc.novelId,
+          actId: widget.actId!,
+          chapterId: widget.chapterId!,
+          sceneId: widget.sceneId!,
+          content: _pendingContent,
+          wordCount: _pendingWordCount.toString(),
+          localOnly: false, // 同步到服务器
+        ),
+      );
+      
+      // 更新最后保存的内容
+      _lastSavedContent = _pendingContent;
+    } else if (widget.onContentChanged != null) {
+      // 如果提供了回调，使用回调函数
+      widget.onContentChanged!(_pendingContent, _pendingWordCount, syncToServer: true);
+      
+      // 更新最后保存的内容
+      _lastSavedContent = _pendingContent;
     }
   }
 
@@ -335,9 +437,17 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
 
   @override
   void dispose() {
+    // 页面关闭前确保同步到服务器
+    _debounceTimer?.cancel();
+    _syncTimer?.cancel();
+    
+    // 如果有待同步内容，立即同步
+    if (_pendingContent.isNotEmpty && _pendingContent != _lastSavedContent) {
+      _syncToServer();
+    }
+    
     _focusNode.removeListener(_onEditorFocusChange);
     _summaryFocusNode.removeListener(_onSummaryFocusChange);
-    _debounceTimer?.cancel();
     _contentDebounceTimer?.cancel(); // 取消内容防抖定时器
     _selectionDebounceTimer?.cancel(); // 取消选择防抖定时器
     _focusDebounceTimer?.cancel(); // 取消焦点防抖定时器

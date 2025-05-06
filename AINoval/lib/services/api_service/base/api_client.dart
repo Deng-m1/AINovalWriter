@@ -70,6 +70,18 @@ class ApiClient {
   /// 基础POST请求方法
   Future<dynamic> post(String path, {dynamic data, Options? options}) async {
     try {
+      // 添加日志记录，显示请求正文
+      AppLogger.d('ApiClient', '发送POST请求到 $path');
+      
+      if (data != null) {
+        try {
+          final String jsonData = jsonEncode(data);
+          AppLogger.d('ApiClient', '请求正文: $jsonData');
+        } catch (e) {
+          AppLogger.d('ApiClient', '请求正文(无法序列化): $data');
+        }
+      }
+      
       final response = await _dio.post(path, data: data, options: options);
       return response.data;
     } on DioException catch (e) {
@@ -1673,5 +1685,96 @@ class ApiClient {
   /// 更新小说结构（不包含场景内容）
   Future<void> updateNovelStructure(Map<String, dynamic> novelStructure) async {
     await post('/novels/update-structure', data: novelStructure);
+  }
+
+  /// 细粒度添加卷 - 只提供必要信息
+  Future<Map<String, dynamic>> addActFine(String novelId, String title, {String? description}) async {
+    final data = {
+      'novelId': novelId,
+      'title': title,
+    };
+    
+    if (description != null) {
+      data['description'] = description;
+    }
+    
+    return await post('/novels/add-act-fine', data: data);
+  }
+  
+  /// 细粒度添加章节 - 只提供必要信息
+  Future<Map<String, dynamic>> addChapterFine(String novelId, String actId, String title, {String? description}) async {
+    final data = {
+      'novelId': novelId,
+      'actId': actId,
+      'title': title,
+    };
+    
+    if (description != null) {
+      data['description'] = description;
+    }
+    
+    return await post('/novels/add-chapter-fine', data: data);
+  }
+  
+  /// 细粒度添加场景 - 只提供必要信息
+  Future<Map<String, dynamic>> addSceneFine(String novelId, String chapterId, String title, 
+      {String? summary, int? position}) async {
+    final data = {
+      'novelId': novelId,
+      'chapterId': chapterId,
+      'title': title,
+    };
+    
+    if (summary != null) {
+      data['summary'] = summary;
+    }
+    
+    if (position != null) {
+      data['position'] = position.toString();
+    }
+    
+    return await post('/scenes/add-scene-fine', data: data);
+  }
+  
+  /// 细粒度批量添加场景 - 一次添加多个场景到同一章节
+  Future<List<Map<String, dynamic>>> addScenesBatchFine(String novelId, String chapterId, 
+      List<Map<String, dynamic>> scenes) async {
+    final data = {
+      'novelId': novelId,
+      'chapterId': chapterId,
+      'scenes': scenes,
+    };
+    
+    return await post('/novels/upsert-chapter-scenes-batch', data: data);
+  }
+  
+  /// 细粒度删除卷 - 只提供ID
+  Future<bool> deleteActFine(String novelId, String actId) async {
+    final data = {
+      'novelId': novelId,
+      'actId': actId,
+    };
+    
+    return await post('/novels/delete-act-fine', data: data);
+  }
+  
+  /// 细粒度删除章节 - 只提供ID
+  Future<bool> deleteChapterFine(String novelId, String actId, String chapterId) async {
+    final data = {
+      'novelId': novelId,
+      'actId': actId,
+      'chapterId': chapterId,
+    };
+    
+    return await post('/novels/delete-chapter-fine', data: data);
+  }
+  
+  /// 细粒度删除场景 - 只提供ID
+  Future<bool> deleteSceneFine(String sceneId) async {
+    final data = {
+      'sceneId': sceneId,
+    };
+    
+    return await post('/scenes/delete-scene-fine', data: data);
   }
 }

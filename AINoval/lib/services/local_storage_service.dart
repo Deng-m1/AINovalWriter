@@ -15,6 +15,12 @@ class LocalStorageService {
   SharedPreferences? _prefs;
   final Uuid _uuid = const Uuid(); // For generating unique local IDs
 
+  // 添加小说缓存
+  final Map<String, novel_models.Novel> _novelCache = {};
+  final Map<String, DateTime> _novelCacheTimestamp = {};
+  final Duration _cacheTTL = const Duration(minutes: 5); // 缓存有效期
+  final Map<String, String> _wordCountCache = {}; // 场景字数缓存
+
   // 初始化
   Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -98,11 +104,28 @@ class LocalStorageService {
   Future<novel_models.Novel?> getNovel(String id) async {
     AppLogger.d('LocalStorageService',
         'getNovel: Attempting to get novel with ID: $id');
+    
+    // 检查缓存是否存在且有效
+    if (_novelCache.containsKey(id)) {
+      final cacheTime = _novelCacheTimestamp[id];
+      if (cacheTime != null && DateTime.now().difference(cacheTime) < _cacheTTL) {
+        AppLogger.i('LocalStorageService',
+            'getNovel: Using cached novel: ID=$id, Title=${_novelCache[id]!.title}, Acts=${_novelCache[id]!.acts.length}');
+        return _novelCache[id];
+      }
+    }
+    
+    // 缓存不存在或已过期，从存储获取
     final novels = await getNovels();
     try {
       final novel = novels.firstWhere(
         (novel) => novel.id == id,
       );
+      
+      // 更新缓存
+      _novelCache[id] = novel;
+      _novelCacheTimestamp[id] = DateTime.now();
+      
       AppLogger.i('LocalStorageService',
           'getNovel: Found novel: ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}');
       return novel;
@@ -117,21 +140,46 @@ class LocalStorageService {
   Future<void> saveNovel(novel_models.Novel novel) async {
     AppLogger.d('LocalStorageService',
         'saveNovel: Attempting to save novel ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}');
-    final novels = await getNovels();
-    final index = novels.indexWhere((n) => n.id == novel.id);
-
-    if (index >= 0) {
-      AppLogger.d('LocalStorageService',
-          'saveNovel: Updating existing novel at index $index.');
-      novels[index] = novel;
-    } else {
-      AppLogger.d('LocalStorageService', 'saveNovel: Adding new novel.');
-      novels.add(novel);
+    
+    // 检查上次保存时间，如果短时间内多次保存同一个小说，可以合并为一次操作
+    final cacheTime = _novelCacheTimestamp[novel.id];
+    final now = DateTime.now();
+    if (cacheTime != null && now.difference(cacheTime).inMilliseconds < 500) {
+      // 如果500毫秒内有多次保存，只更新缓存，延迟实际的存储操作
+      _novelCache[novel.id] = novel;
+      _novelCacheTimestamp[novel.id] = now;
+      AppLogger.i('LocalStorageService',
+          'saveNovel: Multiple saves detected within 500ms, delaying actual storage operation for novel ID=${novel.id}');
+      return;
     }
+    
+    // 更新缓存
+    _novelCache[novel.id] = novel;
+    _novelCacheTimestamp[novel.id] = now;
+    
+    try {
+      final novels = await getNovels();
+      final index = novels.indexWhere((n) => n.id == novel.id);
 
-    await saveNovels(novels);
-    AppLogger.i('LocalStorageService',
-        'saveNovel: Completed saving process for novel ID=${novel.id}.');
+      if (index >= 0) {
+        AppLogger.d('LocalStorageService',
+            'saveNovel: Updating existing novel at index $index.');
+        novels[index] = novel;
+      } else {
+        AppLogger.d('LocalStorageService', 'saveNovel: Adding new novel.');
+        novels.add(novel);
+      }
+
+      await saveNovels(novels);
+      AppLogger.i('LocalStorageService',
+          'saveNovel: Completed saving process for novel ID=${novel.id}.');
+    } catch (e) {
+      AppLogger.e('LocalStorageService', 'saveNovel: Failed to save novel', e);
+      // 从缓存中移除，以便下次重新加载
+      _novelCache.remove(novel.id);
+      _novelCacheTimestamp.remove(novel.id);
+      throw Exception('保存小说失败: $e');
+    }
   }
 
   // 删除小说
@@ -293,6 +341,63 @@ class LocalStorageService {
   Future<void> saveSceneContent(String novelId, String actId, String chapterId,
       String sceneId, novel_models.Scene scene) async {
     try {
+      // 生成场景缓存键
+      final sceneKey = '${novelId}_${actId}_${chapterId}_$sceneId';
+      
+      // 如果缓存中有小说，则直接更新缓存中的场景内容
+      if (_novelCache.containsKey(novelId)) {
+        final novel = _novelCache[novelId]!;
+        bool sceneUpdated = false;
+        
+        // 查找并更新缓存中的场景
+        final updatedActs = novel.acts.map((act) {
+          if (act.id == actId) {
+            final updatedChapters = act.chapters.map((chapter) {
+              if (chapter.id == chapterId) {
+                final sceneIndex = chapter.scenes.indexWhere((s) => s.id == sceneId);
+                if (sceneIndex >= 0) {
+                  // 更新现有场景
+                  final updatedScenes = List<novel_models.Scene>.from(chapter.scenes);
+                  updatedScenes[sceneIndex] = scene;
+                  sceneUpdated = true;
+                  return chapter.copyWith(scenes: updatedScenes);
+                } else {
+                  // 添加新场景
+                  sceneUpdated = true;
+                  return chapter.copyWith(
+                    scenes: [...chapter.scenes, scene],
+                  );
+                }
+              }
+              return chapter;
+            }).toList();
+            
+            if (sceneUpdated) {
+              return act.copyWith(chapters: updatedChapters);
+            }
+          }
+          return act;
+        }).toList();
+        
+        if (sceneUpdated) {
+          // 更新缓存中的小说
+          final updatedNovel = novel.copyWith(
+            acts: updatedActs,
+            updatedAt: DateTime.now(),
+          );
+          
+          _novelCache[novelId] = updatedNovel;
+          _novelCacheTimestamp[novelId] = DateTime.now();
+          
+          // 更新字数缓存
+          _updateWordCountCache(sceneKey, scene.content, scene.wordCount);
+          
+          AppLogger.i('LocalStorageService',
+              'saveSceneContent: Updated scene in cached novel: $sceneKey');
+        }
+      }
+
+      // 正常保存场景到存储
       final novel = await getNovel(novelId);
       if (novel == null) return;
 
@@ -330,6 +435,9 @@ class LocalStorageService {
       );
 
       await saveNovel(updatedNovel);
+      
+      // 更新字数缓存
+      _updateWordCountCache(sceneKey, scene.content, scene.wordCount);
     } catch (e) {
       AppLogger.e('LocalStorageService', '保存场景内容失败', e);
     }
@@ -754,5 +862,37 @@ class LocalStorageService {
       AppLogger.e('LocalStorageService', '删除场景内容失败: $sceneKey', e);
       throw Exception('删除场景内容失败: $e');
     }
+  }
+
+  // 优化的字数统计缓存
+  void _updateWordCountCache(String sceneKey, String content, int wordCount) {
+    final contentHash = content.hashCode.toString();
+    final cacheKey = '${sceneKey}_$contentHash';
+    _wordCountCache[cacheKey] = wordCount.toString();
+  }
+  
+  // 从缓存获取字数统计
+  int? getWordCountFromCache(String sceneKey, String content) {
+    final contentHash = content.hashCode.toString();
+    final cacheKey = '${sceneKey}_$contentHash';
+    final cachedCount = _wordCountCache[cacheKey];
+    if (cachedCount != null) {
+      return int.tryParse(cachedCount);
+    }
+    return null;
+  }
+  
+  // 清除指定小说的缓存
+  Future<void> clearNovelCache(String novelId) async {
+    AppLogger.i('LocalStorageService', '清除小说缓存: $novelId');
+    _novelCache.remove(novelId);
+    _novelCacheTimestamp.remove(novelId);
+  }
+
+  // 清除所有小说缓存
+  Future<void> clearAllNovelCache() async {
+    AppLogger.i('LocalStorageService', '清除所有小说缓存');
+    _novelCache.clear();
+    _novelCacheTimestamp.clear();
   }
 }

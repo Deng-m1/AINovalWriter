@@ -91,6 +91,7 @@ class UpdateSceneContent extends EditorEvent {
     required this.content,
     this.wordCount,
     this.shouldRebuild = true,
+    this.isMinorChange,
   });
   final String novelId;
   final String actId;
@@ -99,10 +100,11 @@ class UpdateSceneContent extends EditorEvent {
   final String content;
   final String? wordCount;
   final bool shouldRebuild;
+  final bool? isMinorChange; // 是否为微小改动，微小改动可以不刷新保存状态UI
 
   @override
   List<Object?> get props =>
-      [novelId, actId, chapterId, sceneId, content, wordCount, shouldRebuild];
+      [novelId, actId, chapterId, sceneId, content, wordCount, shouldRebuild, isMinorChange];
 }
 
 class UpdateSummary extends EditorEvent {
@@ -378,4 +380,28 @@ class SetPendingSummary extends EditorEvent {
 
   @override
   List<Object?> get props => [summary];
+}
+
+/// 保存场景内容事件
+class SaveSceneContent extends EditorEvent {
+  final String novelId;
+  final String actId;
+  final String chapterId;
+  final String sceneId;
+  final String content;
+  final String wordCount;
+  final bool localOnly; // 添加参数：是否只保存到本地
+
+  const SaveSceneContent({
+    required this.novelId,
+    required this.actId,
+    required this.chapterId,
+    required this.sceneId,
+    required this.content,
+    required this.wordCount,
+    this.localOnly = false, // 默认为false，表示同时同步到服务器
+  });
+
+  @override
+  List<Object> get props => [novelId, actId, chapterId, sceneId, content, wordCount, localOnly];
 }

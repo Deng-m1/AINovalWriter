@@ -557,16 +557,66 @@ public class SceneServiceImpl implements SceneService {
     @Override
     public Mono<Boolean> deleteSceneById(String id) {
         return sceneRepository.findById(id)
-                .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景不存在: " + id)))
                 .flatMap(scene -> sceneRepository.delete(scene)
-                .then(Mono.just(true)))
-                .onErrorResume(e -> {
-                    if (e instanceof ResourceNotFoundException) {
-                        // 如果场景不存在，返回false
-                        return Mono.just(false);
-                    }
-                    // 其他错误继续传播
-                    return Mono.error(e);
+                        .thenReturn(true))
+                .defaultIfEmpty(false);
+    }
+
+    @Override
+    public Mono<Scene> updateSceneWordCount(String id, Integer wordCount) {
+        return sceneRepository.findById(id)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景不存在: " + id)))
+                .flatMap(scene -> {
+                    scene.setWordCount(wordCount);
+                    scene.setUpdatedAt(LocalDateTime.now());
+                    return sceneRepository.save(scene)
+                            .doOnSuccess(savedScene -> {
+                                // 异步触发小说元数据更新
+                                metadataService.triggerNovelMetadataUpdate(savedScene).subscribe();
+                            });
+                });
+    }
+
+    @Override
+    public Mono<List<Scene>> updateScenesBatch(List<Scene> scenes) {
+        if (scenes == null || scenes.isEmpty()) {
+            return Mono.just(new ArrayList<>());
+        }
+        
+        LocalDateTime now = LocalDateTime.now();
+        
+        return Flux.fromIterable(scenes)
+                .flatMap(scene -> {
+                    // 获取现有场景
+                    return sceneRepository.findById(scene.getId())
+                            .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景不存在: " + scene.getId())))
+                            .flatMap(existingScene -> {
+                                // 保留原始创建时间和版本
+                                scene.setCreatedAt(existingScene.getCreatedAt());
+                                scene.setVersion(existingScene.getVersion());
+                                
+                                // 设置更新时间
+                                scene.setUpdatedAt(now);
+                                
+                                // 保存更新后的场景
+                                return sceneRepository.save(scene);
+                            });
+                })
+                .collectList()
+                .doOnSuccess(savedScenes -> {
+                    // 如果有相同小说的场景，只触发一次元数据更新
+                    savedScenes.stream()
+                            .map(Scene::getNovelId)
+                            .distinct()
+                            .forEach(novelId -> {
+                                if (novelId != null && !novelId.isEmpty()) {
+                                    // 使用现有的触发小说元数据更新方法
+                                    // 创建一个假场景对象来触发更新
+                                    Scene dummyScene = new Scene();
+                                    dummyScene.setNovelId(novelId);
+                                    metadataService.triggerNovelMetadataUpdate(dummyScene).subscribe();
+                                }
+                            });
                 });
     }
 }

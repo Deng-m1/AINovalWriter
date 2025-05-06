@@ -232,4 +232,21 @@ public interface SceneService {
      * @return 更新后的场景
      */
     Mono<Scene> updateSceneSummary(String id, String summary, String userId);
+    
+    /**
+     * 更新场景字数统计
+     *
+     * @param id 场景ID
+     * @param wordCount 字数
+     * @return 更新后的场景
+     */
+    Mono<Scene> updateSceneWordCount(String id, Integer wordCount);
+    
+    /**
+     * 批量更新场景列表
+     *
+     * @param scenes 要更新的场景列表
+     * @return 更新后的场景列表
+     */
+    Mono<List<Scene>> updateScenesBatch(List<Scene> scenes);
 }

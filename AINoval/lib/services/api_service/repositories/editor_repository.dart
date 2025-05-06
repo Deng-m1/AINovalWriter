@@ -32,6 +32,7 @@ abstract class EditorRepository {
     String content,
     String wordCount,
     Summary summary,
+    {bool localOnly = false}
   );
 
   /// 保存摘要
@@ -148,6 +149,14 @@ abstract class EditorRepository {
     String sceneId,
   );
 
+  /// 添加场景
+  Future<Scene?> addScene(
+    String novelId,
+    String actId,
+    String chapterId,
+    Scene scene,
+  );
+
   /// 删除章节
   Future<Novel?> deleteChapter(
     String novelId,
@@ -174,4 +183,25 @@ abstract class EditorRepository {
     String novelId,
     List<Map<String, dynamic>> sceneUpdates
   );
+  
+  /// 细粒度添加卷 - 只提供必要信息
+  Future<Act> addActFine(String novelId, String title, {String? description});
+  
+  /// 细粒度添加章节 - 只提供必要信息
+  Future<Chapter> addChapterFine(String novelId, String actId, String title, {String? description});
+  
+  /// 细粒度添加场景 - 只提供必要信息
+  Future<Scene> addSceneFine(String novelId, String chapterId, String title, {String? summary, int? position});
+  
+  /// 细粒度批量添加场景 - 一次添加多个场景到同一章节
+  Future<List<Scene>> addScenesBatchFine(String novelId, String chapterId, List<Map<String, dynamic>> scenes);
+  
+  /// 细粒度删除卷 - 只提供ID
+  Future<bool> deleteActFine(String novelId, String actId);
+  
+  /// 细粒度删除章节 - 只提供ID
+  Future<bool> deleteChapterFine(String novelId, String actId, String chapterId);
+  
+  /// 细粒度删除场景 - 只提供ID
+  Future<bool> deleteSceneFine(String sceneId);
 }

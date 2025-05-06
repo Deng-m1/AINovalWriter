@@ -2,16 +2,26 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:ainoval/blocs/editor/editor_bloc.dart' as editor_bloc;
+import 'package:ainoval/blocs/editor/editor_bloc.dart';
+import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
+import 'package:ainoval/utils/logger.dart';
+import 'package:ainoval/utils/quill_helper.dart';
+import 'package:ainoval/utils/word_count_analyzer.dart';
+import 'package:collection/collection.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ainoval/screens/editor/components/act_section.dart';
 import 'package:ainoval/screens/editor/components/chapter_section.dart';
 import 'package:ainoval/screens/editor/components/scene_editor.dart';
-import 'package:ainoval/utils/logger.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_quill/flutter_quill.dart';
-import 'package:uuid/uuid.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
 class EditorMainArea extends StatefulWidget {
   const EditorMainArea({
@@ -365,6 +375,35 @@ class EditorMainAreaState extends State<EditorMainArea> {
           }
         }
       },
+      // 添加新的监听条件以检测Acts数量变化
+      listenWhen: (previous, current) {
+        // 检测Acts数量变化
+        if (previous is editor_bloc.EditorLoaded && 
+            current is editor_bloc.EditorLoaded) {
+          
+          // 检查Acts数量是否变化
+          final prevActsCount = previous.novel.acts.length;
+          final currentActsCount = current.novel.acts.length;
+          
+          if (prevActsCount != currentActsCount) {
+            AppLogger.i('EditorMainArea', 
+                'Acts数量变化检测: $prevActsCount -> $currentActsCount，触发UI更新');
+            return true;
+          }
+          
+          // 检查保存状态变化
+          if (previous.isSaving != current.isSaving) {
+            return true;
+          }
+          
+          // 检查加载状态变化
+          if (previous.isLoading != current.isLoading) {
+            return true;
+          }
+        }
+        
+        return false;
+      },
       child: Stack(
         children: [
           Container(
@@ -601,29 +640,38 @@ class EditorMainAreaState extends State<EditorMainArea> {
         return Document.fromJson([{'insert': '\n'}]);
       }
       
-      final dynamic decodedContent = jsonDecode(content);
+      // 检查是否是纯文本（非JSON格式）
+      bool isPlainText = false;
+      try {
+        jsonDecode(content);
+      } catch (e) {
+        isPlainText = true;
+      }
       
-      // 处理不同的内容格式
-      if (decodedContent is List) {
-        // 如果直接是List，验证格式后使用
-        return Document.fromJson(decodedContent);
-      } else if (decodedContent is Map<String, dynamic>) {
-        // 检查是否是Quill格式的对象（包含ops字段）
-        if (decodedContent.containsKey('ops') && decodedContent['ops'] is List) {
-          return Document.fromJson(decodedContent['ops'] as List);
-        } else {
-          // 不是标准Quill格式，记录详细错误信息
-          AppLogger.e('EditorMainArea', '解析场景内容失败: 不是有效的Quill文档格式 ${decodedContent.runtimeType}');
-          return Document.fromJson([{'insert': '\n'}]);
-        }
-      } else {
-        // 不支持的内容格式
-        AppLogger.e('EditorMainArea', '解析场景内容失败: 不支持的内容格式 ${decodedContent.runtimeType}');
-        return Document.fromJson([{'insert': '\n'}]);
+      // 如果是纯文本，直接转换为Quill格式
+      if (isPlainText) {
+        return Document.fromJson([
+          {'insert': '$content\n'}
+        ]);
+      }
+      
+      // 使用QuillHelper处理内容格式
+      final String standardContent = QuillHelper.ensureQuillFormat(content);
+      
+      try {
+        // 解析为JSON，确保正确的格式
+        final List<dynamic> delta = jsonDecode(standardContent) as List<dynamic>;
+        return Document.fromJson(delta);
+      } catch (e) {
+        AppLogger.e('EditorMainArea', '解析标准化内容仍然失败，使用安全格式', e);
+        // 如果仍然失败，提取内容作为纯文本
+        return Document.fromJson([
+          {'insert': content.isEmpty ? '\n' : '$content\n'}
+        ]);
       }
     } catch (e, stack) {
-      AppLogger.e('EditorMainArea', '解析场景内容失败', e);
-      // 不再返回"内容加载失败"而是返回空文档，避免显示错误信息
+      AppLogger.e('EditorMainArea', '解析场景内容失败，使用空文档', e);
+      // 返回空文档，避免显示错误信息
       return Document.fromJson([{'insert': '\n'}]);
     }
   }
@@ -787,9 +835,58 @@ class EditorMainAreaState extends State<EditorMainArea> {
   }
 }
 
-class _AddActButton extends StatelessWidget {
+class _AddActButton extends StatefulWidget {
   const _AddActButton({required this.editorBloc});
   final editor_bloc.EditorBloc editorBloc;
+
+  @override
+  State<_AddActButton> createState() => _AddActButtonState();
+}
+
+class _AddActButtonState extends State<_AddActButton> {
+  bool _isAdding = false;
+  DateTime? _lastAddTime;
+  
+  // 防抖时间间隔（2秒）
+  static const Duration _debounceInterval = Duration(seconds: 2);
+
+  void _addNewAct() {
+    // 防止频繁点击导致重复添加
+    final now = DateTime.now();
+    if (_isAdding || (_lastAddTime != null && 
+        now.difference(_lastAddTime!) < _debounceInterval)) {
+      // 如果正在添加中或最后添加时间在2秒内，忽略此次点击
+      AppLogger.i('_AddActButton', '忽略重复点击: 正在添加=${_isAdding}, 距上次点击=${_lastAddTime != null ? now.difference(_lastAddTime!).inMilliseconds : "首次点击"}ms');
+      
+      // 显示提示（仅在UI上）
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('操作正在处理中，请稍候...'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+    
+    // 记录当前时间并标记为添加中
+    _lastAddTime = now;
+    setState(() {
+      _isAdding = true;
+    });
+    
+    // 添加新Act
+    AppLogger.i('_AddActButton', '触发添加新Act事件');
+    widget.editorBloc.add(const editor_bloc.AddNewAct(title: '新Act'));
+    
+    // 延迟2秒后重置状态，无论添加是否成功
+    Future.delayed(_debounceInterval, () {
+      if (mounted) {
+        setState(() {
+          _isAdding = false;
+        });
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -798,11 +895,18 @@ class _AddActButton extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 16.0),
         child: OutlinedButton.icon(
-          onPressed: () {
-            editorBloc.add(const editor_bloc.AddNewAct(title: '新Act'));
-          },
-          icon: const Icon(Icons.add, size: 18),
-          label: const Text('添加新Act'),
+          onPressed: _isAdding ? null : _addNewAct, // 如果正在添加中，禁用按钮
+          icon: _isAdding 
+              ? SizedBox(
+                  width: 18, 
+                  height: 18, 
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+                  ),
+                )
+              : const Icon(Icons.add, size: 18),
+          label: Text(_isAdding ? '添加中...' : '添加新Act'),
           style: OutlinedButton.styleFrom(
             foregroundColor: theme.colorScheme.primary,
             backgroundColor: Colors.white,

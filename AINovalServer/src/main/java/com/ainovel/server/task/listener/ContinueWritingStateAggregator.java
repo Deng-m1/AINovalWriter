@@ -4,6 +4,7 @@ import com.ainovel.server.domain.model.Novel;
 import com.ainovel.server.domain.model.Novel.Chapter;
 import com.ainovel.server.repository.BackgroundTaskRepository;
 import com.ainovel.server.service.NovelService;
+import com.ainovel.server.task.dto.continuecontent.ContinueWritingContentParameters;
 import com.ainovel.server.task.dto.continuecontent.ContinueWritingContentProgress;
 import com.ainovel.server.task.dto.continuecontent.ContinueWritingContentResult;
 import com.ainovel.server.task.dto.continuecontent.GenerateSingleChapterResult;
@@ -187,8 +188,6 @@ public class ContinueWritingStateAggregator {
         } else {
             return progressUpdateMono;
         }
-        
-        return Mono.when(tasks);
     }
     
     private ContinueWritingContentProgress getOrCreateProgress(BackgroundTask parentTask) {

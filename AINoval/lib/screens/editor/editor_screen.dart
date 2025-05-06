@@ -393,6 +393,12 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
               }
             }
             
+            // 检测Act数量变化
+            if (previous.novel.acts.length != current.novel.acts.length) {
+              AppLogger.i('EditorScreen', '检测到Act数量变化: ${previous.novel.acts.length} -> ${current.novel.acts.length}');
+              return true;
+            }
+            
             // 如果章节数量或场景数量有变化，触发刷新
             if (previousChapterCount != currentChapterCount || previousSceneCount != currentSceneCount) {
               AppLogger.i('EditorScreen', '检测到章节或场景数量变化: 章节 $previousChapterCount->$currentChapterCount, 场景 $previousSceneCount->$currentSceneCount');
