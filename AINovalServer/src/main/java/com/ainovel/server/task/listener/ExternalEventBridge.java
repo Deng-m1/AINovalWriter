@@ -32,7 +32,7 @@ public class ExternalEventBridge {
         this.externalEventPublisher = externalEventPublisher;
         this.objectMapper = objectMapper;
     }
-    
+
     /**
      * 监听任务提交事件
      *

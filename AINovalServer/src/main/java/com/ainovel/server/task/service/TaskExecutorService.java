@@ -2,6 +2,9 @@ package com.ainovel.server.task.service;
 
 import com.ainovel.server.task.BackgroundTaskExecutable;
 import com.ainovel.server.task.TaskContext;
+import com.ainovel.server.task.model.ExecutionResult;
+
+import reactor.core.publisher.Mono;
 
 
 import reactor.core.publisher.Mono;
