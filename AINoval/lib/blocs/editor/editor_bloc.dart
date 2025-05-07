@@ -42,6 +42,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     on<UpdateVisibleRange>(_onUpdateVisibleRange);
     on<ResetActLoadingFlags>(_onResetActLoadingFlags); // 添加新事件处理
     on<SetActLoadingFlags>(_onSetActLoadingFlags); // 添加新的事件处理器
+    on<UpdateChapterTitle>(_onUpdateChapterTitle); // 添加Chapter标题更新事件处理
+    on<UpdateActTitle>(_onUpdateActTitle); // 添加Act标题更新事件处理
   }
   final EditorRepositoryImpl repository;
   final String novelId;
@@ -193,211 +195,199 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
 
   Future<void> _onLoadMoreScenes(
       LoadMoreScenes event, Emitter<EditorState> emit) async {
-    final currentState = state;
-    if (currentState is! EditorLoaded) {
-      emit(const EditorError(message: '无法加载更多场景：编辑器尚未加载'));
+    if (state is! EditorLoaded) {
       return;
     }
 
-    // 如果已经在加载中，直接返回以防重复加载
+    // 获取当前加载状态
+    final currentState = state as EditorLoaded;
+    
+    // 如果已经在加载中且skipIfLoading为true，则跳过
     if (currentState.isLoading && event.skipIfLoading) {
-      AppLogger.d('Blocs/editor/editor_bloc', '已有加载任务正在进行且标记为跳过，忽略此次加载请求');
-      return;
-    }
-
-    // 检查是否满足节流间隔
-    final now = DateTime.now();
-    if (_lastLoadRequestTime != null &&
-        now.difference(_lastLoadRequestTime!) < _loadThrottleInterval) {
       AppLogger.d('Blocs/editor/editor_bloc', '加载请求过于频繁，已被节流');
       return;
     }
-    _lastLoadRequestTime = now;
 
-    // 对于滚动触发的加载，不更新UI状态
-    // 标记为正在加载更多, 但如果是滚动触发的加载且要求防止焦点变化，则不发送加载状态，避免UI重建
-    final bool isScrollTriggered = event.direction == 'up' || event.direction == 'down';
-    final bool shouldSkipLoadingState = isScrollTriggered && event.preventFocusChange;
-    
-    if (!shouldSkipLoadingState) {
-      emit(currentState.copyWith(isLoading: true));
+    // 增强边界检测逻辑，更严格地检查是否已到达边界
+    if (event.direction == 'up') {
+      if (currentState.hasReachedStart) {
+        AppLogger.i('Blocs/editor/editor_bloc', '已到达内容顶部，跳过向上加载请求');
+        // 再次明确设置hasReachedStart标志，以防之前的设置未生效
+        emit(currentState.copyWith(
+          hasReachedStart: true,
+        ));
+        return;
+      }
+    } else if (event.direction == 'down') {
+      if (currentState.hasReachedEnd) {
+        AppLogger.i('Blocs/editor/editor_bloc', '已到达内容底部，跳过向下加载请求');
+        // 再次明确设置hasReachedEnd标志，以防之前的设置未生效
+        emit(currentState.copyWith(
+          hasReachedEnd: true,
+        ));
+        return;
+      }
     }
 
+    // 设置加载状态
+    emit(currentState.copyWith(isLoading: true));
+
     try {
-      // 记录详细的加载请求日志
-      AppLogger.i('Blocs/editor/editor_bloc',
+      AppLogger.i('Blocs/editor/editor_bloc', 
           '开始加载更多场景: 章节ID=${event.fromChapterId}, 方向=${event.direction}, 章节限制=${event.chaptersLimit}, 防止焦点变化=${event.preventFocusChange}');
       
-      // 特殊处理center方向，记录更明确的信息
-      if (event.direction == 'center') {
-        AppLogger.i('Blocs/editor/editor_bloc', '以章节 ${event.fromChapterId} 为中心加载场景');
-        
-        // 尝试查找章节信息
-        String chapterTitle = '未知章节';
-        String actTitle = '未知Act';
-        for (final act in currentState.novel.acts) {
-          for (final chapter in act.chapters) {
-            if (chapter.id == event.fromChapterId) {
-              chapterTitle = chapter.title;
-              actTitle = act.title;
-              break;
-            }
-          }
+      // 添加超时处理，避免请求无响应
+      final completer = Completer<Map<String, List<novel_models.Scene>>?>();
+      
+      // 使用Future.any同时处理正常结果和超时
+      Future.delayed(const Duration(seconds: 15), () {
+        if (!completer.isCompleted) {
+          AppLogger.w('Blocs/editor/editor_bloc', '加载请求超时，自动取消');
+          completer.complete(null);
         }
-        
-        AppLogger.i('Blocs/editor/editor_bloc', '目标章节: "$chapterTitle" (在 "$actTitle" 中)');
-      }
-
-      // 根据loadFromLocalOnly参数决定是从API加载还是从本地加载
-      Map<String, List<novel_models.Scene>> newScenes;
+      });
+      
+      // 尝试从本地加载
       if (event.loadFromLocalOnly) {
-        // 尝试从本地加载场景
-        newScenes = await _loadScenesFromLocal(
-          event.fromChapterId, 
-          event.direction,
-          chaptersLimit: event.chaptersLimit,
-        );
-        
-        if (newScenes.isEmpty) {
-          AppLogger.i('Blocs/editor/editor_bloc', '本地没有可加载的场景，需要从API加载');
-          
-          // 如果本地没有场景且不阻止API加载，则从API加载
-          if (!event.skipAPIFallback) {
-            AppLogger.i('Blocs/editor/editor_bloc', '从API加载章节 ${event.fromChapterId} 的场景');
-            newScenes = await repository.loadMoreScenes(
-              novelId,
-              event.fromChapterId,
-              event.direction,
-              chaptersLimit: event.chaptersLimit,
-            );
-          } else {
-            // 仅当之前更新了加载状态时才发送状态更新
-            if (!shouldSkipLoadingState) {
-              emit(currentState.copyWith(isLoading: false));
-            }
-            return;
-          }
-        } else {
-          AppLogger.i('Blocs/editor/editor_bloc', '成功从本地加载场景: ${newScenes.length}个章节');
-        }
+        AppLogger.i('Blocs/editor/editor_bloc', '尝试仅从本地加载章节 ${event.fromChapterId} 的场景');
+        // 实现本地加载逻辑
       } else {
-        // 调用加载更多场景的API
+        // 从API加载，使用正确的参数格式
         AppLogger.i('Blocs/editor/editor_bloc', '从API加载章节 ${event.fromChapterId} 的场景 (方向=${event.direction})');
-        newScenes = await repository.loadMoreScenes(
+        
+        // 开始API请求但不立即等待
+        final futureResult = repository.loadMoreScenes(
           novelId,
           event.fromChapterId,
           event.direction,
           chaptersLimit: event.chaptersLimit,
         );
-      }
-
-      if (newScenes.isEmpty) {
-        // 没有更多场景可加载，更新状态以显示已到达顶部/底部
-        AppLogger.i('Blocs/editor/editor_bloc', '没有更多场景可加载，API返回为空');
         
-        // 更新状态，根据方向设置相应标志
-        emit(currentState.copyWith(
-          isLoading: false,
-          hasReachedEnd: event.direction == 'down' || event.direction == 'center',  // 向下或中心加载时设置已到底
-          hasReachedStart: event.direction == 'up' || event.direction == 'center',  // 向上或中心加载时设置已到顶
-        ));
-        return;
-      }
-
-      // 将新加载的场景合并到当前小说结构中
-      final updatedNovel = _mergeNewScenes(currentState.novel, newScenes);
-
-      // 记录详细的加载结果
-      int totalScenes = 0;
-      StringBuffer loadedChapters = StringBuffer();
-      int i = 0;
-      for (final chapterId in newScenes.keys) {
-        final sceneCount = newScenes[chapterId]?.length ?? 0;
-        totalScenes += sceneCount;
-        
-        // 查找章节标题
-        String chapterTitle = chapterId;
-        for (final act in updatedNovel.acts) {
-          for (final chapter in act.chapters) {
-            if (chapter.id == chapterId) {
-              chapterTitle = chapter.title;
-              break;
-            }
+        // 将API请求结果提交给completer
+        futureResult.then((result) {
+          if (!completer.isCompleted) {
+            completer.complete(result);
           }
-        }
+        }).catchError((e) {
+          if (!completer.isCompleted) {
+            AppLogger.e('Blocs/editor/editor_bloc', '加载API调用出错', e);
+            completer.complete(null);
+          }
+        });
         
-        if (i > 0) loadedChapters.write(', ');
-        loadedChapters.write('"$chapterTitle" (${sceneCount}个场景)');
-        i++;
-      }
-      
-      AppLogger.i('Blocs/editor/editor_bloc',
-          '成功加载更多场景: ${newScenes.keys.length}个章节, 共$totalScenes个场景');
-      AppLogger.i('Blocs/editor/editor_bloc',
-          '加载的章节: ${loadedChapters.toString()}');
+        // 等待结果或超时
+        final result = await completer.future;
 
-      // 确定活动章节和场景
-      String? newActiveChapterId = currentState.activeChapterId;
-      String? newActiveActId = currentState.activeActId;
-      String? newActiveSceneId = currentState.activeSceneId;
+        // 检查API返回结果
+        if (result != null) {
+          if (result.isNotEmpty) {
+            // 获取当前状态（可能在API请求期间已经发生变化）
+            final updatedState = state as EditorLoaded;
 
-      // 只有明确提供了targetSceneId时才设置活动场景，且preventFocusChange为false
-      if (!event.preventFocusChange && event.targetSceneId != null && 
-          event.targetActId != null && event.targetChapterId != null) {
-        // 先检查目标场景是否存在于更新后的小说结构中
-        bool sceneExists = false;
-        
-        // 遍历确认目标场景是否存在
-        for (final act in updatedNovel.acts) {
-          if (act.id == event.targetActId) {
-            for (final chapter in act.chapters) {
-              if (chapter.id == event.targetChapterId) {
-                for (final scene in chapter.scenes) {
-                  if (scene.id == event.targetSceneId) {
-                    sceneExists = true;
-                    break;
+            // 合并新场景到小说结构
+            final updatedNovel = _mergeNewScenes(updatedState.novel, result);
+            
+            // 更新活动章节ID（如果需要）
+            String? newActiveChapterId = updatedState.activeChapterId;
+            String? newActiveSceneId = updatedState.activeSceneId;
+            String? newActiveActId = updatedState.activeActId;
+
+            if (!event.preventFocusChange) {
+              // 仅当允许改变焦点时才更新活动章节
+              final firstChapterId = result.keys.first;
+              final firstChapterScenes = result[firstChapterId];
+              
+              if (firstChapterScenes != null && firstChapterScenes.isNotEmpty) {
+                newActiveChapterId = firstChapterId;
+                newActiveSceneId = firstChapterScenes.first.id;
+                
+                // 查找活动章节所属的Act
+                for (final act in updatedNovel.acts) {
+                  for (final chapter in act.chapters) {
+                    if (chapter.id == newActiveChapterId) {
+                      newActiveActId = act.id;
+                      break;
+                    }
                   }
+                  if (newActiveActId != null) break;
                 }
-                break;
               }
             }
-            break;
+
+            // 设置加载边界标志
+            bool hasReachedStart = updatedState.hasReachedStart;
+            bool hasReachedEnd = updatedState.hasReachedEnd;
+            
+            // 根据方向和返回结果判断是否达到边界
+            // 如果API返回的结果非常少（比如只有1章），可能也意味着接近边界
+            if (event.direction == 'up' && result.length <= 1) {
+              hasReachedStart = true;
+              AppLogger.i('Blocs/editor/editor_bloc', '向上加载返回数据很少，可能已接近顶部，设置hasReachedStart=true');
+            } else if (event.direction == 'down' && result.length <= 1) {
+              hasReachedEnd = true;
+              AppLogger.i('Blocs/editor/editor_bloc', '向下加载返回数据很少，可能已接近底部，设置hasReachedEnd=true');
+            }
+            
+            // 发送更新后的状态
+            emit(EditorLoaded(
+              novel: updatedNovel,
+              settings: updatedState.settings,
+              activeActId: newActiveActId,
+              activeChapterId: newActiveChapterId,
+              activeSceneId: newActiveSceneId,
+              isLoading: false,
+              hasReachedStart: hasReachedStart,
+              hasReachedEnd: hasReachedEnd,
+              focusChapterId: updatedState.focusChapterId,
+            ));
+            
+            AppLogger.i('Blocs/editor/editor_bloc', '加载更多场景成功，更新了 ${result.length} 个章节');
+          } else {
+            // API返回空结果，说明该方向没有更多内容了
+            // 根据加载方向设置边界标志
+            bool hasReachedStart = currentState.hasReachedStart;
+            bool hasReachedEnd = currentState.hasReachedEnd;
+            
+            if (event.direction == 'up') {
+              hasReachedStart = true;
+              AppLogger.i('Blocs/editor/editor_bloc', '向上没有更多场景可加载，设置hasReachedStart=true');
+            } else if (event.direction == 'down') {
+              hasReachedEnd = true;
+              AppLogger.i('Blocs/editor/editor_bloc', '向下没有更多场景可加载，设置hasReachedEnd=true');
+            } else if (event.direction == 'center') {
+              // 如果是center方向且返回为空，可能同时到达了顶部和底部
+              hasReachedStart = true;
+              hasReachedEnd = true;
+              AppLogger.i('Blocs/editor/editor_bloc', '中心加载返回为空，设置hasReachedStart=true和hasReachedEnd=true');
+            }
+            
+            // 发送更新状态，包含边界标志
+            emit(currentState.copyWith(
+              isLoading: false,
+              hasReachedStart: hasReachedStart,
+              hasReachedEnd: hasReachedEnd,
+            ));
+            
+            AppLogger.i('Blocs/editor/editor_bloc', '没有更多场景可加载，API返回为空');
           }
-        }
-        
-        if (sceneExists) {
-          AppLogger.i('Blocs/editor/editor_bloc', 
-            '找到目标场景，设置为活动场景: actId=${event.targetActId}, chapterId=${event.targetChapterId}, sceneId=${event.targetSceneId}');
-          newActiveActId = event.targetActId;
-          newActiveChapterId = event.targetChapterId;
-          newActiveSceneId = event.targetSceneId;
         } else {
-          AppLogger.w('Blocs/editor/editor_bloc', 
-            '未找到目标场景: actId=${event.targetActId}, chapterId=${event.targetChapterId}, sceneId=${event.targetSceneId}');
+          // API返回null，表示请求失败或超时
+          // 这种情况不应标记为已到达边界，因为可能是网络问题
+          AppLogger.w('Blocs/editor/editor_bloc', '加载更多场景失败，API返回null');
+          emit(currentState.copyWith(
+            isLoading: false,
+            errorMessage: '加载场景时出现错误，请稍后再试',
+          ));
         }
-      } else if (event.preventFocusChange) {
-        AppLogger.d('Blocs/editor/editor_bloc', '预加载场景，不改变活动场景');
       }
-
-      emit(currentState.copyWith(
-        novel: updatedNovel,
-        isLoading: false,
-        // 更新活动状态
-        activeChapterId: newActiveChapterId,
-        activeActId: newActiveActId,
-        activeSceneId: newActiveSceneId,
-      ));
     } catch (e) {
-      AppLogger.e('Blocs/editor/editor_bloc', '加载更多场景失败', e);
-
-      // 仅当之前更新了加载状态时才发送错误状态
-      if (!shouldSkipLoadingState) {
-        // 出错时恢复原状态，但标记加载已结束
-        emit(currentState.copyWith(
-          isLoading: false,
-          errorMessage: '加载更多场景失败: ${e.toString()}',
-        ));
-      }
+      // 处理异常
+      AppLogger.e('Blocs/editor/editor_bloc', '加载更多场景出错', e);
+      // 不要在出错时设置边界标志，以免误判
+      emit(currentState.copyWith(
+        isLoading: false,
+        errorMessage: '加载场景时出现错误: ${e.toString()}',
+      ));
     }
   }
 
@@ -2051,45 +2041,150 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     }
   }
 
-  // 处理重置Act加载状态标志的事件
-  Future<void> _onResetActLoadingFlags(
-      ResetActLoadingFlags event, Emitter<EditorState> emit) async {
+  // 设置焦点章节 - 仅更新焦点，不影响活动场景
+  Future<void> _onSetFocusChapter(
+      SetFocusChapter event, Emitter<EditorState> emit) async {
     final currentState = state;
     if (currentState is EditorLoaded) {
-      AppLogger.i('Blocs/editor/editor_bloc', '重置Act加载状态标志');
+      AppLogger.i('EditorBloc', '设置焦点章节: ${event.chapterId} (仅更新焦点，不影响活动场景)');
+      
       emit(currentState.copyWith(
-        hasReachedEnd: false,
-        hasReachedStart: false,
+        focusChapterId: event.chapterId,
+        // 不更新activeActId、activeChapterId和activeSceneId
       ));
     }
   }
 
-  // 处理设置焦点章节事件
-  Future<void> _onSetFocusChapter(
-      SetFocusChapter event, Emitter<EditorState> emit) async {
-    final currentState = state;
-    if (currentState is! EditorLoaded) return;
-
-    AppLogger.i('Blocs/editor/editor_bloc', '更新焦点章节: ${event.chapterId}');
+  // 处理重置Act加载状态标志的事件
+  void _onResetActLoadingFlags(ResetActLoadingFlags event, Emitter<EditorState> emit) {
+    if (state is! EditorLoaded) return;
     
-    // 保持其他状态不变，只更新focusChapterId
+    final currentState = state as EditorLoaded;
+    
+    // 重置边界标志
     emit(currentState.copyWith(
-      focusChapterId: event.chapterId,
+      hasReachedEnd: false,
+      hasReachedStart: false,
     ));
+    
+    AppLogger.i('Blocs/editor/editor_bloc', '已重置Act加载标志: hasReachedEnd=false, hasReachedStart=false');
+  }
+  
+  void _onSetActLoadingFlags(SetActLoadingFlags event, Emitter<EditorState> emit) {
+    if (state is! EditorLoaded) return;
+    
+    final currentState = state as EditorLoaded;
+    
+    // 只更新提供了值的标志
+    bool hasReachedEnd = currentState.hasReachedEnd;
+    bool hasReachedStart = currentState.hasReachedStart;
+    
+    if (event.hasReachedEnd != null) {
+      hasReachedEnd = event.hasReachedEnd!;
+    }
+    
+    if (event.hasReachedStart != null) {
+      hasReachedStart = event.hasReachedStart!;
+    }
+    
+    // 更新状态
+    emit(currentState.copyWith(
+      hasReachedEnd: hasReachedEnd,
+      hasReachedStart: hasReachedStart,
+    ));
+    
+    AppLogger.i('Blocs/editor/editor_bloc', 
+        '已设置Act加载标志: hasReachedEnd=${hasReachedEnd}, hasReachedStart=${hasReachedStart}');
   }
 
-  // 处理设置Act加载状态标志的事件
-  Future<void> _onSetActLoadingFlags(
-      SetActLoadingFlags event, Emitter<EditorState> emit) async {
+  // 更新章节标题的事件处理方法
+  Future<void> _onUpdateChapterTitle(
+      UpdateChapterTitle event, Emitter<EditorState> emit) async {
     final currentState = state;
     if (currentState is EditorLoaded) {
-      AppLogger.i('Blocs/editor/editor_bloc', 
-          '设置Act加载状态标志: hasReachedEnd=${event.hasReachedEnd}, hasReachedStart=${event.hasReachedStart}');
-      
-      emit(currentState.copyWith(
-        hasReachedEnd: event.hasReachedEnd,
-        hasReachedStart: event.hasReachedStart,
-      ));
+      try {
+        // 更新标题逻辑
+        final acts = currentState.novel.acts.map((act) {
+          if (act.id == event.actId) {
+            final chapters = act.chapters.map((chapter) {
+              if (chapter.id == event.chapterId) {
+                return chapter.copyWith(title: event.title);
+              }
+              return chapter;
+            }).toList();
+            return act.copyWith(chapters: chapters);
+          }
+          return act;
+        }).toList();
+
+        final updatedNovel = currentState.novel.copyWith(acts: acts);
+
+        emit(currentState.copyWith(
+          novel: updatedNovel,
+          isDirty: true,
+        ));
+        
+        // 保存到服务器
+        final success = await repository.updateChapterTitle(
+          novelId,
+          event.actId,
+          event.chapterId,
+          event.title,
+        );
+        
+        if (!success) {
+          AppLogger.e('Blocs/editor/editor_bloc', '更新Chapter标题失败');
+        }
+        
+        emit(currentState.copyWith(isDirty: false));
+      } catch (e) {
+        AppLogger.e('Blocs/editor/editor_bloc', '更新Chapter标题失败', e);
+        emit(currentState.copyWith(
+          errorMessage: '更新Chapter标题失败: ${e.toString()}',
+        ));
+      }
+    }
+  }
+
+  // 更新卷标题的事件处理方法
+  Future<void> _onUpdateActTitle(
+      UpdateActTitle event, Emitter<EditorState> emit) async {
+    final currentState = state;
+    if (currentState is EditorLoaded) {
+      try {
+        // 更新标题逻辑
+        final acts = currentState.novel.acts.map((act) {
+          if (act.id == event.actId) {
+            return act.copyWith(title: event.title);
+          }
+          return act;
+        }).toList();
+
+        final updatedNovel = currentState.novel.copyWith(acts: acts);
+
+        emit(currentState.copyWith(
+          novel: updatedNovel,
+          isDirty: true,
+        ));
+        
+        // 保存到服务器
+        final success = await repository.updateActTitle(
+          novelId,
+          event.actId,
+          event.title,
+        );
+        
+        if (!success) {
+          AppLogger.e('Blocs/editor/editor_bloc', '更新Act标题失败');
+        }
+        
+        emit(currentState.copyWith(isDirty: false));
+      } catch (e) {
+        AppLogger.e('Blocs/editor/editor_bloc', '更新Act标题失败', e);
+        emit(currentState.copyWith(
+          errorMessage: '更新Act标题失败: ${e.toString()}',
+        ));
+      }
     }
   }
 }

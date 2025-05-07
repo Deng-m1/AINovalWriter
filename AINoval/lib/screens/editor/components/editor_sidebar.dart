@@ -797,7 +797,14 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
       preventFocusChange: false // 确保设置为false，允许改变焦点
     ));
     
-    // 直接设置活动场景，不需要再延迟
+    // 关键修改：先尝试通过EditorMainArea实例设置活动章节
+    if (_editorController.editorMainAreaKey.currentState != null) {
+      // 如果能获取到EditorMainArea实例，通过它设置活动章节
+      AppLogger.i('ChapterDirectoryTab', '通过EditorMainArea明确设置活动章节: $actId - $chapterId');
+      _editorController.editorMainAreaKey.currentState!.setActiveChapter(actId, chapterId);
+    }
+    
+    // 然后设置活动场景
     editorBloc.add(SetActiveScene(
       actId: actId,
       chapterId: chapterId,

@@ -91,19 +91,21 @@ class EditorLayout extends StatelessWidget {
 
             // 执行滚动操作
             if (shouldScroll) {
+              // 检查当前是否有滚动动画正在进行
+              bool isScrolling = controller.scrollController.position.isScrollingNotifier.value;
+              
+              // 使用两个延迟，确保平滑滚动
+              // 1. 等待布局完成
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                // 等待布局完成后，通过GlobalKey查找EditorMainArea组件
-                try {
-                  final editorMainAreaKey = controller.editorMainAreaKey;
-                  if (editorMainAreaKey.currentState != null) {
-                    // 调用EditorMainArea的scrollToActiveScene方法滚动到活动场景
-                    editorMainAreaKey.currentState!.scrollToActiveScene();
-                    AppLogger.i('EditorLayout', '触发滚动到活动场景: $targetKeyId');
-                  } else {
-                    AppLogger.w('EditorLayout', '无法找到EditorMainArea组件，无法滚动');
-                  }
-                } catch (e) {
-                  AppLogger.e('EditorLayout', '滚动到活动场景时出错', e);
+                // 2. 如果正在滚动，等待当前滚动结束
+                if (isScrolling) {
+                  // 如果正在滚动，等待200ms让惯性滚动自然减速
+                  Future.delayed(const Duration(milliseconds: 200), () {
+                    _scrollToActiveSceneIfNeeded(controller, targetKeyId);
+                  });
+                } else {
+                  // 如果没有滚动，立即滚动到目标场景
+                  _scrollToActiveSceneIfNeeded(controller, targetKeyId);
                 }
               });
             }
@@ -202,6 +204,9 @@ class EditorLayout extends StatelessWidget {
                   prevLoaded.activeSceneId != currLoaded.activeSceneId ||
                   // 小说基本结构变化检查
                   prevLoaded.novel.acts.length != currLoaded.novel.acts.length;
+                  
+              // 明确注释focusChapterId的变化不应触发重建
+              // prevLoaded.focusChapterId != currLoaded.focusChapterId 
 
               // 如果需要重建，记录原因以助调试
               if (shouldRebuild && kDebugMode) {
@@ -544,7 +549,6 @@ class EditorLayout extends StatelessWidget {
       bottom: 0,
       child: Container(
         padding: const EdgeInsets.only(bottom: 32.0),
-        height: 100,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -557,54 +561,58 @@ class EditorLayout extends StatelessWidget {
           ),
         ),
         child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 加载指示器
-              if (controller.isLoadingMore)
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(25),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+          child: SingleChildScrollView(
+            physics: const NeverScrollableScrollPhysics(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (controller.isLoadingMore)
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha(25),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        '正在加载更多内容...',
-                        style: TextStyle(
-                          color: Colors.grey.shade800,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 16,
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 16),
+                        Text(
+                          '正在加载更多内容...',
+                          style: TextStyle(
+                            color: Colors.grey.shade800,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
                 
-              // 底部/顶部提示
-              if (controller.hasReachedEnd)
-                _buildEndOfContentIndicator("已到达底部"),
-              if (controller.hasReachedStart)
-                _buildEndOfContentIndicator("已到达顶部"),
-            ],
+                if (!controller.isLoadingMore) ...[
+                  if (controller.hasReachedEnd)
+                    _buildEndOfContentIndicator("已到达底部"),
+                  if (controller.hasReachedStart)
+                    _buildEndOfContentIndicator("已到达顶部"),
+                ],
+              ],
+            ),
           ),
         ),
       ),
@@ -624,5 +632,21 @@ class EditorLayout extends StatelessWidget {
       },
       layoutState.saveEditorSidebarWidth,
     );
+  }
+
+  // 提取滚动逻辑到单独的方法中，并使用更平滑的滚动
+  void _scrollToActiveSceneIfNeeded(EditorScreenController controller, String targetKeyId) {
+    try {
+      final editorMainAreaKey = controller.editorMainAreaKey;
+      if (editorMainAreaKey.currentState != null) {
+        // 使用改进的平滑滚动方法
+        editorMainAreaKey.currentState!.scrollToActiveSceneSmooth();
+        AppLogger.i('EditorLayout', '使用平滑滚动到活动场景: $targetKeyId');
+      } else {
+        AppLogger.w('EditorLayout', '无法找到EditorMainArea组件，无法滚动');
+      }
+    } catch (e) {
+      AppLogger.e('EditorLayout', '滚动到活动场景时出错', e);
+    }
   }
 }

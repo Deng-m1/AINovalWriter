@@ -20,6 +20,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_quill/flutter_quill.dart' hide EditorState;
 
+// 添加这些顶层定义，放在import语句之后，类定义之前
+// 滚动状态枚举
+enum ScrollState { idle, userScrolling, inertialScrolling }
+
+// 滚动信息类，包含速度和是否快速滚动的标志
+class _ScrollInfo {
+  final double speed;
+  final bool isRapid;
+  
+  _ScrollInfo(this.speed, this.isRapid);
+}
+
 /// 编辑器屏幕控制器
 /// 负责管理编辑器屏幕的状态和逻辑
 class EditorScreenController extends ChangeNotifier {
@@ -82,6 +94,13 @@ class EditorScreenController extends ChangeNotifier {
   double? _lastScrollPosition;
   static const Duration _scrollHandleInterval = Duration(milliseconds: 250); // 增加到250ms
   static const Duration _scrollThrottleInterval = Duration(milliseconds: 800); // 增加到800ms
+  // 添加惯性滚动控制变量
+  bool _isInertialScrolling = false;
+  Timer? _inertialScrollTimer;
+  // 添加滚动状态变量
+  ScrollState _scrollState = ScrollState.idle;
+  // 动态调整节流间隔
+  int _currentThrottleMs = 350; // 默认节流时间
 
   // 防抖变量，避免频繁触发加载
   DateTime? _lastLoadTime;
@@ -112,6 +131,26 @@ class EditorScreenController extends ChangeNotifier {
   // 用于EditorBloc状态监听的字段
   int? _lastScenesCount;
   int? _lastChaptersCount;
+
+  // 检查是否有任何加载正在进行
+  bool _isAnyLoading() {
+    // 检查编辑器状态
+    if (editorBloc.state is editor_bloc.EditorLoaded) {
+      final state = editorBloc.state as editor_bloc.EditorLoaded;
+      if (state.isLoading) return true;
+    }
+
+    // 检查控制器状态
+    if (_isLoadingMore) return true;
+
+    // 检查加载冷却时间
+    if (_lastLoadTime != null &&
+        DateTime.now().difference(_lastLoadTime!).inSeconds < 1) {
+      return true;
+    }
+
+    return false;
+  }
 
   // 初始化方法
   void _init() {
@@ -313,55 +352,88 @@ class EditorScreenController extends ChangeNotifier {
       }
     }
 
-    // 1. 快速滚动检测 - 使用更高效的方法
-    final bool isRapidScrolling = _detectRapidScrolling();
-    if (isRapidScrolling) {
-      // 在快速滚动时不执行任何耗时操作
+    // 取消之前的惯性滚动计时器
+    _inertialScrollTimer?.cancel();
+
+    // 1. 改进的快速滚动检测
+    final scrollInfo = _calculateScrollInfo();
+    final bool isRapidScrolling = scrollInfo.isRapid;
+    
+    // 在每次滚动事件中更新滚动状态
+    if (isRapidScrolling && _scrollState != ScrollState.userScrolling) {
+      _scrollState = ScrollState.userScrolling;
+      AppLogger.d('EditorScreenController', '检测到用户快速滚动');
+    }
+
+    // 2. 根据滚动状态和速度动态决定是否处理此次滚动
+    if (_scrollState == ScrollState.userScrolling) {
+      // 设置惯性滚动检测计时器，在滚动速度减慢后自动切换状态
+      _inertialScrollTimer = Timer(const Duration(milliseconds: 200), () {
+        if (scrollInfo.speed < 1.0) {
+          _scrollState = ScrollState.inertialScrolling;
+          AppLogger.d('EditorScreenController', '切换到惯性滚动状态');
+          
+          // 在惯性滚动状态下，设置一个延迟来处理边界检查
+          Timer(const Duration(milliseconds: 200), () {
+            if (!_isAnyLoading()) {
+              _checkScrollBoundaries();
+            }
+          });
+        }
+      });
+      
+      // 在用户快速滚动时，不执行边界检查，避免干扰
       return;
     }
 
-    // 2. 节流控制 - 防止过于频繁处理
+    // 3. 优化的节流控制 - 根据滚动状态动态调整节流时间
     final now = DateTime.now();
     if (_lastScrollHandleTime != null) {
-      // 根据当前滚动速度动态调整节流时间
-      final minThrottle = _isScrollingSlowly() ? 100 : 180; // 根据滚动速度使用不同的节流时间
-      if (now.difference(_lastScrollHandleTime!).inMilliseconds < minThrottle) {
+      // 根据当前滚动状态动态调整节流时间
+      _currentThrottleMs = _scrollState == ScrollState.inertialScrolling ? 180 : 350;
+      
+      if (now.difference(_lastScrollHandleTime!).inMilliseconds < _currentThrottleMs) {
         return; // 节流期间不处理
       }
     }
     _lastScrollHandleTime = now;
 
-    // 3. 加载状态检查 - 避免重复请求
+    // 4. 加载状态检查 - 避免重复请求
     if (_isAnyLoading()) {
       return; // 如果有任何加载进行中，跳过处理
     }
 
-    // 4. 精简的边界检测逻辑
-    _checkScrollBoundaries();
-
-    // 5. 只在滚动稳定后检查可见场景
-    if (_isScrollStable(300)) { // 减少稳定时间到300ms提高响应速度
-      _checkVisibleScenesThrottled();
+    // 5. 惯性滚动结束检测
+    if (_scrollState == ScrollState.inertialScrolling && scrollInfo.speed < 0.2) {
+      _scrollState = ScrollState.idle;
+      AppLogger.d('EditorScreenController', '滚动已停止');
+      
+      // 滚动停止后执行一次边界检查，确保内容加载
+      _checkScrollBoundaries();
+      return;
     }
+
+    // 6. 正常滚动状态下的边界检测
+    _checkScrollBoundaries();
   }
 
-  // 优化版快速滚动检测
-  bool _detectRapidScrolling() {
-    if (!scrollController.hasClients) return false;
+  // 改进的滚动信息计算
+  _ScrollInfo _calculateScrollInfo() {
+    if (!scrollController.hasClients) return _ScrollInfo(0, false);
 
     final now = DateTime.now();
     final currentPosition = scrollController.offset;
 
-    // 如果是第一次滚动，初始化参数并返回false
+    // 如果是第一次滚动，初始化参数并返回默认值
     if (_lastScrollTime == null || _lastScrollPosition == null) {
       _lastScrollTime = now;
       _lastScrollPosition = currentPosition;
-      return false;
+      return _ScrollInfo(0, false);
     }
 
     final elapsed = now.difference(_lastScrollTime!).inMilliseconds;
     // 防止除以零或极小值
-    if (elapsed < 10) return false;
+    if (elapsed < 10) return _ScrollInfo(_currentScrollSpeed ?? 0, false);
 
     final distance = (currentPosition - _lastScrollPosition!).abs();
     final speed = distance / elapsed;
@@ -373,13 +445,16 @@ class EditorScreenController extends ChangeNotifier {
     // 缓存滚动速度用于其他判断
     _currentScrollSpeed = speed;
 
-    // 提高阈值到3.0，更积极地判断为快速滚动
-    return speed > 3.0;
+    // 返回完整的滚动信息
+    return _ScrollInfo(
+      speed, 
+      speed > 2.5 // 调整阈值，使判断更准确
+    );
   }
 
   // 检查是否正在缓慢滚动
   bool _isScrollingSlowly() {
-    return _currentScrollSpeed != null && _currentScrollSpeed! < 0.8;
+    return _currentScrollSpeed != null && _currentScrollSpeed! < 0.5; // 降低阈值使判断更准确
   }
 
   // 检查滚动边界并触发加载
@@ -388,45 +463,52 @@ class EditorScreenController extends ChangeNotifier {
 
     final offset = scrollController.offset;
     final maxScroll = scrollController.position.maxScrollExtent;
+    final viewportHeight = scrollController.position.viewportDimension;
 
-    // 只在调试模式下输出日志，减少日志开销
-    if (kDebugMode) {
-      AppLogger.d('EditorScreenController', '滚动位置: $offset / $maxScroll, 预加载距离: $_preloadDistance');
-    }
+    // 使用动态预加载距离，根据视口高度调整
+    final dynamicPreloadDistance = viewportHeight * 0.7;
 
-    // 相比之前的实现，使用更简洁的边界判断
-    if (offset >= maxScroll - _preloadDistance) {
-      _loadMoreScenes('down');
-    } else if (offset <= _preloadDistance) {
-      _loadMoreScenes('up');
-    }
-  }
-
-  // 检查是否有任何加载正在进行
-  bool _isAnyLoading() {
     // 检查编辑器状态
-    if (editorBloc.state is editor_bloc.EditorLoaded) {
-      final state = editorBloc.state as editor_bloc.EditorLoaded;
-      if (state.isLoading) return true;
+    final state = editorBloc.state;
+    if (state is editor_bloc.EditorLoaded) {
+      // 检查底部边界
+      if (offset >= maxScroll - dynamicPreloadDistance) {
+        // 如果已经到达底部边界，不再触发加载
+        if (state.hasReachedEnd) {
+          if (kDebugMode) {
+            AppLogger.d('EditorScreenController', '已到达内容底部，不再触发加载');
+          }
+          return;
+        }
+        _loadMoreScenes('down');
+      } 
+      // 检查顶部边界
+      else if (offset <= dynamicPreloadDistance) {
+        // 如果已经到达顶部边界，不再触发加载
+        if (state.hasReachedStart) {
+          if (kDebugMode) {
+            AppLogger.d('EditorScreenController', '已到达内容顶部，不再触发加载');
+          }
+          return;
+        }
+        _loadMoreScenes('up');
+      }
     }
-
-    // 检查控制器状态
-    if (_isLoadingMore) return true;
-
-    // 检查加载冷却时间
-    if (_lastLoadTime != null &&
-        DateTime.now().difference(_lastLoadTime!).inSeconds < 1) {
-      return true;
-    }
-
-    return false;
   }
 
   // 判断滚动是否已经稳定一段时间
   bool _isScrollStable(int milliseconds) {
     if (_lastScrollTime == null) return false;
+    
+    // 1. 检查时间条件
     final now = DateTime.now();
-    return now.difference(_lastScrollTime!).inMilliseconds >= milliseconds;
+    final timeStable = now.difference(_lastScrollTime!).inMilliseconds >= milliseconds;
+    
+    // 2. 检查速度条件 - 速度接近0
+    final speedStable = _currentScrollSpeed != null && _currentScrollSpeed! < 0.1;
+    
+    // 同时满足时间和速度条件时，认为滚动稳定
+    return timeStable && speedStable;
   }
 
   // 加载更多场景函数
@@ -434,6 +516,14 @@ class EditorScreenController extends ChangeNotifier {
     final state = editorBloc.state;
     if (state is! editor_bloc.EditorLoaded) {
       AppLogger.w('EditorScreenController', '无法加载更多场景: 编辑器尚未初始化');
+      return;
+    }
+
+    // 检查是否已达边界，避免重复请求
+    if ((direction == 'down' && state.hasReachedEnd) || 
+        (direction == 'up' && state.hasReachedStart)) {
+      AppLogger.i('EditorScreenController', 
+          '已到达${direction == 'down' ? '底部' : '顶部'}边界，不再发送加载请求');
       return;
     }
 
@@ -465,12 +555,16 @@ class EditorScreenController extends ChangeNotifier {
     // 下滑检查是否已经到底
     if (direction == 'down' && _findLastLoadedChapterId(state.novel) == _findLastChapterId(state.novel)) {
       alreadyHasEnoughContent = true;
-      AppLogger.i('EditorScreenController', '已经加载到最后一章，不需要继续加载');
+      // 设置已到达底部标志
+      editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedEnd: true));
+      AppLogger.i('EditorScreenController', '已经加载到最后一章，设置hasReachedEnd=true');
     }
     // 上滑检查是否已经到顶
     else if (direction == 'up' && _findFirstLoadedChapterId(state.novel) == _findFirstChapterId(state.novel)) {
       alreadyHasEnoughContent = true;
-      AppLogger.i('EditorScreenController', '已经加载到第一章，不需要继续加载');
+      // 设置已到达顶部标志
+      editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedStart: true));
+      AppLogger.i('EditorScreenController', '已经加载到第一章，设置hasReachedStart=true');
     }
 
     if (alreadyHasEnoughContent) {
@@ -528,6 +622,53 @@ class EditorScreenController extends ChangeNotifier {
 
       AppLogger.i('EditorScreenController', '加载更多场景: 方向=$direction, 起始章节=$fromChapterId');
 
+      // 声明订阅变量
+      late StreamSubscription<editor_bloc.EditorState> loadCompleteSubscription;
+      
+      // 创建监听API请求结果的回调
+      loadCompleteSubscription = editorBloc.stream.listen((newState) {
+        if (newState is editor_bloc.EditorLoaded && !newState.isLoading) {
+          // API请求完成
+          loadCompleteSubscription.cancel(); // 取消监听
+          
+          // 检查API是否返回了内容
+          bool hasLoadedNewContent = false;
+          
+          // 通过比较章节数量来判断是否加载了新内容
+          if (state.novel.acts.length != newState.novel.acts.length) {
+            hasLoadedNewContent = true;
+          } else {
+            int oldChaptersCount = 0;
+            int newChaptersCount = 0;
+            
+            for (final act in state.novel.acts) {
+              oldChaptersCount += act.chapters.length;
+            }
+            
+            for (final act in newState.novel.acts) {
+              newChaptersCount += act.chapters.length;
+            }
+            
+            hasLoadedNewContent = newChaptersCount > oldChaptersCount;
+          }
+          
+          // 如果API没有返回新内容，设置已达边界标志
+          if (!hasLoadedNewContent) {
+            if (direction == 'down') {
+              AppLogger.i('EditorScreenController', 'API未返回新内容，设置hasReachedEnd=true');
+              editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedEnd: true));
+            } else if (direction == 'up') {
+              AppLogger.i('EditorScreenController', 'API未返回新内容，设置hasReachedStart=true');
+              editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedStart: true));
+            }
+          }
+          
+          // 重置加载状态
+          _isLoadingMore = false;
+          notifyListeners();
+        }
+      });
+
       // 触发加载更多事件
       editorBloc.add(editor_bloc.LoadMoreScenes(
         fromChapterId: fromChapterId!,
@@ -541,16 +682,20 @@ class EditorScreenController extends ChangeNotifier {
       Future.delayed(const Duration(milliseconds: 500), () {
         notifyListeners();
       });
+      
+      // 设置超时处理，避免监听器永久等待
+      Future.delayed(const Duration(seconds: 10), () {
+        loadCompleteSubscription.cancel();
+        if (_isLoadingMore) {
+          _isLoadingMore = false;
+          notifyListeners();
+          AppLogger.w('EditorScreenController', '加载请求超时，重置加载状态');
+        }
+      });
     } catch (e) {
       AppLogger.e('EditorScreenController', '加载更多场景出错', e);
       _isLoadingMore = false;
       notifyListeners(); // 更新UI状态
-    } finally {
-      // 延迟重置标志，给API调用一些时间
-      Future.delayed(const Duration(milliseconds: 1000), () {
-        _isLoadingMore = false;
-        notifyListeners(); // 确保加载状态被重置
-      });
     }
   }
 
@@ -1138,5 +1283,204 @@ class EditorScreenController extends ChangeNotifier {
       // 无论成功失败，完成后更新状态
       _isLoadingSummaries = false;
     });
+  }
+
+  // 在EditorScreenController中添加新方法用于初始化结构边界
+  void _initializeNovelStructureBoundaries() {
+    final novelModel = editorBloc.state is editor_bloc.EditorLoaded 
+        ? (editorBloc.state as editor_bloc.EditorLoaded).novel 
+        : null;
+    
+    if (novelModel == null || novelModel.acts.isEmpty) return;
+    
+    AppLogger.i('EditorScreenController', '开始初始化小说结构边界，共${novelModel.acts.length}卷');
+    
+    // 处理起始边界
+    final firstAct = novelModel.acts.first;
+    if (firstAct.chapters.isEmpty) {
+      // 第一个卷是空的，直接标记已到达开始
+      editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedStart: true));
+      AppLogger.i('EditorScreenController', '小说第一卷为空，标记已到达开始边界');
+    } else {
+      // 加载第一个卷的第一个章节，确保起始章节被加载
+      final firstChapter = firstAct.chapters.first;
+      AppLogger.i('EditorScreenController', '加载起始卷第一个章节: ${firstChapter.id} (${firstChapter.title})');
+      editorBloc.add(editor_bloc.LoadMoreScenes(
+        fromChapterId: firstChapter.id,
+        direction: 'center',
+        chaptersLimit: 5, // 加载更多章节以减少后续分页
+        preventFocusChange: true,
+      ));
+    }
+    
+    // 处理结束边界
+    final lastAct = novelModel.acts.last;
+    if (lastAct.chapters.isEmpty) {
+      // 最后一个卷是空的，直接标记已到达末尾
+      editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedEnd: true));
+      AppLogger.i('EditorScreenController', '小说最后一卷为空，标记已到达结束边界');
+    } else {
+      // 加载最后一个卷的最后一个章节，确保结尾章节被加载
+      final lastChapter = lastAct.chapters.last;
+      AppLogger.i('EditorScreenController', '加载末尾卷最后一个章节: ${lastChapter.id} (${lastChapter.title})');
+      editorBloc.add(editor_bloc.LoadMoreScenes(
+        fromChapterId: lastChapter.id,
+        direction: 'center',
+        chaptersLimit: 5, // 加载更多章节以减少后续分页
+        preventFocusChange: true,
+      ));
+    }
+    
+    // 预加载空卷和边界卷
+    _preloadEmptyActs();
+  }
+
+  // 预加载所有空卷的章节和边界卷
+  void _preloadEmptyActs() {
+    final novelModel = editorBloc.state is editor_bloc.EditorLoaded 
+        ? (editorBloc.state as editor_bloc.EditorLoaded).novel 
+        : null;
+    
+    if (novelModel == null) return;
+    
+    // 用于记录已预加载的章节ID，避免重复加载
+    final Set<String> preloadedChapterIds = {};
+    
+    // 1. 处理所有空卷
+    for (int i = 0; i < novelModel.acts.length; i++) {
+      final act = novelModel.acts[i];
+      
+      // 处理完全空的卷
+      if (act.chapters.isEmpty) {
+        AppLogger.i('EditorScreenController', '检测到空卷: ${act.title}，无需预加载');
+        continue;
+      }
+      
+      // 检查卷中是否所有章节都没有场景
+      final bool allChaptersEmpty = act.chapters.every((chapter) => chapter.scenes.isEmpty);
+      
+      if (allChaptersEmpty) {
+        // 所有章节都是空的，预加载整个卷
+        AppLogger.i('EditorScreenController', '预加载整个空章节卷: ${act.title}，共${act.chapters.length}章');
+        
+        // 从第一个章节开始加载
+        if (act.chapters.isNotEmpty) {
+          final startChapterId = act.chapters.first.id;
+          editorBloc.add(editor_bloc.LoadMoreScenes(
+            fromChapterId: startChapterId,
+            direction: 'center',
+            chaptersLimit: act.chapters.length > 10 ? 10 : act.chapters.length, // 限制一次最多加载10章
+            preventFocusChange: true,
+          ));
+          
+          // 记录已加载的章节
+          preloadedChapterIds.add(startChapterId);
+          
+          // 如果章节超过10个，按批次加载
+          if (act.chapters.length > 10) {
+            // 从中间位置加载一批
+            if (act.chapters.length > 20) {
+              final midIndex = act.chapters.length ~/ 2;
+              final midChapterId = act.chapters[midIndex].id;
+              
+              editorBloc.add(editor_bloc.LoadMoreScenes(
+                fromChapterId: midChapterId,
+                direction: 'center',
+                chaptersLimit: 10,
+                preventFocusChange: true,
+              ));
+              
+              preloadedChapterIds.add(midChapterId);
+            }
+            
+            // 从末尾加载一批
+            final lastChapterId = act.chapters.last.id;
+            editorBloc.add(editor_bloc.LoadMoreScenes(
+              fromChapterId: lastChapterId,
+              direction: 'center',
+              chaptersLimit: 10,
+              preventFocusChange: true,
+            ));
+            
+            preloadedChapterIds.add(lastChapterId);
+          }
+        }
+      }
+    }
+    
+    // 2. 处理起始和结束卷之间有场景但不完整的卷
+    // 如果小说只有1-2卷，则直接全部加载
+    if (novelModel.acts.length <= 2) {
+      AppLogger.i('EditorScreenController', '小说卷数少于等于2，尝试直接加载所有章节');
+      
+      for (final act in novelModel.acts) {
+        if (act.chapters.isEmpty) continue;
+        
+        for (final chapter in act.chapters) {
+          // 检查是否已经加载过
+          if (preloadedChapterIds.contains(chapter.id)) continue;
+          
+          // 检查章节是否有场景
+          if (chapter.scenes.isEmpty) {
+            AppLogger.i('EditorScreenController', '预加载空章节: ${chapter.title} (${chapter.id})');
+            editorBloc.add(editor_bloc.LoadMoreScenes(
+              fromChapterId: chapter.id,
+              direction: 'center',
+              chaptersLimit: 2,
+              preventFocusChange: true,
+            ));
+            
+            preloadedChapterIds.add(chapter.id);
+          }
+        }
+      }
+    } else {
+      // 如果卷数较多，只处理首尾卷的前几个和后几个章节
+      // 处理第一卷的前几个章节
+      final firstAct = novelModel.acts.first;
+      if (firstAct.chapters.isNotEmpty) {
+        // 最多加载前5个章节
+        final chaptersToLoad = firstAct.chapters.length <= 5 ? firstAct.chapters : firstAct.chapters.sublist(0, 5);
+        
+        for (final chapter in chaptersToLoad) {
+          if (preloadedChapterIds.contains(chapter.id) || chapter.scenes.isNotEmpty) continue;
+          
+          AppLogger.i('EditorScreenController', '预加载首卷章节: ${chapter.title} (${chapter.id})');
+          editorBloc.add(editor_bloc.LoadMoreScenes(
+            fromChapterId: chapter.id,
+            direction: 'center',
+            chaptersLimit: 2,
+            preventFocusChange: true,
+          ));
+          
+          preloadedChapterIds.add(chapter.id);
+        }
+      }
+      
+      // 处理最后一卷的最后几个章节
+      final lastAct = novelModel.acts.last;
+      if (lastAct.chapters.isNotEmpty) {
+        // 最多加载后5个章节
+        final startIndex = lastAct.chapters.length <= 5 ? 0 : lastAct.chapters.length - 5;
+        final chaptersToLoad = lastAct.chapters.sublist(startIndex);
+        
+        for (final chapter in chaptersToLoad) {
+          if (preloadedChapterIds.contains(chapter.id) || chapter.scenes.isNotEmpty) continue;
+          
+          AppLogger.i('EditorScreenController', '预加载末卷章节: ${chapter.title} (${chapter.id})');
+          editorBloc.add(editor_bloc.LoadMoreScenes(
+            fromChapterId: chapter.id,
+            direction: 'center',
+            chaptersLimit: 2,
+            preventFocusChange: true,
+          ));
+          
+          preloadedChapterIds.add(chapter.id);
+        }
+      }
+    }
+    
+    // 标记结构边界已初始化完成
+    AppLogger.i('EditorScreenController', '小说结构边界初始化完成，已预加载${preloadedChapterIds.length}个章节');
   }
 }

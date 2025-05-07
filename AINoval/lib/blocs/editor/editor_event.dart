@@ -418,23 +418,20 @@ class UpdateVisibleRange extends EditorEvent {
   List<Object?> get props => [startIndex, endIndex];
 }
 
-/// 重置Act加载状态标志（hasReachedEnd和hasReachedStart）
+/// 重置章节加载标记
 class ResetActLoadingFlags extends EditorEvent {
   const ResetActLoadingFlags();
 }
 
-/// 设置Act加载状态标志
+/// 设置章节加载边界标记
 class SetActLoadingFlags extends EditorEvent {
-  const SetActLoadingFlags({
-    this.hasReachedEnd, 
-    this.hasReachedStart
-  });
-  
   final bool? hasReachedEnd;
   final bool? hasReachedStart;
-  
-  @override
-  List<Object?> get props => [hasReachedEnd, hasReachedStart];
+
+  const SetActLoadingFlags({
+    this.hasReachedEnd,
+    this.hasReachedStart,
+  });
 }
 
 // 设置焦点章节事件

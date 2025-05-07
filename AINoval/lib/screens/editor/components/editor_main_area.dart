@@ -247,9 +247,130 @@ class EditorMainAreaState extends State<EditorMainArea> {
         });
       }
       
+      // 添加滚动停止时的清理逻辑
+      if (_cleanupTimer == null || !_cleanupTimer!.isActive) {
+        _cleanupTimer = Timer(const Duration(milliseconds: 1000), () {
+          if (mounted) {
+            _cleanupUnusedControllers();
+          }
+        });
+      }
+      
       // 同时检查滚动到边界的情况，以便加载更多内容
       _checkScrollBoundariesForLoading();
     });
+  }
+  
+  // 清理定时器
+  Timer? _cleanupTimer;
+  
+  // 强化版清理控制器方法，主动清理不在当前焦点Act中的控制器
+  void _cleanupUnusedControllers() {
+    if (!mounted || !_enforceSingleActMode) return;
+    
+    // 获取当前焦点Act
+    String? focusActId = _getCurrentFocusActId();
+    if (focusActId == null) return;
+    
+    final controllersToRemove = <String>[];
+    final now = DateTime.now();
+    int removedCount = 0;
+    
+    // 1. 查找所有不在当前焦点Act中且最后可见时间超过30秒的控制器
+    for (final entry in _lastVisibleTime.entries) {
+      final sceneId = entry.key;
+      final lastSeenTime = entry.value;
+      
+      // 提取Act ID
+      final parts = sceneId.split('_');
+      if (parts.length < 3) continue;
+      
+      final actId = parts[0];
+      
+      // 如果不是当前焦点Act，且上次可见时间超过30秒
+      if (actId != focusActId && now.difference(lastSeenTime).inSeconds > 30) {
+        controllersToRemove.add(sceneId);
+      }
+      // 或者是任何超过5分钟未见的场景（无论哪个Act）
+      else if (now.difference(lastSeenTime).inMinutes > 5) {
+        controllersToRemove.add(sceneId);
+      }
+    }
+    
+    // 2. 移除这些控制器
+    for (final sceneId in controllersToRemove) {
+      if (widget.sceneControllers.containsKey(sceneId)) {
+        try {
+          // 尝试销毁控制器
+          widget.sceneControllers[sceneId]?.dispose();
+          widget.sceneControllers.remove(sceneId);
+          
+          // 移除摘要控制器
+          widget.sceneSummaryControllers[sceneId]?.dispose();
+          widget.sceneSummaryControllers.remove(sceneId);
+          
+          // 清理渲染和时间记录
+          _renderedScenes.remove(sceneId);
+          _lastVisibleTime.remove(sceneId);
+          
+          removedCount++;
+        } catch (e) {
+          AppLogger.e('EditorMainArea', '清理控制器失败: $sceneId', e);
+        }
+      }
+    }
+    
+    if (removedCount > 0) {
+      AppLogger.i('EditorMainArea', '强化清理：移除了 $removedCount 个非当前Act的场景控制器');
+    }
+  }
+  
+  // 清理长时间不可见的场景控制器，释放内存
+  void _cleanupInvisibleScenes() {
+    if (!mounted) return;
+    
+    final now = DateTime.now();
+    final keysToRemove = <String>[];
+    
+    // 单卷模式下，更激进地清理不可见场景
+    if (_enforceSingleActMode) {
+      // 获取当前焦点Act
+      String? focusActId = _getCurrentFocusActId();
+      if (focusActId != null) {
+        // 遍历所有场景，标记不在当前Act中的场景
+        for (final sceneId in _renderedScenes.keys) {
+          final parts = sceneId.split('_');
+          if (parts.length >= 3 && parts[0] != focusActId) {
+            // 非当前Act的场景，降低清理阈值到1分钟
+            if (_lastVisibleTime.containsKey(sceneId) && 
+                now.difference(_lastVisibleTime[sceneId]!).inMinutes >= 1) {
+              keysToRemove.add(sceneId);
+            }
+          }
+        }
+      }
+    }
+    
+    // 常规清理：找出超过5分钟未见的场景
+    _renderedScenes.forEach((sceneId, isVisible) {
+      if (!isVisible && 
+          _lastVisibleTime.containsKey(sceneId) &&
+          now.difference(_lastVisibleTime[sceneId]!).inMinutes > 5) {
+        keysToRemove.add(sceneId);
+      }
+    });
+    
+    // 释放资源
+    for (final sceneId in keysToRemove) {
+      widget.sceneControllers.remove(sceneId);
+      widget.sceneSummaryControllers.remove(sceneId);
+      _renderedScenes.remove(sceneId);
+      _lastVisibleTime.remove(sceneId);
+    }
+    
+    if (keysToRemove.isNotEmpty) {
+      AppLogger.i('EditorMainArea', '定期清理：移除了 ${keysToRemove.length} 个长时间不可见场景');
+    }
   }
   
   // 用于记录上次检查的时间
@@ -275,6 +396,9 @@ class EditorMainAreaState extends State<EditorMainArea> {
     // 判断滚动方向
     double? lastPosition = _lastScrollPosition;
     bool isScrollingUp = lastPosition != null && currentPosition < lastPosition;
+    
+    // 更新最后滚动方向
+    _lastScrollDirection = isScrollingUp ? 'up' : 'down';
     
     _lastScrollPosition = currentPosition;
     
@@ -423,6 +547,9 @@ class EditorMainAreaState extends State<EditorMainArea> {
   
   // 加载指定方向的更多内容
   void _loadMoreInDirection(String direction, {bool priority = false}) {
+    // 更新最后滚动方向
+    _lastScrollDirection = direction;
+    
     // 防抖处理 - 控制加载频率
     final now = DateTime.now();
     int secondsThreshold = 2; // 默认防抖时间阈值
@@ -1031,36 +1158,10 @@ class EditorMainAreaState extends State<EditorMainArea> {
       hasReachedEnd = state.hasReachedEnd;
     }
 
-    // 如果正在加载场景，只渲染当前可见的Act
+    // 如果正在加载场景，使用有限渲染模式
     if (isLoadingMore) {
       // 找到当前活动Act或焦点Act
-      String? currentActId = null;
-      
-      // 如果有焦点章节，找到其所在的Act
-      if (_focusChapterId != null) {
-        for (final currentAct in widget.novel.acts) {
-          for (final chapter in currentAct.chapters) {
-            if (chapter.id == _focusChapterId) {
-              currentActId = currentAct.id;
-              break;
-            }
-          }
-          if (currentActId != null) break;
-        }
-      }
-      
-      // 如果没有找到焦点章节的Act，则使用活动章节的Act
-      if (currentActId == null && widget.activeChapterId != null) {
-        for (final currentAct in widget.novel.acts) {
-          for (final chapter in currentAct.chapters) {
-            if (chapter.id == widget.activeChapterId) {
-              currentActId = currentAct.id;
-              break;
-            }
-          }
-          if (currentActId != null) break;
-        }
-      }
+      String? currentActId = _getCurrentFocusActId();
       
       // 如果找到当前Act，则只渲染当前Act和下一个Act
       if (currentActId != null) {
@@ -1074,83 +1175,103 @@ class EditorMainAreaState extends State<EditorMainArea> {
         
         // 渲染当前Act和下一个Act
         if (currentActIndex >= 0) {
-          return act.id == currentActId || 
-                 (currentActIndex + 1 < widget.novel.acts.length && 
-                  widget.novel.acts[currentActIndex + 1].id == act.id);
+          final bool isCurrentAct = act.id == currentActId;
+          final bool isNextAct = currentActIndex + 1 < widget.novel.acts.length && 
+                               widget.novel.acts[currentActIndex + 1].id == act.id;
+          
+          if (isCurrentAct || isNextAct) {
+            AppLogger.i('EditorMainArea', '加载中：渲染${isCurrentAct ? "当前" : "下一个"}Act: ${act.title}');
+            return true;
+          } else {
+            return false;
+          }
         }
       }
     }
 
-    // 如果没有焦点章节，允许渲染所有Act
-    if (_focusChapterId == null) return true;
-
-    // 找到焦点章节所在的Act
-    String? focusActId;
-    for (final currentAct in widget.novel.acts) {
-      for (final chapter in currentAct.chapters) {
-        if (chapter.id == _focusChapterId) {
-          focusActId = currentAct.id;
-          break;
-        }
-      }
-      if (focusActId != null) break;
-    }
-
-    // 如果找不到焦点章节所在的Act，允许渲染所有Act
-    if (focusActId == null) return true;
-
-    // 如果是焦点章节所在的Act，允许渲染
-    if (act.id == focusActId) return true;
-
-    // 获取Acts的顺序索引
-    int focusActIndex = -1;
-    int currentActIndex = -1;
-    for (int i = 0; i < widget.novel.acts.length; i++) {
-      if (widget.novel.acts[i].id == focusActId) {
-        focusActIndex = i;
-      }
-      if (widget.novel.acts[i].id == act.id) {
-        currentActIndex = i;
-      }
-      if (focusActIndex >= 0 && currentActIndex >= 0) break;
-    }
-    
-    // 如果是焦点Act之前的Act，允许渲染
-    if (currentActIndex < focusActIndex) return true;
-    
-    // 修改：如果是焦点Act紧邻的下一个Act，且焦点Act已加载完成或已到达底部，则允许渲染
-    if (currentActIndex == focusActIndex + 1) {
-      // 检查焦点Act是否已加载完成（所有章节都有场景）
-      bool focusActFullyLoaded = true;
-      final focusAct = widget.novel.acts[focusActIndex];
-      for (final chapter in focusAct.chapters) {
-        if (chapter.scenes.isEmpty) {
-          focusActFullyLoaded = false;
+    // 强制单卷模式 - 关键优化点
+    if (_enforceSingleActMode) {
+      // 当前活动的焦点Act
+      String? focusActId = _getCurrentFocusActId();
+      if (focusActId == null) return true;
+      
+      // 查看最后的滚动方向，决定是否加载下一卷
+      bool allowNextAct = _lastScrollDirection == 'down';
+      
+      // 查找焦点Act的索引
+      int focusActIndex = -1;
+      for (int i = 0; i < widget.novel.acts.length; i++) {
+        if (widget.novel.acts[i].id == focusActId) {
+          focusActIndex = i;
           break;
         }
       }
       
-      // 如果焦点Act已加载完成或已到达底部，允许渲染下一个Act
-      if (focusActFullyLoaded || hasReachedEnd) {
-        AppLogger.i('EditorMainArea', '允许渲染下一个Act: ${act.title}, 因为焦点Act已${focusActFullyLoaded ? "完全加载" : "到达底部"}');
-        return true;
+      if (focusActIndex >= 0) {
+        // 当前焦点Act
+        if (act.id == focusActId) {
+          return true;
+        }
+        
+        // 向下滚动时可见的下一个Act
+        if (allowNextAct && focusActIndex + 1 < widget.novel.acts.length && 
+            widget.novel.acts[focusActIndex + 1].id == act.id) {
+          
+          // 检查当前Act是否已加载完所有章节
+          final focusAct = widget.novel.acts[focusActIndex];
+          bool focusActFullyLoaded = true;
+          
+          for (final chapter in focusAct.chapters) {
+            if (chapter.scenes.isEmpty) {
+              focusActFullyLoaded = false;
+              break;
+            }
+          }
+          
+          if (focusActFullyLoaded || hasReachedEnd) {
+            AppLogger.i('EditorMainArea', '允许渲染下一个Act: ${act.title}, 因为焦点Act已${focusActFullyLoaded ? "完全加载" : "到达底部"}');
+            return true;
+          }
+        }
+        
+        AppLogger.d('EditorMainArea', '单卷模式：不渲染非焦点Act: ${act.title}');
+        return false;
       }
     }
-
-    // 检查前面所有的Act是否都已完全加载
-    for (int i = 0; i < currentActIndex; i++) {
-      final previousAct = widget.novel.acts[i];
-      for (final chapter in previousAct.chapters) {
-        if (chapter.scenes.isEmpty) {
-          // 如果发现任何前面Act的章节未加载，则不渲染当前Act
-          return false;
+    
+    // 默认情况，允许渲染
+    return true;
+  }
+  
+  // 获取当前焦点Act ID的辅助方法
+  String? _getCurrentFocusActId() {
+    // 优先使用本地焦点章节
+    if (_focusChapterId != null) {
+      for (final currentAct in widget.novel.acts) {
+        for (final chapter in currentAct.chapters) {
+          if (chapter.id == _focusChapterId) {
+            return currentAct.id;
+          }
         }
       }
     }
-
-    // 默认情况下不渲染焦点Act之后的Act，除非前面的逻辑已明确允许
-    return false;
+    
+    // 其次使用活动章节
+    if (widget.activeChapterId != null) {
+      for (final currentAct in widget.novel.acts) {
+        for (final chapter in currentAct.chapters) {
+          if (chapter.id == widget.activeChapterId) {
+            return currentAct.id;
+          }
+        }
+      }
+    }
+    
+    return null;
   }
+  
+  // 强制单卷模式开关 - 默认启用
+  final bool _enforceSingleActMode = true;
   
   // 判断章节是否应该被渲染，使用简单的距离判断
   bool _shouldRenderChapter(String actId, String chapterId) {
@@ -1181,9 +1302,13 @@ class EditorMainAreaState extends State<EditorMainArea> {
     
     // 第一次遍历：找出所有章节的全局索引
     final Map<String, int> chapterGlobalIndices = {};
+    // 记录每个章节对应的Act
+    final Map<String, String> chapterToActMap = {};
+    
     for (final currentAct in widget.novel.acts) {
       for (final chapter in currentAct.chapters) {
         chapterGlobalIndices[chapter.id] = globalIndex++;
+        chapterToActMap[chapter.id] = currentAct.id;
         
         if (chapter.id == referenceChapterId) {
           referenceActId = currentAct.id;
@@ -1201,18 +1326,48 @@ class EditorMainAreaState extends State<EditorMainArea> {
       return false;
     }
     
-    // 判断是否在参考章节上下距离范围内（使用全局索引，允许跨卷）
-    // 增加渲染距离到10章，确保更多章节可见
+    // 判断是否在参考章节上下距离范围内
     final distance = (currentGlobalIndex - referenceGlobalIndex).abs();
-    final shouldRender = distance <= 10; // 从5增加到10，增加可见章节范围
+    
+    // ===== 关键修改：优化跨卷渲染逻辑 =====
+    // 检查是否是跨卷情况
+    final bool isCrossAct = referenceActId != actId;
+    
+    // 如果是跨卷场景，使用更严格的距离限制，防止同时渲染太多不同卷的内容
+    bool shouldRender;
+    if (isCrossAct) {
+      // 1. 如果是跨卷，距离阈值降低到5章（原来是10章）
+      // 2. 添加偏好，优先渲染参考章节所在卷的内容
+      int renderThreshold = (referenceActId == actId) ? 10 : 5; // 同卷10章，跨卷5章
+      
+      // 3. 确保当前滚动方向的内容被优先渲染
+      // 根据位置判断滚动方向：如果当前章节索引小于参考章节索引，说明在向上滚动
+      bool isScrollingUp = currentGlobalIndex < referenceGlobalIndex;
+      
+      // 根据最近滚动方向调整阈值
+      if (_lastScrollDirection == 'up' && isScrollingUp) {
+        // 向上滚动时，允许渲染更多上方内容
+        renderThreshold = 8;
+      } else if (_lastScrollDirection == 'down' && !isScrollingUp) {
+        // 向下滚动时，允许渲染更多下方内容
+        renderThreshold = 8;
+      }
+      
+      shouldRender = distance <= renderThreshold;
+    } else {
+      // 非跨卷，使用原来的逻辑
+      shouldRender = distance <= 10;
+    }
     
     // 日志标记是否为跨卷判断
-    final isCrossAct = referenceActId != actId;
     AppLogger.i('EditorMainArea', 
         '章节$chapterId与${_focusChapterId == referenceChapterId ? "焦点" : "活动"}章节距离${distance}章${isCrossAct ? "(跨卷)" : ""}，${shouldRender ? "渲染" : "不渲染"}');
     
     return shouldRender;
   }
+  
+  // 添加跟踪最近滚动方向的变量
+  String _lastScrollDirection = 'none';
   
   // 优化的Act Section构建器
   Widget _buildVirtualizedActSection(novel_models.Act act, List<String> visibleItems) {
@@ -1407,6 +1562,58 @@ class EditorMainAreaState extends State<EditorMainArea> {
       }
     }
   }
+  
+  // 添加更平滑的滚动方法
+  void scrollToActiveSceneSmooth() {
+    if (widget.activeActId != null && 
+        widget.activeChapterId != null && 
+        widget.activeSceneId != null) {
+      
+      final sceneId = '${widget.activeActId}_${widget.activeChapterId}_${widget.activeSceneId}';
+      final key = widget.sceneKeys[sceneId];
+      
+      if (key != null && key.currentContext != null) {
+        try {
+          // 获取目标场景的位置信息
+          final RenderBox renderBox = key.currentContext!.findRenderObject() as RenderBox;
+          final targetPosition = renderBox.localToGlobal(Offset.zero);
+          
+          // 计算目标滚动位置（考虑视口对齐）
+          final scrollPosition = widget.scrollController.position;
+          final viewportHeight = scrollPosition.viewportDimension;
+          
+          // 将目标定位到视口的1/3位置
+          final targetOffset = targetPosition.dy - (viewportHeight * 0.3);
+          
+          // 获取当前滚动位置
+          final currentOffset = scrollPosition.pixels;
+          
+          // 计算滚动距离
+          final scrollDistance = (targetOffset - currentOffset).abs();
+          
+          // 根据滚动距离动态调整滚动时间，使滚动感觉更自然
+          final scrollDuration = scrollDistance < 500 
+              ? const Duration(milliseconds: 300) 
+              : Duration(milliseconds: 300 + (scrollDistance / 10).clamp(0, 500).toInt());
+          
+          // 使用动画曲线使滚动更平滑
+          widget.scrollController.animateTo(
+            targetOffset,
+            duration: scrollDuration,
+            curve: Curves.easeOutCubic, // 使用更平滑的缓动曲线
+          );
+          
+          AppLogger.i('EditorMainArea', '平滑滚动到活动场景: $sceneId，距离: ${scrollDistance.toInt()}px，时长: ${scrollDuration.inMilliseconds}ms');
+        } catch (e) {
+          AppLogger.e('EditorMainArea', '平滑滚动计算失败，回退到标准滚动', e);
+          // 回退到标准滚动方法
+          scrollToActiveScene();
+        }
+      } else {
+        AppLogger.w('EditorMainArea', '无法滚动到活动场景，未找到场景: $sceneId');
+      }
+    }
+  }
 
   // 新增方法：检测可见区域中的空章节并按需加载
   void checkVisibleChaptersAndLoadIfEmpty() {
@@ -1543,30 +1750,6 @@ class EditorMainAreaState extends State<EditorMainArea> {
   }
 
   // 清理长时间不可见的场景控制器，释放内存
-  void _cleanupInvisibleScenes() {
-    if (!mounted) return;
-    
-    final now = DateTime.now();
-    final keysToRemove = <String>[];
-    
-    // 找出超过5分钟未见的场景
-    _renderedScenes.forEach((sceneId, isVisible) {
-      if (!isVisible && 
-          _lastVisibleTime.containsKey(sceneId) &&
-          now.difference(_lastVisibleTime[sceneId]!).inMinutes > 5) {
-        keysToRemove.add(sceneId);
-      }
-    });
-    
-    // 释放资源
-    for (final sceneId in keysToRemove) {
-      widget.sceneControllers.remove(sceneId);
-      widget.sceneSummaryControllers.remove(sceneId);
-      _renderedScenes.remove(sceneId);
-      _lastVisibleTime.remove(sceneId);
-      AppLogger.i('EditorMainArea', '清理长时间不可见场景: $sceneId');
-    }
-  }
   
   // 记录场景最后可见时间
   final Map<String, DateTime> _lastVisibleTime = {};
@@ -1603,7 +1786,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
 
   // 新增方法：确定焦点章节
   void _updateFocusChapter([bool forceUpdate = false]) {
-    if (!widget.scrollController.hasClients) return;
+    if (!widget.scrollController.hasClients || !mounted) return;
     
     // 获取当前视口的中心点
     final scrollPosition = widget.scrollController.position;
@@ -1612,45 +1795,156 @@ class EditorMainAreaState extends State<EditorMainArea> {
     // 记录最小距离和对应的章节
     double minDistance = double.infinity;
     String? closestChapterId;
-    String? closestActId; // 添加变量，保存找到的章节所属的actId
+    String? closestActId;
     
+    // 临时记录每个Act中最近的章节，用于优化跨卷逻辑
+    final Map<String, Map<String, double>> actToClosestChapters = {};
+    
+    // 如果启用了单卷模式且不是强制更新，则优先考虑当前焦点Act中的章节
+    if (_enforceSingleActMode && _focusChapterId != null && !forceUpdate) {
+      String? currentFocusActId = _getCurrentFocusActId();
+      if (currentFocusActId != null) {
+        // 记录当前焦点Act中的章节和距离
+        for (final entry in _chapterPositions.entries) {
+          final chapterId = entry.key;
+          final position = entry.value;
+          
+          // 查找章节所在的Act
+          for (final act in widget.novel.acts) {
+            if (act.id == currentFocusActId) {
+              for (final chapter in act.chapters) {
+                if (chapter.id == chapterId) {
+                  // 计算距离
+                  final distance = (position - viewportCenter).abs();
+                  
+                  // 如果是当前Act中的章节，并且距离更小，更新最近章节
+                  if (distance < minDistance) {
+                    minDistance = distance;
+                    closestChapterId = chapterId;
+                    closestActId = currentFocusActId;
+                  }
+                  
+                  // 确保Act的记录存在
+                  if (!actToClosestChapters.containsKey(currentFocusActId)) {
+                    actToClosestChapters[currentFocusActId] = {};
+                  }
+                  
+                  // 记录当前Act中的章节距离
+                  actToClosestChapters[currentFocusActId]![chapterId] = distance;
+                  
+                  break;
+                }
+              }
+              break;
+            }
+          }
+        }
+        
+        // 如果在当前Act中找到了合适的章节，直接使用
+        if (closestChapterId != null) {
+          AppLogger.i('EditorMainArea', '单卷模式：保持在当前Act, 使用最近章节: $closestChapterId');
+          
+          // 如果找到了最近的章节且与当前焦点章节不同，更新焦点章节
+          if (closestChapterId != _focusChapterId) {
+            AppLogger.i('EditorMainArea', '更新本地焦点章节: ${_focusChapterId ?? '无'} -> $closestChapterId');
+            setState(() {
+              _focusChapterId = closestChapterId;
+            });
+            
+            // 仅发送SetFocusChapter事件，不触发UI重建
+            widget.editorBloc.add(editor_bloc.SetFocusChapter(
+              chapterId: closestChapterId,
+            ));
+          }
+          
+          return;
+        }
+      }
+    }
+    
+    // 如果单卷模式下没有找到合适的章节，或者未启用单卷模式，则常规查找
     // 统计每个章节的全局位置
     for (final entry in _chapterPositions.entries) {
       final chapterId = entry.key;
       final position = entry.value;
       
-      // 计算与视口中心的距离
-      final distance = (position - viewportCenter).abs();
-      
-      // 如果距离更小，更新最近章节
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestChapterId = chapterId;
-      }
-    }
-    
-    // 如果找到了最近的章节，查找对应的actId
-    if (closestChapterId != null) {
+      // 找到章节所在的Act
+      String? actId;
       for (final act in widget.novel.acts) {
         for (final chapter in act.chapters) {
-          if (chapter.id == closestChapterId) {
-            closestActId = act.id;
+          if (chapter.id == chapterId) {
+            actId = act.id;
             break;
           }
         }
-        if (closestActId != null) break;
+        if (actId != null) break;
+      }
+      
+      // 跳过没找到Act的章节
+      if (actId == null) continue;
+      
+      // 确保Act的记录存在
+      if (!actToClosestChapters.containsKey(actId)) {
+        actToClosestChapters[actId] = {};
+      }
+      
+      // 计算与视口中心的距离
+      final distance = (position - viewportCenter).abs();
+      
+      // 记录当前Act中的章节距离
+      actToClosestChapters[actId]![chapterId] = distance;
+      
+      // 如果距离更小，更新全局最近章节
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestChapterId = chapterId;
+        closestActId = actId;
+      }
+    }
+    
+    // ===== 跨卷优化逻辑 =====
+    // 如果当前焦点章节不为空，且启用了单卷模式，强制阻止跨卷切换
+    if (_enforceSingleActMode && _focusChapterId != null && !forceUpdate) {
+      // 获取当前焦点章节对应的Act
+      String? currentFocusActId = _getCurrentFocusActId();
+      
+      // 如果有不同的Act，且都有可见章节
+      if (currentFocusActId != null && closestActId != null && 
+          currentFocusActId != closestActId &&
+          actToClosestChapters.containsKey(currentFocusActId) &&
+          actToClosestChapters[currentFocusActId]!.isNotEmpty) {
+        
+        // 查找当前焦点Act中最近的章节
+        String? closestChapterInCurrentAct;
+        double minDistanceInCurrentAct = double.infinity;
+        
+        actToClosestChapters[currentFocusActId]!.forEach((chapId, dist) {
+          if (dist < minDistanceInCurrentAct) {
+            minDistanceInCurrentAct = dist;
+            closestChapterInCurrentAct = chapId;
+          }
+        });
+        
+        // 如果当前Act有在视图中的章节，则不切换Act
+        if (closestChapterInCurrentAct != null) {
+          // 单卷模式下，只要当前Act有可见章节，就强制保持在当前Act
+          AppLogger.i('EditorMainArea', '单卷模式：强制保持在当前Act (${currentFocusActId})，不允许跨卷');
+          closestChapterId = closestChapterInCurrentAct;
+          minDistance = minDistanceInCurrentAct;
+          closestActId = currentFocusActId;
+        }
       }
     }
     
     // 如果找到了最近的章节且与当前焦点章节不同，更新焦点章节
-    if (closestChapterId != null && closestActId != null && 
-        (closestChapterId != _focusChapterId || forceUpdate)) {
-      AppLogger.i('EditorMainArea', '更新焦点章节: ${_focusChapterId ?? '无'} -> $closestChapterId');
-      _focusChapterId = closestChapterId;
+    if (closestChapterId != null && (closestChapterId != _focusChapterId || forceUpdate)) {
+      AppLogger.i('EditorMainArea', '更新本地焦点章节: ${_focusChapterId ?? '无'} -> $closestChapterId');
+      setState(() {
+        _focusChapterId = closestChapterId;
+      });
       
-      // 通知EditorBloc更新活动章节，添加必需的actId参数
-      widget.editorBloc.add(SetActiveChapter(
-        actId: closestActId,
+      // 发送SetFocusChapter事件而非SetActiveChapter
+      widget.editorBloc.add(editor_bloc.SetFocusChapter(
         chapterId: closestChapterId,
       ));
     }
@@ -1772,6 +2066,22 @@ class EditorMainAreaState extends State<EditorMainArea> {
     }
     
     return false;
+  }
+
+  // 添加新方法：明确设置活动章节
+  void setActiveChapter(String actId, String chapterId) {
+    AppLogger.i('EditorMainArea', '明确设置活动章节: $chapterId (ActId: $actId)');
+    
+    // 更新本地焦点章节
+    setState(() {
+      _focusChapterId = chapterId;
+    });
+    
+    // 发送事件给EditorBloc更新活动章节
+    widget.editorBloc.add(editor_bloc.SetActiveChapter(
+      actId: actId,
+      chapterId: chapterId,
+    ));
   }
 }
 
@@ -1936,8 +2246,24 @@ class _VirtualizedSceneLoaderState extends State<_VirtualizedSceneLoader> {
       } 
       // 其次检查可见性变化
       else if (widget.isVisible && !oldWidget.isVisible) {
-        AppLogger.d('VirtualizedSceneLoader', '场景 ${widget.sceneId} 变为可见状态，初始化控制器');
-        _initializeControllers();
+        // 检查是否是跨卷场景，如果是则使用延迟加载策略
+        bool isCrossActFromActiveScene = _isCrossActFromActiveScene();
+        
+        if (isCrossActFromActiveScene) {
+          // 跨卷场景延迟初始化，减轻一次性加载压力
+          final delay = _calculateDelayForCrossActScene();
+          AppLogger.d('VirtualizedSceneLoader', '场景 ${widget.sceneId} 是跨卷场景，延迟${delay.inMilliseconds}ms初始化');
+          
+          Future.delayed(delay, () {
+            if (mounted && widget.isVisible && !_isInitialized && !_isControllerInitializing) {
+              _initializeControllers();
+            }
+          });
+        } else {
+          // 非跨卷场景直接初始化
+          AppLogger.d('VirtualizedSceneLoader', '场景 ${widget.sceneId} 变为可见状态，初始化控制器');
+          _initializeControllers();
+        }
       }
     }
     
@@ -2159,6 +2485,37 @@ class _VirtualizedSceneLoaderState extends State<_VirtualizedSceneLoader> {
       ),
     );
   }
+
+  // 判断场景是否属于跨卷（与当前活动场景不在同一卷）
+  bool _isCrossActFromActiveScene() {
+    // 提取当前场景的Act ID
+    final parts = widget.sceneId.split('_');
+    if (parts.length < 3) return false;
+    final currentActId = parts[0];
+    
+    // 获取活动场景信息
+    final state = widget.editorBloc.state;
+    if (state is editor_bloc.EditorLoaded && state.activeActId != null) {
+      // 如果活动Act ID与当前场景Act ID不同，则是跨卷场景
+      return state.activeActId != currentActId;
+    }
+    
+    return false;
+  }
+  
+  // 为跨卷场景计算延迟时间，避免同时初始化太多控制器
+  Duration _calculateDelayForCrossActScene() {
+    // 提取场景ID中的相关信息，用于计算随机延迟
+    final parts = widget.sceneId.split('_');
+    if (parts.length < 3) return const Duration(milliseconds: 100);
+    
+    // 使用场景ID的哈希值计算一个伪随机的延迟时间
+    final hash = widget.sceneId.hashCode.abs();
+    final baseDelay = 200; // 基础延迟200毫秒
+    final randomAddition = hash % 800; // 0-800毫秒的随机附加延迟
+    
+    return Duration(milliseconds: baseDelay + randomAddition);
+  }
 }
 
 // 在隔离中解析文档内容
@@ -2198,3 +2555,4 @@ Document _parseDocumentInIsolate(String content) {
     return Document.fromJson([{'insert': '\n'}]);
   }
 }
+
