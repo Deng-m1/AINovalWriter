@@ -32,12 +32,15 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     on<UpdateEditorSettings>(_onUpdateSettings);
     on<SetActiveChapter>(_onSetActiveChapter);
     on<SetActiveScene>(_onSetActiveScene);
+    on<SetFocusChapter>(_onSetFocusChapter); // 添加新的事件处理
     on<AddNewScene>(_onAddNewScene);
     on<DeleteScene>(_onDeleteScene);
     on<DeleteChapter>(_onDeleteChapter);
     on<SaveSceneContent>(_onSaveSceneContent);
     on<AddNewAct>(_onAddNewAct);
     on<AddNewChapter>(_onAddNewChapter);
+    on<UpdateVisibleRange>(_onUpdateVisibleRange);
+    on<ResetActLoadingFlags>(_onResetActLoadingFlags); // 添加新事件处理
   }
   final EditorRepositoryImpl repository;
   final String novelId;
@@ -46,7 +49,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   bool _isDirty = false;
   DateTime? _lastSaveTime;
   final EditorSettings _settings = const EditorSettings();
-
+  bool? hasReachedEnd;
+  bool? hasReachedStart;
   // 加载场景节流控制
   DateTime? _lastLoadRequestTime;
   static const _loadThrottleInterval = Duration(milliseconds: 500);
@@ -287,12 +291,15 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       }
 
       if (newScenes.isEmpty) {
-        // 没有更多场景可加载，恢复原状态，但标记加载已结束
+        // 没有更多场景可加载，更新状态以显示已到达顶部/底部
         AppLogger.i('Blocs/editor/editor_bloc', '没有更多场景可加载，API返回为空');
-        // 仅当之前更新了加载状态时才发送状态更新
-        if (!shouldSkipLoadingState) {
-          emit(currentState.copyWith(isLoading: false));
-        }
+        
+        // 更新状态，根据方向设置相应标志
+        emit(currentState.copyWith(
+          isLoading: false,
+          hasReachedEnd: event.direction == 'down' || event.direction == 'center',  // 向下或中心加载时设置已到底
+          hasReachedStart: event.direction == 'up' || event.direction == 'center',  // 向上或中心加载时设置已到顶
+        ));
         return;
       }
 
@@ -1197,7 +1204,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       return act.copyWith(chapters: updatedChapters);
     }).toList();
     
-    // 返回更新后的小说
+    // 在返回更新后的小说之前记录一些渲染相关的日志
+    AppLogger.i('EditorBloc', '合并了${newScenes.length}个章节的场景，可能需要重新渲染');
     return novel.copyWith(acts: updatedActs);
   }
 
@@ -1328,9 +1336,27 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       SetActiveChapter event, Emitter<EditorState> emit) async {
     final currentState = state;
     if (currentState is EditorLoaded) {
+      // 查找章节中的第一个场景作为活动场景
+      String? firstSceneId;
+      for (final act in currentState.novel.acts) {
+        if (act.id == event.actId) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == event.chapterId && chapter.scenes.isNotEmpty) {
+              firstSceneId = chapter.scenes.first.id;
+              break;
+            }
+          }
+          break;
+        }
+      }
+      
+      // 记录日志
+      AppLogger.i('EditorBloc', '设置活动章节: ${event.actId}/${event.chapterId}, 活动场景: $firstSceneId');
+      
       emit(currentState.copyWith(
         activeActId: event.actId,
         activeChapterId: event.chapterId,
+        activeSceneId: firstSceneId, // 设置为章节的第一个场景或null
       ));
     }
   }
@@ -2011,5 +2037,43 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     if (keysToRemove.isNotEmpty) {
       AppLogger.i('EditorBloc', '已清理${keysToRemove.length}个属于已删除章节${chapterId}的场景保存请求');
     }
+  }
+
+  // 实现更新可见范围的处理
+  Future<void> _onUpdateVisibleRange(
+      UpdateVisibleRange event, Emitter<EditorState> emit) async {
+    final currentState = state;
+    if (currentState is EditorLoaded) {
+      emit(currentState.copyWith(
+        visibleRange: [event.startIndex, event.endIndex],
+      ));
+    }
+  }
+
+  // 处理重置Act加载状态标志的事件
+  Future<void> _onResetActLoadingFlags(
+      ResetActLoadingFlags event, Emitter<EditorState> emit) async {
+    final currentState = state;
+    if (currentState is EditorLoaded) {
+      AppLogger.i('Blocs/editor/editor_bloc', '重置Act加载状态标志');
+      emit(currentState.copyWith(
+        hasReachedEnd: false,
+        hasReachedStart: false,
+      ));
+    }
+  }
+
+  // 处理设置焦点章节事件
+  Future<void> _onSetFocusChapter(
+      SetFocusChapter event, Emitter<EditorState> emit) async {
+    final currentState = state;
+    if (currentState is! EditorLoaded) return;
+
+    AppLogger.i('Blocs/editor/editor_bloc', '更新焦点章节: ${event.chapterId}');
+    
+    // 保持其他状态不变，只更新focusChapterId
+    emit(currentState.copyWith(
+      focusChapterId: event.chapterId,
+    ));
   }
 }

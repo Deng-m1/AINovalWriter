@@ -100,6 +100,19 @@ class EditorScreenController extends ChangeNotifier {
   DateTime? _lastSummaryLoadTime;
   static const Duration _summaryLoadThrottleInterval = Duration(seconds: 60); // 1分钟内不重复加载
 
+  // 新增：在EditorScreenController中添加
+  bool get hasReachedEnd => 
+      editorBloc.state is editor_bloc.EditorLoaded && 
+      (editorBloc.state as editor_bloc.EditorLoaded).hasReachedEnd;
+
+  bool get hasReachedStart => 
+      editorBloc.state is editor_bloc.EditorLoaded && 
+      (editorBloc.state as editor_bloc.EditorLoaded).hasReachedStart;
+
+  // 用于EditorBloc状态监听的字段
+  int? _lastScenesCount;
+  int? _lastChaptersCount;
+
   // 初始化方法
   void _init() {
     // 创建必要的实例
@@ -115,6 +128,9 @@ class EditorScreenController extends ChangeNotifier {
       repository: editorRepository,
       novelId: novel.id,
     );
+    
+    // 监听EditorBloc状态变化，用于更新UI
+    _setupEditorBlocListener();
 
     // 初始化PlanBloc
     planBloc = plan_bloc.PlanBloc(
@@ -194,6 +210,67 @@ class EditorScreenController extends ChangeNotifier {
 
     // 设置性能监控
     _setupPerformanceMonitoring();
+  }
+
+  // 监听EditorBloc状态变化
+  void _setupEditorBlocListener() {
+    editorBloc.stream.listen((state) {
+      if (state is editor_bloc.EditorLoaded) {
+        // 检查加载状态和章节/场景计数
+        
+        // 计算当前场景和章节总数
+        int currentScenesCount = 0;
+        int currentChaptersCount = 0;
+        
+        for (final act in state.novel.acts) {
+          currentChaptersCount += act.chapters.length;
+          for (final chapter in act.chapters) {
+            currentScenesCount += chapter.scenes.length;
+          }
+        }
+        
+        // 如果章节或场景数量发生变化，通知UI更新
+        if (_lastScenesCount != null && _lastScenesCount != currentScenesCount) {
+          AppLogger.i('EditorScreenController', 
+              '检测到章节或场景数量变化: 章节 ${_lastChaptersCount}->$currentChaptersCount, 场景 ${_lastScenesCount}->$currentScenesCount');
+          
+          // 通知UI刷新
+          _notifyMainAreaToRefresh();
+        }
+        
+        // 如果加载状态为false且之前记录的isLoadingMore为true，表示刚完成加载
+        if (!state.isLoading && _isLoadingMore) {
+          AppLogger.i('EditorScreenController', '加载完成，通知UI刷新');
+          
+          // 更新加载状态
+          _isLoadingMore = false;
+          
+          // 通知UI刷新
+          _notifyMainAreaToRefresh();
+        }
+        
+        // 更新记录的数量
+        _lastScenesCount = currentScenesCount;
+        _lastChaptersCount = currentChaptersCount;
+        
+        // 记录加载状态
+        _isLoadingMore = state.isLoading;
+      }
+    });
+  }
+  
+  // 通知EditorMainArea刷新UI
+  void _notifyMainAreaToRefresh() {
+    if (editorMainAreaKey.currentState != null) {
+      // 直接调用EditorMainArea的refreshUI方法
+      editorMainAreaKey.currentState!.refreshUI();
+      AppLogger.i('EditorScreenController', '通知EditorMainArea刷新UI');
+    } else {
+      AppLogger.w('EditorScreenController', '无法获取EditorMainArea实例，无法刷新UI');
+      
+      // 通过重建整个编辑区来强制刷新
+      notifyListeners();
+    }
   }
 
   // 添加性能监控

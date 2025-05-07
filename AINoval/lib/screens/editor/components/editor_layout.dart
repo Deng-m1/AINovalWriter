@@ -511,6 +511,32 @@ class EditorLayout extends StatelessWidget {
   }
 
   // 构建加载动画覆盖层
+  Widget _buildEndOfContentIndicator(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        message,
+        style: TextStyle(
+          color: Colors.grey[600],
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
   Widget _buildLoadingOverlay(BuildContext context) {
     return Positioned(
       left: 0,
@@ -531,41 +557,54 @@ class EditorLayout extends StatelessWidget {
           ),
         ),
         child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(30),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(25),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 加载指示器
+              if (controller.isLoadingMore)
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withAlpha(25),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        '正在加载更多内容...',
+                        style: TextStyle(
+                          color: Colors.grey.shade800,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 16),
-                Text(
-                  '正在加载更多内容...',
-                  style: TextStyle(
-                    color: Colors.grey.shade800,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
+                
+              // 底部/顶部提示
+              if (controller.hasReachedEnd)
+                _buildEndOfContentIndicator("已到达底部"),
+              if (controller.hasReachedStart)
+                _buildEndOfContentIndicator("已到达顶部"),
+            ],
           ),
         ),
       ),

@@ -405,3 +405,34 @@ class SaveSceneContent extends EditorEvent {
   @override
   List<Object> get props => [novelId, actId, chapterId, sceneId, content, wordCount, localOnly];
 }
+
+class UpdateVisibleRange extends EditorEvent {
+  const UpdateVisibleRange({
+    required this.startIndex,
+    required this.endIndex,
+  });
+  final int startIndex;
+  final int endIndex;
+  
+  @override
+  List<Object?> get props => [startIndex, endIndex];
+}
+
+/// 重置Act加载状态标志（hasReachedEnd和hasReachedStart）
+class ResetActLoadingFlags extends EditorEvent {
+  const ResetActLoadingFlags();
+
+  @override
+  List<Object?> get props => [];
+}
+
+// 设置焦点章节事件
+class SetFocusChapter extends EditorEvent {
+  const SetFocusChapter({
+    required this.chapterId,
+  });
+  final String chapterId;
+
+  @override
+  List<Object?> get props => [chapterId];
+}
