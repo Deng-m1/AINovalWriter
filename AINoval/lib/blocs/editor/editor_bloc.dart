@@ -41,6 +41,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     on<AddNewChapter>(_onAddNewChapter);
     on<UpdateVisibleRange>(_onUpdateVisibleRange);
     on<ResetActLoadingFlags>(_onResetActLoadingFlags); // 添加新事件处理
+    on<SetActLoadingFlags>(_onSetActLoadingFlags); // 添加新的事件处理器
   }
   final EditorRepositoryImpl repository;
   final String novelId;
@@ -2075,5 +2076,20 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     emit(currentState.copyWith(
       focusChapterId: event.chapterId,
     ));
+  }
+
+  // 处理设置Act加载状态标志的事件
+  Future<void> _onSetActLoadingFlags(
+      SetActLoadingFlags event, Emitter<EditorState> emit) async {
+    final currentState = state;
+    if (currentState is EditorLoaded) {
+      AppLogger.i('Blocs/editor/editor_bloc', 
+          '设置Act加载状态标志: hasReachedEnd=${event.hasReachedEnd}, hasReachedStart=${event.hasReachedStart}');
+      
+      emit(currentState.copyWith(
+        hasReachedEnd: event.hasReachedEnd,
+        hasReachedStart: event.hasReachedStart,
+      ));
+    }
   }
 }

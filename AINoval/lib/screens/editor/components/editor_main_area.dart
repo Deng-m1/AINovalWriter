@@ -336,54 +336,55 @@ class EditorMainAreaState extends State<EditorMainArea> {
         return;
       }
       
-      // 如果已经到达内容底部，并且不在第一个Act，也跳过检查
+      // 修改: 即使已经到达当前Act底部，也需要检查是否有下一个Act可加载
       if (state.hasReachedEnd && _focusChapterId != null) {
         String? focusActId = null;
-        for (final act in widget.novel.acts) {
+        int focusActIndex = -1;
+        
+        // 查找当前焦点章节所属的Act及其索引
+        for (int i = 0; i < widget.novel.acts.length; i++) {
+          final act = widget.novel.acts[i];
           for (final chapter in act.chapters) {
             if (chapter.id == _focusChapterId) {
               focusActId = act.id;
+              focusActIndex = i;
               break;
             }
           }
           if (focusActId != null) break;
         }
         
-        // 如果焦点Act不是最后一个Act，还应该继续加载
-        bool isLastAct = false;
-        if (focusActId != null) {
-          isLastAct = widget.novel.acts.last.id == focusActId;
-        }
+        // 检查是否为最后一个Act
+        bool isLastAct = focusActId != null && focusActIndex == widget.novel.acts.length - 1;
         
-        // 如果不是最后一个Act，查找下一个Act的第一个章节作为加载起点
-        if (!isLastAct && focusActId != null) {
-          int actIndex = -1;
-          for (int i = 0; i < widget.novel.acts.length; i++) {
-            if (widget.novel.acts[i].id == focusActId) {
-              actIndex = i;
-              break;
-            }
-          }
-          
-          if (actIndex >= 0 && actIndex + 1 < widget.novel.acts.length) {
-            final nextAct = widget.novel.acts[actIndex + 1];
+        // 如果不是最后一个Act，尝试加载下一个Act的内容
+        if (!isLastAct && focusActId != null && focusActIndex >= 0) {
+          // 获取下一个Act
+          final nextActIndex = focusActIndex + 1;
+          if (nextActIndex < widget.novel.acts.length) {
+            final nextAct = widget.novel.acts[nextActIndex];
             if (nextAct.chapters.isNotEmpty) {
               final nextChapter = nextAct.chapters.first;
               
-              AppLogger.i('EditorMainArea', '已到达当前Act底部，继续加载下一个Act的内容');
+              AppLogger.i('EditorMainArea', 
+                  '已到达当前Act底部，加载下一个Act (${nextAct.title}) 的内容');
               
+              // 标记章节为加载中状态
+              _markChapterAsLoading(nextChapter.id);
+              
+              // 重置标志并加载下一个Act的内容
+              widget.editorBloc.add(editor_bloc.ResetActLoadingFlags());
+              
+              // 使用center加载模式，确保能获取到足够的内容
               widget.editorBloc.add(editor_bloc.LoadMoreScenes(
                 fromChapterId: nextChapter.id,
                 direction: 'center',
-                chaptersLimit: 3,
+                chaptersLimit: 5, // 增加章节数量以获取更多内容
                 preventFocusChange: true,
               ));
               
-              // 重置标志，允许加载下一个Act
-              if (widget.editorBloc.state is editor_bloc.EditorLoaded) {
-                widget.editorBloc.add(editor_bloc.ResetActLoadingFlags());
-              }
-              
+              // 强制刷新UI以显示加载状态
+              setState(() {});
               return;
             }
           }
@@ -449,75 +450,88 @@ class EditorMainAreaState extends State<EditorMainArea> {
     if (widget.editorBloc.state is editor_bloc.EditorLoaded) {
       final state = widget.editorBloc.state as editor_bloc.EditorLoaded;
       if (state.isLoading) {
-        AppLogger.d('EditorMainArea', '有正在进行的加载，跳过加载请求');
+        AppLogger.d('EditorMainArea', '编辑器正在加载中，跳过加载请求');
         return;
       }
+    } else {
+      AppLogger.d('EditorMainArea', '编辑器尚未初始化，跳过加载请求');
+      return;
+    }
+    
+    // 处理向下加载且已到达当前Act底部的情况
+    if (direction == 'down' && _focusChapterId != null) {
+      // 查找焦点章节所在的Act和索引
+      int focusActIndex = -1;
+      int focusChapterIndex = -1;
+      novel_models.Act? focusAct;
+      novel_models.Chapter? focusChapter;
       
-      // 检查是否已到达内容边界
-      if ((direction == 'up' && state.hasReachedStart) || 
-          (direction == 'down' && state.hasReachedEnd)) {
-        
-        // 如果已经到达边界但仍有空章节，说明需要加载下一个Act的内容
-        if (direction == 'down' && state.hasReachedEnd) {
-          AppLogger.i('EditorMainArea', '已到达当前Act底部，尝试加载下一个Act的内容');
-          
-          // 查找当前焦点章节
-          if (_focusChapterId != null) {
-            String? focusActId = null;
-            for (final act in widget.novel.acts) {
-              for (final chapter in act.chapters) {
-                if (chapter.id == _focusChapterId) {
-                  focusActId = act.id;
-                  break;
-                }
-              }
-              if (focusActId != null) break;
-            }
-            
-            // 查找焦点Act之后的第一个Act
-            if (focusActId != null) {
-              int actIndex = -1;
-              for (int i = 0; i < widget.novel.acts.length; i++) {
-                if (widget.novel.acts[i].id == focusActId) {
-                  actIndex = i;
-                  break;
-                }
-              }
-              
-              // 如果找到了焦点Act且不是最后一个，尝试加载下一个Act的第一个章节
-              if (actIndex >= 0 && actIndex + 1 < widget.novel.acts.length) {
-                final nextAct = widget.novel.acts[actIndex + 1];
-                if (nextAct.chapters.isNotEmpty) {
-                  final nextChapter = nextAct.chapters.first;
-                  
-                  AppLogger.i('EditorMainArea', 
-                      '加载下一个Act的内容: 从 ${nextAct.title} 的第一个章节开始');
-                  
-                  // 标记章节为加载中状态
-                  _markChapterAsLoading(nextChapter.id);
-                  
-                  // 重置标志并加载下一个Act的内容
-                  widget.editorBloc.add(editor_bloc.ResetActLoadingFlags());
-                  
-                  // 使用center加载模式，确保能获取到足够的内容
-                  widget.editorBloc.add(editor_bloc.LoadMoreScenes(
-                    fromChapterId: nextChapter.id,
-                    direction: 'center',
-                    chaptersLimit: 5, // 增加章节数量以获取更多内容
-                    preventFocusChange: true,
-                  ));
-                  
-                  // 强制刷新UI以显示加载状态
-                  setState(() {});
-                  return;
-                }
-              }
-            }
+      for (int i = 0; i < widget.novel.acts.length; i++) {
+        focusAct = widget.novel.acts[i];
+        for (int j = 0; j < focusAct.chapters.length; j++) {
+          if (focusAct.chapters[j].id == _focusChapterId) {
+            focusChapterIndex = j;
+            focusChapter = focusAct.chapters[j];
+            focusActIndex = i;
+            break;
           }
         }
+        if (focusActIndex >= 0) break;
+      }
+      
+      // 检查是否找到了焦点章节
+      if (focusAct != null && focusChapter != null && focusActIndex >= 0 && focusChapterIndex >= 0) {
+        // 检查当前章节是否是当前Act的最后一个章节
+        bool isLastChapterInAct = focusChapterIndex == focusAct.chapters.length - 1;
+        bool isLastAct = focusActIndex == widget.novel.acts.length - 1;
         
-        AppLogger.d('EditorMainArea', '已到达${direction == 'up' ? '顶部' : '底部'}，跳过加载请求');
-        return;
+        AppLogger.i('EditorMainArea', '检查跨Act加载: 焦点章节=${focusChapter.title}, 是所在Act最后一章=$isLastChapterInAct, 是最后一个Act=$isLastAct');
+        
+        if (isLastChapterInAct) {
+          AppLogger.i('EditorMainArea', '已经是当前Act的最后一章，检查是否可加载下一个Act');
+          
+          if (!isLastAct && focusActIndex >= 0 && focusActIndex + 1 < widget.novel.acts.length) {
+            final nextAct = widget.novel.acts[focusActIndex + 1];
+            
+            // 如果下一个Act有章节，加载它
+            if (nextAct.chapters.isNotEmpty) {
+              final nextChapter = nextAct.chapters.first;
+              AppLogger.i('EditorMainArea', 
+                  '已到达当前Act底部，加载下一个Act: ${nextAct.title}');
+              
+              // 标记章节为加载中
+              _markChapterAsLoading(nextChapter.id);
+              
+              // 重置加载标志
+              widget.editorBloc.add(editor_bloc.ResetActLoadingFlags());
+              
+              // 使用center模式加载下一个Act的内容
+              widget.editorBloc.add(editor_bloc.LoadMoreScenes(
+                fromChapterId: nextChapter.id,
+                direction: 'center', // 使用center模式加载章节本身及其后续内容
+                chaptersLimit: 5,     // 增加章节数量以获取更多内容
+                preventFocusChange: true,
+              ));
+              
+              // 记录加载时间
+              _lastLoadDownTime = now;
+              
+              // 刷新UI显示加载状态
+              setState(() {});
+              return;
+            }
+          } else if (isLastAct) {
+            // 如果已经是最后一个Act，显示信息
+            AppLogger.i('EditorMainArea', '已到达最后一个Act的底部，没有更多内容可加载');
+            
+            // 先重置标志，然后设置hasReachedEnd为true
+            widget.editorBloc.add(const editor_bloc.ResetActLoadingFlags());
+            widget.editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedEnd: true));
+            
+            AppLogger.i('EditorMainArea', '设置hasReachedEnd标志为true，显示添加Act按钮');
+            return;
+          }
+        }
       }
     }
     
@@ -863,8 +877,9 @@ class EditorMainAreaState extends State<EditorMainArea> {
                         },
                       ),
                       
-                      // 添加新Act按钮
-                      _AddActButton(editorBloc: widget.editorBloc),
+                      // 添加新Act按钮 - 修改显示逻辑
+                      if (_shouldShowAddActButton())
+                        _AddActButton(editorBloc: widget.editorBloc),
                       
                       // 底部空间
                       const SizedBox(height: 60),
@@ -1047,9 +1062,22 @@ class EditorMainAreaState extends State<EditorMainArea> {
         }
       }
       
-      // 如果找到当前Act，则只渲染当前Act
+      // 如果找到当前Act，则只渲染当前Act和下一个Act
       if (currentActId != null) {
-        return act.id == currentActId;
+        int currentActIndex = -1;
+        for (int i = 0; i < widget.novel.acts.length; i++) {
+          if (widget.novel.acts[i].id == currentActId) {
+            currentActIndex = i;
+            break;
+          }
+        }
+        
+        // 渲染当前Act和下一个Act
+        if (currentActIndex >= 0) {
+          return act.id == currentActId || 
+                 (currentActIndex + 1 < widget.novel.acts.length && 
+                  widget.novel.acts[currentActIndex + 1].id == act.id);
+        }
       }
     }
 
@@ -1090,28 +1118,25 @@ class EditorMainAreaState extends State<EditorMainArea> {
     // 如果是焦点Act之前的Act，允许渲染
     if (currentActIndex < focusActIndex) return true;
     
-    // 如果是焦点Act之后的Act，只有在以下条件满足时才渲染：
-    // 1. 焦点Act已完全加载完成（所有章节都有场景）
-    // 2. 系统状态标记为已到达底部
-    
-    // 检查焦点Act是否所有章节都已加载
-    bool focusActFullyLoaded = true;
-    final focusAct = widget.novel.acts[focusActIndex];
-    for (final chapter in focusAct.chapters) {
-      if (chapter.scenes.isEmpty) {
-        focusActFullyLoaded = false;
-        break;
+    // 修改：如果是焦点Act紧邻的下一个Act，且焦点Act已加载完成或已到达底部，则允许渲染
+    if (currentActIndex == focusActIndex + 1) {
+      // 检查焦点Act是否已加载完成（所有章节都有场景）
+      bool focusActFullyLoaded = true;
+      final focusAct = widget.novel.acts[focusActIndex];
+      for (final chapter in focusAct.chapters) {
+        if (chapter.scenes.isEmpty) {
+          focusActFullyLoaded = false;
+          break;
+        }
+      }
+      
+      // 如果焦点Act已加载完成或已到达底部，允许渲染下一个Act
+      if (focusActFullyLoaded || hasReachedEnd) {
+        AppLogger.i('EditorMainArea', '允许渲染下一个Act: ${act.title}, 因为焦点Act已${focusActFullyLoaded ? "完全加载" : "到达底部"}');
+        return true;
       }
     }
-    
-    // 如果焦点Act未完全加载，不渲染后续Act
-    if (!focusActFullyLoaded) return false;
-    
-    // 如果已到达底部，允许渲染下一个Act
-    if (hasReachedEnd && currentActIndex == focusActIndex + 1) {
-    return true;
-  }
-  
+
     // 检查前面所有的Act是否都已完全加载
     for (int i = 0; i < currentActIndex; i++) {
       final previousAct = widget.novel.acts[i];
@@ -1714,6 +1739,39 @@ class EditorMainAreaState extends State<EditorMainArea> {
     if (newPositionsCount > oldPositionsCount) {
       AppLogger.i('EditorMainArea', '章节位置信息已更新: $oldPositionsCount -> $newPositionsCount');
     }
+  }
+
+  // 新增方法：判断是否应该显示"添加新卷"按钮
+  bool _shouldShowAddActButton() {
+    if (widget.editorBloc.state is! editor_bloc.EditorLoaded) return false;
+    
+    final state = widget.editorBloc.state as editor_bloc.EditorLoaded;
+    
+    // 如果没有Act，始终显示添加按钮
+    if (widget.novel.acts.isEmpty) return true;
+    
+    // 检查是否是最后一个Act，且已经加载完毕
+    if (state.hasReachedEnd && _focusChapterId != null) {
+      // 查找焦点章节所在的Act
+      String? focusActId;
+      for (final act in widget.novel.acts) {
+        for (final chapter in act.chapters) {
+          if (chapter.id == _focusChapterId) {
+            focusActId = act.id;
+            break;
+          }
+        }
+        if (focusActId != null) break;
+      }
+      
+      // 判断焦点Act是否是最后一个Act
+      if (focusActId != null && focusActId == widget.novel.acts.last.id) {
+        AppLogger.i('EditorMainArea', '当前焦点在最后一个Act且已到底部，显示添加新卷按钮');
+        return true;
+      }
+    }
+    
+    return false;
   }
 }
 

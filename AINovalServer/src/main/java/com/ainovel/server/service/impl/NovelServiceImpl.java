@@ -43,6 +43,7 @@ import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.function.Tuple2;
 
 /**
  * 小说服务实现类
@@ -558,81 +559,95 @@ public class NovelServiceImpl implements NovelService {
 
     @Override
     public Mono<Map<String, List<Scene>>> loadMoreScenes(String novelId, String fromChapterId, String direction, int chaptersLimit) {
-        log.info("加载更多场景，novelId={}, fromChapterId={}, direction={}, chaptersLimit={}",
-                novelId, fromChapterId, direction, chaptersLimit);
-
+        log.info("加载更多场景: novelId={}, fromChapterId={}, direction={}, chaptersLimit={}", novelId, fromChapterId, direction, chaptersLimit);
+        
         return novelRepository.findById(novelId)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
                 .flatMap(novel -> {
-                    // 获取所有章节ID，并保持它们的顺序
+                    // 准备一个所有章节的ID列表，以便确定加载范围
                     List<String> allChapterIds = new ArrayList<>();
-
+                    
+                    // 遍历小说结构收集所有章节ID
                     for (Novel.Act act : novel.getStructure().getActs()) {
                         for (Novel.Chapter chapter : act.getChapters()) {
                             allChapterIds.add(chapter.getId());
                         }
                     }
-
-                    // 如果没有章节，或者fromChapterId不在章节列表中，返回空结果
-                    if (allChapterIds.isEmpty() || !allChapterIds.contains(fromChapterId)) {
-                        log.warn("加载更多场景失败：章节列表为空或fromChapterId不存在, novelId={}, fromChapterId={}",
-                                novelId, fromChapterId);
-                        Map<String, List<Scene>> emptyResult = new HashMap<>();
-                        return Mono.just(emptyResult);
+                    
+                    log.info("小说 {} 共有 {} 个章节", novelId, allChapterIds.size());
+                    
+                    int fromIndex = allChapterIds.indexOf(fromChapterId); // 当前章节在所有章节列表中的索引
+                    if (fromIndex == -1) {
+                        log.error("找不到指定的章节: {}", fromChapterId);
+                        return Mono.just(new HashMap<>());
                     }
-
-                    int fromIndex = allChapterIds.indexOf(fromChapterId);
+                    
                     List<String> chapterIdsToLoad;
 
                     if ("up".equalsIgnoreCase(direction)) {
-                        // 向上加载（加载fromChapterId之前的章节）
+                        // 向上加载
                         int startIndex = Math.max(0, fromIndex - chaptersLimit);
-                        chapterIdsToLoad = allChapterIds.subList(startIndex, fromIndex); // Exclude fromIndex itself
+                        chapterIdsToLoad = allChapterIds.subList(startIndex, fromIndex); // 不包括 fromIndex 章节本身
                         log.info("向上加载章节，从索引{}到{}，共{}个章节", startIndex, fromIndex, chapterIdsToLoad.size());
                     } else if ("center".equalsIgnoreCase(direction)) {
-                        // 中心加载 (加载 fromChapterId 及其前后)
-                        int startIndex = Math.max(0, fromIndex - chaptersLimit);
-                        int endIndex = Math.min(allChapterIds.size(), fromIndex + chaptersLimit + 1); // +1 because subList end index is exclusive
-                        chapterIdsToLoad = allChapterIds.subList(startIndex, endIndex); // Include fromIndex itself
-                        log.info("中心加载章节，从索引{}到{}，共{}个章节", startIndex, endIndex, chapterIdsToLoad.size());
-                    } else {
+                        // 中心加载 - 修改逻辑，实现加载当前章节和之后的章节
+                        int startIndex = fromIndex; // 起始点是当前章节（包含）
+                        int endIndex = Math.min(allChapterIds.size(), fromIndex + chaptersLimit); // 加载当前章节及后续章节
+                        chapterIdsToLoad = allChapterIds.subList(startIndex, endIndex);
+                        log.info("中心加载章节，从当前章节开始加载，索引{}到{}，共{}个章节", startIndex, endIndex, chapterIdsToLoad.size());
+                    } else { // "down"
                         // 向下加载（加载fromChapterId之后的章节）
-                        int endIndex = Math.min(allChapterIds.size(), fromIndex + chaptersLimit + 1); // +1 because subList end index is exclusive
-                        if (fromIndex + 1 < endIndex) { // Only load if there are chapters *after* fromIndex
-                            chapterIdsToLoad = allChapterIds.subList(fromIndex + 1, endIndex); // Exclude fromIndex itself
+                        // 详细记录日志
+                        log.info("向下加载：fromChapterId={}, fromIndex={}, allChapterIds.size()={}", fromChapterId, fromIndex, allChapterIds.size());
+                        
+                        int startIndexForDown = fromIndex + 1; // 从fromChapterId的下一个开始
+                        int endIndexForDown = Math.min(allChapterIds.size(), startIndexForDown + chaptersLimit);
+                        
+                        log.info("向下加载计算：startIndexForDown={}, endIndexForDown={}", startIndexForDown, endIndexForDown);
+                        
+                        if (startIndexForDown < allChapterIds.size() && startIndexForDown < endIndexForDown) {
+                            chapterIdsToLoad = allChapterIds.subList(startIndexForDown, endIndexForDown);
+                            log.info("向下加载，待加载章节ID: {}", chapterIdsToLoad);
                         } else {
                             chapterIdsToLoad = new ArrayList<>();
+                            // 记录详细原因
+                            if (startIndexForDown >= allChapterIds.size()) {
+                                log.info("向下加载，已经是最后一个章节，没有更多章节可供加载");
+                            } else {
+                                log.warn("向下加载，起始索引{}大于或等于结束索引{}，无法加载", startIndexForDown, endIndexForDown);
+                            }
                         }
-                        log.info("向下加载章节，从索引{}到{}，共{}个章节", fromIndex + 1, endIndex, chapterIdsToLoad.size());
                     }
 
                     // 如果没有章节可加载，返回空结果
                     if (chapterIdsToLoad.isEmpty()) {
-                        log.info("根据方向 '{}' 计算后，没有更多章节可加载", direction);
                         Map<String, List<Scene>> emptyResult = new HashMap<>();
+                        log.info("没有章节可加载，返回空结果");
                         return Mono.just(emptyResult);
                     }
 
-                    // 获取这些章节的场景
+                    // 加载每个章节的场景
                     return Flux.fromIterable(chapterIdsToLoad)
-                            .flatMap(chapterId -> sceneRepository.findByChapterId(chapterId))
+                            .flatMap(chapterId -> 
+                                // 为每个章节加载场景
+                                sceneRepository.findByChapterId(chapterId)
+                                    .collectList()
+                                    .doOnNext(scenes -> log.info("章节 {} 的场景数量: {}", chapterId, scenes.size()))
+                            )
                             .collectList()
-                            .map(scenes -> {
-                                // 明确指定返回类型为Map而非HashMap
-                                Map<String, List<Scene>> result = new HashMap<>();
-
-                                // 按章节ID分组
-                                Map<String, List<Scene>> groupedScenes = scenes.stream()
-                                        .collect(Collectors.groupingBy(Scene::getChapterId));
-
-                                // 将分组结果复制到结果Map中
-                                result.putAll(groupedScenes);
-
-                                return result;
-                            });
-                })
-                .doOnSuccess(result -> log.info("加载更多场景成功，加载章节数: {}", result.size()))
-                .doOnError(e -> log.error("加载更多场景失败", e));
+                            .map(sceneLists -> {
+                                Map<String, List<Scene>> groupedScenes = new HashMap<>();
+                                // 将场景按章节ID分组
+                                for (int i = 0; i < chapterIdsToLoad.size() && i < sceneLists.size(); i++) {
+                                    String chapterId = chapterIdsToLoad.get(i);
+                                    List<Scene> scenes = sceneLists.get(i);
+                                    log.info("处理章节 {}，场景数: {}", chapterId, scenes.size());
+                                    groupedScenes.put(chapterId, scenes);
+                                }
+                                return groupedScenes;
+                            })
+                            .doOnSuccess(result -> log.info("加载更多场景成功，加载章节数: {}", result.size()));
+                });
     }
 
     @Override
