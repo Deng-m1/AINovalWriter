@@ -5,6 +5,7 @@ import 'package:ainoval/screens/editor/components/draggable_divider.dart';
 import 'package:ainoval/screens/editor/components/editor_app_bar.dart';
 import 'package:ainoval/screens/editor/components/editor_main_area.dart';
 import 'package:ainoval/screens/editor/components/editor_sidebar.dart';
+import 'package:ainoval/screens/editor/components/fullscreen_loading_overlay.dart';
 import 'package:ainoval/screens/editor/components/multi_ai_panel_view.dart';
 import 'package:ainoval/screens/editor/components/plan_view.dart';
 import 'package:ainoval/screens/editor/controllers/editor_screen_controller.dart';
@@ -509,6 +510,13 @@ class EditorLayout extends StatelessWidget {
             // 加载动画覆盖层
             if (isLoadingMore)
               _buildLoadingOverlay(context),
+            // 添加全屏加载动画覆盖层
+            if (controllerState.isFullscreenLoading)
+              FullscreenLoadingOverlay(
+                loadingMessage: controllerState.loadingMessage,
+                showProgressIndicator: true,
+                progress: controllerState.loadingProgress >= 0 ? controllerState.loadingProgress : -1,
+              ),
           ],
         );
       },

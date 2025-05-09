@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_quill/flutter_quill.dart' hide EditorState;
+import 'package:collection/collection.dart'; // Add this line
 
 // 添加这些顶层定义，放在import语句之后，类定义之前
 // 滚动状态枚举
@@ -132,6 +133,18 @@ class EditorScreenController extends ChangeNotifier {
   int? _lastScenesCount;
   int? _lastChaptersCount;
 
+  // 添加更多的状态变量
+  bool _isFullscreenLoading = false;
+  String _loadingMessage = '正在加载编辑器...';
+  double _loadingProgress = 0.0;
+  int _initializationStep = 0;
+  final int _totalInitializationSteps = 5;
+
+  // 提供getter供UI使用
+  bool get isFullscreenLoading => _isFullscreenLoading;
+  String get loadingMessage => _loadingMessage;
+  double get loadingProgress => _loadingProgress;
+
   // 检查是否有任何加载正在进行
   bool _isAnyLoading() {
     // 检查编辑器状态
@@ -154,6 +167,12 @@ class EditorScreenController extends ChangeNotifier {
 
   // 初始化方法
   void _init() {
+    // 启用全屏加载状态
+    _isFullscreenLoading = true;
+    _loadingProgress = 0.0;
+    _initializationStep = 0;
+    _updateLoadingProgress('正在初始化编辑器核心组件...');
+
     // 创建必要的实例
     apiClient = ApiClient();
     editorRepository = EditorRepositoryImpl();
@@ -161,6 +180,8 @@ class EditorScreenController extends ChangeNotifier {
     localStorageService = LocalStorageService();
 
     tabController = TabController(length: 4, vsync: vsync);
+    
+    _updateLoadingProgress('正在启动编辑器服务...');
 
     // 初始化EditorBloc
     editorBloc = editor_bloc.EditorBloc(
@@ -177,6 +198,8 @@ class EditorScreenController extends ChangeNotifier {
       novelId: novel.id,
     );
 
+    _updateLoadingProgress('正在初始化同步服务...');
+    
     // 初始化同步服务
     syncService = SyncService(
       apiService: apiClient,
@@ -187,6 +210,7 @@ class EditorScreenController extends ChangeNotifier {
     syncService.init().then((_) {
       syncService.setCurrentNovelId(novel.id).then((_) {
         AppLogger.i('EditorScreenController', '已设置当前小说ID: ${novel.id}');
+        _updateLoadingProgress('正在加载小说结构...');
       });
     });
 
@@ -195,6 +219,7 @@ class EditorScreenController extends ChangeNotifier {
     editorRepository.getNovelWithSceneSummaries(novel.id).then((novelWithSummaries) {
       if (novelWithSummaries != null) {
         AppLogger.i('EditorScreenController', '已加载带摘要的小说结构用于大纲和侧边栏');
+        _updateLoadingProgress('正在加载大纲内容...');
 
         // 触发大纲初始化
         planBloc.add(const plan_bloc.LoadPlanContent());
@@ -209,6 +234,8 @@ class EditorScreenController extends ChangeNotifier {
     String? lastEditedChapterId = novel.lastEditedChapterId;
     AppLogger.i('EditorScreenController', '使用分页加载初始化编辑器，最后编辑章节ID: $lastEditedChapterId');
 
+    _updateLoadingProgress('正在加载编辑区内容...');
+    
     // 添加延迟以避免初始化同时发送大量请求
     Future.delayed(const Duration(milliseconds: 500), () {
       if (lastEditedChapterId != null && lastEditedChapterId.isNotEmpty) {
@@ -229,6 +256,15 @@ class EditorScreenController extends ChangeNotifier {
           loadAllSummaries: false, // 不加载所有摘要，减少初始加载量
         ));
       }
+      
+      // 设置一个延迟关闭加载动画，确保至少显示一定时间
+      Future.delayed(const Duration(seconds: 2), () {
+        _updateLoadingProgress('编辑器加载完成，准备就绪!', isComplete: true);
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _isFullscreenLoading = false;
+          notifyListeners();
+        });
+      });
     });
 
     // 防止在初始化时ChapterSection组件触发大量加载
@@ -484,13 +520,46 @@ class EditorScreenController extends ChangeNotifier {
       } 
       // 检查顶部边界
       else if (offset <= dynamicPreloadDistance) {
-        // 如果已经到达顶部边界，不再触发加载
+        // 如果已经标记为hasReachedStart=true，但需要检查是否真的在第一卷
         if (state.hasReachedStart) {
-          if (kDebugMode) {
-            AppLogger.d('EditorScreenController', '已到达内容顶部，不再触发加载');
+          // 判断当前活动章节所在卷索引
+          int focusActIndex = -1;
+          String? currentFocusChapterId = state.activeChapterId;
+          
+          if (currentFocusChapterId != null) {
+            // 遍历查找焦点章节所在Act
+            for (int i = 0; i < state.novel.acts.length; i++) {
+              final act = state.novel.acts[i];
+              for (final chapter in act.chapters) {
+                if (chapter.id == currentFocusChapterId) {
+                  focusActIndex = i;
+                  break;
+                }
+              }
+              if (focusActIndex >= 0) break;
+            }
+          }
+          
+          // 如果不是第一卷，强制重置hasReachedStart标志并尝试加载
+          if (focusActIndex > 0) {
+            AppLogger.i('EditorScreenController', '虽然标记为已到达顶部，但当前在第${focusActIndex + 1}卷，尝试加载上一卷内容');
+            
+            // 重置标志
+            editorBloc.add(const editor_bloc.ResetActLoadingFlags());
+            
+            // 加载上一卷内容
+            _loadPreviousActContent(state, focusActIndex);
+            return;
+          }
+          
+          // 如果确实在第一卷，则维持hasReachedStart=true
+          if (kDebugMode && focusActIndex == 0) {
+            AppLogger.d('EditorScreenController', '确认当前在第一卷，维持已到达顶部状态');
           }
           return;
         }
+        
+        // 正常触发向上加载
         _loadMoreScenes('up');
       }
     }
@@ -561,10 +630,39 @@ class EditorScreenController extends ChangeNotifier {
     }
     // 上滑检查是否已经到顶
     else if (direction == 'up' && _findFirstLoadedChapterId(state.novel) == _findFirstChapterId(state.novel)) {
-      alreadyHasEnoughContent = true;
-      // 设置已到达顶部标志
-      editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedStart: true));
-      AppLogger.i('EditorScreenController', '已经加载到第一章，设置hasReachedStart=true');
+      // 获取当前焦点章节所在的Act索引
+      int focusActIndex = -1;
+      String? currentFocusChapterId = state.activeChapterId;
+      
+      if (currentFocusChapterId != null) {
+        // 遍历查找焦点章节所在Act
+        for (int i = 0; i < state.novel.acts.length; i++) {
+          final act = state.novel.acts[i];
+          for (final chapter in act.chapters) {
+            if (chapter.id == currentFocusChapterId) {
+              focusActIndex = i;
+              break;
+            }
+          }
+          if (focusActIndex >= 0) break;
+        }
+      }
+      
+      // 只有当焦点章节在第一个Act时才设置hasReachedStart=true
+      if (focusActIndex == 0) {
+        alreadyHasEnoughContent = true;
+        // 设置已到达顶部标志
+        editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedStart: true));
+        AppLogger.i('EditorScreenController', '已经加载到第一卷的第一章，设置hasReachedStart=true');
+      } else if (focusActIndex > 0) {
+        // 如果不是第一卷，则继续加载
+        AppLogger.i('EditorScreenController', '当前在第${focusActIndex + 1}卷，需要继续向上加载前一卷内容');
+        alreadyHasEnoughContent = false;
+      } else {
+        // 未找到焦点章节信息，保守处理不设置边界
+        AppLogger.i('EditorScreenController', '未找到焦点章节所在卷，继续尝试加载');
+        alreadyHasEnoughContent = false;
+      }
     }
 
     if (alreadyHasEnoughContent) {
@@ -658,8 +756,37 @@ class EditorScreenController extends ChangeNotifier {
               AppLogger.i('EditorScreenController', 'API未返回新内容，设置hasReachedEnd=true');
               editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedEnd: true));
             } else if (direction == 'up') {
-              AppLogger.i('EditorScreenController', 'API未返回新内容，设置hasReachedStart=true');
-              editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedStart: true));
+              // 获取当前焦点章节所在的Act索引
+              int focusActIndex = -1;
+              String? currentFocusChapterId = newState.activeChapterId;
+              
+              if (currentFocusChapterId != null) {
+                // 遍历查找焦点章节所在Act
+                for (int i = 0; i < newState.novel.acts.length; i++) {
+                  final act = newState.novel.acts[i];
+                  for (final chapter in act.chapters) {
+                    if (chapter.id == currentFocusChapterId) {
+                      focusActIndex = i;
+                      break;
+                    }
+                  }
+                  if (focusActIndex >= 0) break;
+                }
+              }
+              
+              // 只有当焦点章节在第一个Act时才设置hasReachedStart=true
+              if (focusActIndex == 0) {
+                AppLogger.i('EditorScreenController', 'API未返回新内容且当前在第一卷，设置hasReachedStart=true');
+                editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedStart: true));
+              } else {
+                // 如果不在第一卷但API返回为空，可能需要重新调整加载策略
+                AppLogger.i('EditorScreenController', 'API未返回新内容但当前在第${focusActIndex + 1}卷，尝试加载上一卷内容');
+                
+                // 可以在这里添加额外的加载逻辑，如确保位于上一卷的内容被加载
+                if (focusActIndex > 0) {
+                  _loadPreviousActContent(newState, focusActIndex);
+                }
+              }
             }
           }
           
@@ -697,6 +824,35 @@ class EditorScreenController extends ChangeNotifier {
       _isLoadingMore = false;
       notifyListeners(); // 更新UI状态
     }
+  }
+  
+  // 新增方法：尝试加载上一卷的内容
+  void _loadPreviousActContent(editor_bloc.EditorLoaded state, int currentActIndex) {
+    // 确保当前Act索引有效且不是第一个Act
+    if (currentActIndex <= 0 || currentActIndex >= state.novel.acts.length) {
+      return;
+    }
+    
+    // 获取上一个Act
+    final previousAct = state.novel.acts[currentActIndex - 1];
+    
+    // 如果上一个Act没有章节，不需要加载
+    if (previousAct.chapters.isEmpty) {
+      return;
+    }
+    
+    // 从上一个Act的最后一个章节开始加载
+    final lastChapterInPreviousAct = previousAct.chapters.last;
+    
+    AppLogger.i('EditorScreenController', '尝试从上一卷的最后一章开始加载: ${lastChapterInPreviousAct.title}');
+    
+    // 发送加载请求
+    editorBloc.add(editor_bloc.LoadMoreScenes(
+      fromChapterId: lastChapterInPreviousAct.id,
+      direction: 'center', // 使用center方向确保可以加载章节前后的内容
+      chaptersLimit: 5,    // 加载多个章节
+      preventFocusChange: true,
+    ));
   }
 
   // 辅助函数：找到小说结构中的第一个章节ID，无论是否有场景
@@ -1483,4 +1639,268 @@ class EditorScreenController extends ChangeNotifier {
     // 标记结构边界已初始化完成
     AppLogger.i('EditorScreenController', '小说结构边界初始化完成，已预加载${preloadedChapterIds.length}个章节');
   }
+
+  // 更新加载进度和消息
+  void _updateLoadingProgress(String message, {bool isComplete = false}) {
+    _loadingMessage = message;
+    
+    if (isComplete) {
+      _loadingProgress = 1.0;
+    } else {
+      _initializationStep++;
+      _loadingProgress = _initializationStep / _totalInitializationSteps;
+    }
+    
+    AppLogger.i('EditorScreenController', 
+        '加载进度更新: ${(_loadingProgress * 100).toInt()}%, 消息: $_loadingMessage');
+    
+    // 通知UI更新加载状态
+    notifyListeners();
+  }
+  
+  // 显示全屏加载动画
+  void showFullscreenLoading(String message) {
+    _loadingMessage = message;
+    _isFullscreenLoading = true;
+    notifyListeners();
+  }
+  
+  // 隐藏全屏加载动画
+  void hideFullscreenLoading() {
+    _isFullscreenLoading = false;
+    notifyListeners();
+  }
+  
+  /// 创建新卷，并自动创建一个章节和一个场景
+  /// 完成后会将焦点设置到新创建的章节和场景
+  Future<void> createNewAct() async {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final defaultActTitle = '新卷 $timestamp';
+
+    showFullscreenLoading('正在创建新卷...');
+    AppLogger.i('EditorScreenController', '开始创建新卷: $defaultActTitle');
+
+    try {
+        // Step 1: Create New Act
+        final String newActId = await _internalCreateNewAct(defaultActTitle);
+        AppLogger.i('EditorScreenController', '新卷创建成功，ID: $newActId');
+
+        _loadingMessage = '正在创建新章节...';
+        notifyListeners();
+
+        // Step 2: Create New Chapter
+        final String newChapterId = await _internalCreateNewChapter(newActId, '新章节 $timestamp');
+        AppLogger.i('EditorScreenController', '新章节创建成功，ID: $newChapterId');
+
+        _loadingMessage = '正在创建新场景...';
+        notifyListeners();
+
+        // Step 3: Create New Scene
+        final String newSceneId = await _internalCreateNewScene(newActId, newChapterId, 'scene_$timestamp');
+        AppLogger.i('EditorScreenController', '新场景创建成功，ID: $newSceneId');
+
+        _loadingMessage = '正在设置编辑焦点...';
+        notifyListeners();
+
+        // Step 4: Set Focus
+        editorBloc.add(editor_bloc.SetActiveChapter(
+            actId: newActId,
+            chapterId: newChapterId,
+        ));
+        editorBloc.add(editor_bloc.SetActiveScene(
+            actId: newActId,
+            chapterId: newChapterId,
+            sceneId: newSceneId,
+        ));
+        editorBloc.add(editor_bloc.SetFocusChapter(
+            chapterId: newChapterId,
+        ));
+
+        _notifyMainAreaToRefresh();
+        hideFullscreenLoading();
+        AppLogger.i('EditorScreenController', '新卷创建流程完成: actId=$newActId, chapterId=$newChapterId, sceneId=$newSceneId');
+
+    } catch (e) {
+        AppLogger.e('EditorScreenController', '创建新卷流程失败', e);
+        hideFullscreenLoading();
+        // Optionally, show an error message to the user
+    }
+  }
+
+  // Helper method to create Act and wait for completion
+  Future<String> _internalCreateNewAct(String title) async {
+    final completer = Completer<String>();
+    StreamSubscription<editor_bloc.EditorState>? subscription;
+
+    final initialState = editorBloc.state;
+    int initialActCount = 0;
+    List<String> initialActIds = [];
+    if (initialState is editor_bloc.EditorLoaded) {
+        initialActCount = initialState.novel.acts.length;
+        initialActIds = initialState.novel.acts.map((act) => act.id).toList();
+    }
+
+    subscription = editorBloc.stream.listen((state) {
+        if (state is editor_bloc.EditorLoaded && !state.isLoading) {
+            if (state.novel.acts.length > initialActCount) {
+                final newAct = state.novel.acts.firstWhereOrNull(
+                    (act) => !initialActIds.contains(act.id)
+                );
+                if (newAct != null) {
+                  subscription?.cancel();
+                  if (!completer.isCompleted) {
+                      completer.complete(newAct.id);
+                  }
+                } else if (state.novel.acts.isNotEmpty && state.novel.acts.length > initialActCount) {
+                    // Fallback: if specific new act not found but count increased, assume last one
+                    final potentialNewAct = state.novel.acts.last;
+                    // Basic check to avoid completing with an old act if list got reordered somehow
+                    if (!initialActIds.contains(potentialNewAct.id)) {
+                        subscription?.cancel();
+                        if (!completer.isCompleted) {
+                            completer.complete(potentialNewAct.id);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    editorBloc.add(editor_bloc.AddNewAct(title: title));
+
+    try {
+        return await completer.future.timeout(const Duration(seconds: 10), onTimeout: () {
+            subscription?.cancel();
+            throw Exception('创建新卷超时');
+        });
+    } catch (e) {
+        subscription?.cancel();
+        rethrow;
+    }
+}
+
+// Helper method to create Chapter and wait for completion
+Future<String> _internalCreateNewChapter(String actId, String title) async {
+    final completer = Completer<String>();
+    StreamSubscription<editor_bloc.EditorState>? subscription;
+
+    final initialChapterState = editorBloc.state;
+    int initialChapterCountInAct = 0;
+    List<String> initialChapterIdsInAct = [];
+    if (initialChapterState is editor_bloc.EditorLoaded) {
+        final act = initialChapterState.novel.acts.firstWhereOrNull((a) => a.id == actId);
+        if (act != null) {
+            initialChapterCountInAct = act.chapters.length;
+            initialChapterIdsInAct = act.chapters.map((ch) => ch.id).toList();
+        }
+    }
+    
+    subscription = editorBloc.stream.listen((state) {
+        if (state is editor_bloc.EditorLoaded && !state.isLoading) {
+            final currentAct = state.novel.acts.firstWhereOrNull((a) => a.id == actId);
+            if (currentAct != null && currentAct.chapters.length > initialChapterCountInAct) {
+                 final newChapter = currentAct.chapters.firstWhereOrNull(
+                    (ch) => !initialChapterIdsInAct.contains(ch.id)
+                );
+                if (newChapter != null) {
+                    subscription?.cancel();
+                    if (!completer.isCompleted) {
+                        completer.complete(newChapter.id);
+                    }
+                } else if (currentAct.chapters.isNotEmpty && currentAct.chapters.length > initialChapterCountInAct) {
+                    final potentialNewChapter = currentAct.chapters.last;
+                    if (!initialChapterIdsInAct.contains(potentialNewChapter.id)){
+                        subscription?.cancel();
+                        if (!completer.isCompleted) {
+                            completer.complete(potentialNewChapter.id);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    editorBloc.add(editor_bloc.AddNewChapter(
+        novelId: editorBloc.novelId,
+        actId: actId,
+        title: title,
+    ));
+
+    try {
+        return await completer.future.timeout(const Duration(seconds: 10), onTimeout: () {
+            subscription?.cancel();
+            throw Exception('创建新章节超时');
+        });
+    } catch (e) {
+        subscription?.cancel();
+        rethrow;
+    }
+}
+
+
+// Helper method to create Scene and wait for completion
+Future<String> _internalCreateNewScene(String actId, String chapterId, String sceneIdProposal) async {
+    final completer = Completer<String>();
+    StreamSubscription<editor_bloc.EditorState>? subscription;
+
+    final initialSceneState = editorBloc.state;
+    int initialSceneCountInChapter = 0;
+    List<String> initialSceneIdsInChapter = [];
+
+    if (initialSceneState is editor_bloc.EditorLoaded) {
+        final act = initialSceneState.novel.acts.firstWhereOrNull((a) => a.id == actId);
+        if (act != null) {
+            final chapter = act.chapters.firstWhereOrNull((c) => c.id == chapterId);
+            if (chapter != null) {
+                initialSceneCountInChapter = chapter.scenes.length;
+                initialSceneIdsInChapter = chapter.scenes.map((sc) => sc.id).toList();
+            }
+        }
+    }
+
+    subscription = editorBloc.stream.listen((state) {
+        if (state is editor_bloc.EditorLoaded && !state.isLoading) {
+            final currentAct = state.novel.acts.firstWhereOrNull((a) => a.id == actId);
+            if (currentAct != null) {
+                final currentChapter = currentAct.chapters.firstWhereOrNull((c) => c.id == chapterId);
+                if (currentChapter != null && currentChapter.scenes.length > initialSceneCountInChapter) {
+                    final newScene = currentChapter.scenes.firstWhereOrNull(
+                        (sc) => !initialSceneIdsInChapter.contains(sc.id)
+                    );
+                    if (newScene != null) {
+                        subscription?.cancel();
+                        if (!completer.isCompleted) {
+                            completer.complete(newScene.id);
+                        }
+                    } else if (currentChapter.scenes.isNotEmpty && currentChapter.scenes.length > initialSceneCountInChapter){
+                        final potentialNewScene = currentChapter.scenes.last;
+                        if (!initialSceneIdsInChapter.contains(potentialNewScene.id)) {
+                            subscription?.cancel();
+                            if (!completer.isCompleted) {
+                                completer.complete(potentialNewScene.id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    editorBloc.add(editor_bloc.AddNewScene(
+        novelId: editorBloc.novelId,
+        actId: actId,
+        chapterId: chapterId,
+        sceneId: sceneIdProposal, // Use the proposed ID
+    ));
+
+   try {
+        return await completer.future.timeout(const Duration(seconds: 10), onTimeout: () {
+            subscription?.cancel();
+            throw Exception('创建新场景超时');
+        });
+    } catch (e) {
+        subscription?.cancel();
+        rethrow;
+    }
+}
 }
