@@ -23,6 +23,7 @@ import 'package:ainoval/screens/editor/widgets/menu_builder.dart';
 /// [chapterId] 所属章节ID
 /// [sceneId] 场景ID
 /// [isFirst] 是否为章节中的第一个场景
+/// [sceneIndex] 场景在章节中的序号，从1开始
 /// [controller] 场景内容编辑控制器
 /// [summaryController] 场景摘要编辑控制器
 /// [editorBloc] 编辑器状态管理
@@ -37,18 +38,20 @@ class SceneEditor extends StatefulWidget {
     this.chapterId,
     this.sceneId,
     this.isFirst = true,
+    this.sceneIndex, // 添加场景序号参数
     required this.controller,
     required this.summaryController,
     required this.editorBloc,
     this.onContentChanged, // 添加回调函数
   });
   final String title;
-  final String wordCount;
+  final int wordCount;
   final bool isActive;
   final String? actId;
   final String? chapterId;
   final String? sceneId;
   final bool isFirst;
+  final int? sceneIndex; // 场景在章节中的序号，从1开始
   final QuillController controller;
   final TextEditingController summaryController;
   final editor_bloc.EditorBloc editorBloc;
@@ -608,6 +611,17 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
       padding: const EdgeInsets.only(bottom: 0.0),
       child: Row(
         children: [
+          // 添加场景序号
+          if (widget.sceneIndex != null)
+            Text(
+              _getSceneIndexText(),
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: isFocused || widget.isActive
+                    ? theme.colorScheme.primary
+                    : Colors.grey.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           Text(
             widget.title,
             style: theme.textTheme.titleSmall?.copyWith(
@@ -618,9 +632,9 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
             ),
           ),
           const Spacer(),
-          if (widget.wordCount.isNotEmpty)
+          if (!widget.wordCount.isNaN)
             Text(
-              widget.wordCount,
+              widget.wordCount.toString(),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: Colors.grey.shade500,
                 fontSize: 11,
@@ -629,6 +643,23 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
         ],
       ),
     );
+  }
+
+  // 添加获取场景序号文本的方法
+  String _getSceneIndexText() {
+    if (widget.sceneIndex == null) return '';
+    
+    // 使用中文数字表示场景序号
+    final List<String> chineseNumbers = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+    
+    if (widget.sceneIndex! <= 10) {
+      return '场景${chineseNumbers[widget.sceneIndex!]} · ';
+    } else if (widget.sceneIndex! < 20) {
+      return '场景十${chineseNumbers[widget.sceneIndex! - 10]} · ';
+    } else {
+      // 对于更大的数字，直接使用阿拉伯数字
+      return '场景${widget.sceneIndex} · ';
+    }
   }
 
   // 为编辑器添加焦点处理

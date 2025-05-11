@@ -15,6 +15,7 @@ class ActSection extends StatefulWidget {
     required this.editorBloc,
     this.totalChaptersCount,
     this.loadedChaptersCount,
+    this.actIndex, // 添加卷序号参数
   });
   final String title;
   final List<Widget> chapters;
@@ -22,6 +23,7 @@ class ActSection extends StatefulWidget {
   final EditorBloc editorBloc;
   final int? totalChaptersCount; // 章节总数
   final int? loadedChaptersCount; // 已加载章节数
+  final int? actIndex; // 卷序号，从1开始
 
   @override
   State<ActSection> createState() => _ActSectionState();
@@ -52,6 +54,23 @@ class _ActSectionState extends State<ActSection> {
     super.dispose();
   }
 
+  // 获取卷序号文本
+  String _getActIndexText() {
+    if (widget.actIndex == null) return '';
+    
+    // 使用中文数字表示卷序号
+    final List<String> chineseNumbers = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+    
+    if (widget.actIndex! <= 10) {
+      return '第${chineseNumbers[widget.actIndex!]}卷 · ';
+    } else if (widget.actIndex! < 20) {
+      return '第十${chineseNumbers[widget.actIndex! - 10]}卷 · ';
+    } else {
+      // 对于更大的数字，直接使用阿拉伯数字
+      return '第${widget.actIndex}卷 · ';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -69,31 +88,47 @@ class _ActSectionState extends State<ActSection> {
                 IntrinsicWidth(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 400),
-                    child: TextField(
-                      controller: _actTitleController,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                      ),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 8),
-                        isDense: true,
-                      ),
-                      textAlign: TextAlign.center,
-                      onChanged: (value) {
-                        // 使用防抖动机制，避免频繁更新
-                        _actTitleDebounceTimer?.cancel();
-                        _actTitleDebounceTimer =
-                            Timer(const Duration(milliseconds: 500), () {
-                          if (mounted) {
-                            widget.editorBloc.add(UpdateActTitle(
-                              actId: widget.actId,
-                              title: value,
-                            ));
-                          }
-                        });
-                      },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 添加卷序号前缀
+                        if (widget.actIndex != null)
+                          Text(
+                            _getActIndexText(),
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        Expanded(
+                          child: TextField(
+                            controller: _actTitleController,
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                              isDense: true,
+                            ),
+                            textAlign: TextAlign.center,
+                            onChanged: (value) {
+                              // 使用防抖动机制，避免频繁更新
+                              _actTitleDebounceTimer?.cancel();
+                              _actTitleDebounceTimer =
+                                  Timer(const Duration(milliseconds: 500), () {
+                                if (mounted) {
+                                  widget.editorBloc.add(UpdateActTitle(
+                                    actId: widget.actId,
+                                    title: value,
+                                  ));
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

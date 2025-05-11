@@ -40,7 +40,8 @@ class VirtualizedSceneLoader extends StatefulWidget {
     required this.editorBloc,
     required this.parseDocumentSafely,
     required this.isVisible,
-    required this.onVisibilityChanged,
+    this.sceneIndex,
+    this.onVisibilityChanged,
   }) : super(key: key);
 
   /// 场景的唯一标识符
@@ -79,8 +80,11 @@ class VirtualizedSceneLoader extends StatefulWidget {
   /// 当前场景是否可见
   final bool isVisible;
   
+  /// 场景在章节中的序号，从1开始
+  final int? sceneIndex;
+  
   /// 场景可见性变化时的回调函数
-  final Function(bool) onVisibilityChanged;
+  final Function(bool)? onVisibilityChanged;
 
   @override
   State<VirtualizedSceneLoader> createState() => _VirtualizedSceneLoaderState();
@@ -139,7 +143,7 @@ class _VirtualizedSceneLoaderState extends State<VirtualizedSceneLoader> {
     
     // 当可见性状态变化时，通知父组件
     if (widget.isVisible != oldWidget.isVisible) {
-      widget.onVisibilityChanged(widget.isVisible);
+      widget.onVisibilityChanged?.call(widget.isVisible);
     }
     
     // 如果场景变为活动状态，但之前不是活动状态，强制刷新UI
@@ -238,81 +242,37 @@ class _VirtualizedSceneLoaderState extends State<VirtualizedSceneLoader> {
 
   @override
   Widget build(BuildContext context) {
-    // 当场景是活动状态但尚未初始化时，立即初始化
-    if (widget.isActive && !_isInitialized && !_isControllerInitializing) {
-      AppLogger.i('VirtualizedSceneLoader', '场景 ${widget.sceneId} 在构建时检测到活动状态但未初始化，立即初始化');
+    // 不可见且不强制渲染时，返回空的占位Widget
+    if (!_isInitialized && !widget.isVisible) {
+      return const SizedBox.shrink();
+    }
+
+    // 创建或获取场景控制器
+    final sceneController = _getOrCreateSceneController();
+    final summaryController = _getOrCreateSummaryController();
+
+    if (widget.isVisible && !_isInitialized) {
       _initializeControllers();
     }
-    
-    // 使用VisibilityDetector检测真实可见性
-    return VisibilityDetector(
-      key: ValueKey('visibility_${widget.sceneId}'),
-      onVisibilityChanged: (visibilityInfo) {
-        // 计算可见比例
-        var visiblePercentage = visibilityInfo.visibleFraction * 100;
-        
-        // 优化日志输出：仅在可见性显著变化时记录
-        final bool wasVisible = widget.isVisible;
-        bool isNowVisible = false;
-        
-        // 关键修改：如果当前为活动章节的场景，始终视为可见
-        if (widget.actId == widget.editorBloc.state is editor_bloc.EditorLoaded && 
-            (widget.editorBloc.state as editor_bloc.EditorLoaded).activeChapterId == widget.chapterId) {
-          isNowVisible = true;
-          if (!wasVisible) {
-            AppLogger.i('VirtualizedSceneLoader', '场景 ${widget.sceneId} 在活动章节中，强制设为可见');
-            widget.onVisibilityChanged(true);
-          }
-        } 
-        // 正常可见性检测：当可见性比例大于5%视为可见 (提高比例以减少边缘场景被当作可见)
-        else if (visiblePercentage > 5) {
-          isNowVisible = true;
-          if (!wasVisible) {
-            AppLogger.d('VirtualizedSceneLoader', '场景 ${widget.sceneId} 变为可见 (${visiblePercentage.toStringAsFixed(1)}%)');
-            widget.onVisibilityChanged(true);
-          }
-        } 
-        // 当可见性接近0时视为不可见
-        else if (visiblePercentage <= 0.1 && wasVisible) {
-          isNowVisible = false;
-          AppLogger.d('VirtualizedSceneLoader', '场景 ${widget.sceneId} 变为不可见');
-          widget.onVisibilityChanged(false);
-        }
-        
-        // 如果场景可见但未初始化，立即初始化
-        if (isNowVisible && !_isInitialized && !_isControllerInitializing) {
-          _initializeControllers();
-        }
+
+    // 使用GlobalKey
+    return SceneEditor(
+      key: widget.sceneKeys[widget.sceneId] ?? GlobalKey(),
+      title: widget.scene.title.isNotEmpty ? widget.scene.title : '场景',
+      wordCount: widget.scene.wordCount ,
+      isActive: widget.isActive,
+      actId: widget.actId,
+      chapterId: widget.chapterId,
+      sceneId: widget.scene.id,
+      isFirst: widget.isFirst,
+      sceneIndex: widget.sceneIndex,
+      controller: sceneController,
+      summaryController: summaryController,
+      editorBloc: widget.editorBloc,
+      onContentChanged: (content, wordCount, {syncToServer = false}) {
+        // Update the scene content
+        // ... existing code ...
       },
-      child: _buildSceneContent(),
-    );
-  }
-  
-  /// 构建场景内容
-  /// 
-  /// 根据控制器初始化状态，返回场景编辑器或占位符
-  Widget _buildSceneContent() {
-    // 如果控制器未初始化，显示占位符
-    if (!_isInitialized || 
-        !widget.sceneControllers.containsKey(widget.sceneId)) {
-      return _buildPlaceholder();
-    }
-    
-    // 使用RepaintBoundary包装每个场景编辑器，防止不必要的重绘
-    return RepaintBoundary(
-      child: SceneEditor(
-        key: widget.sceneKeys[widget.sceneId],
-        title: 'Scene ${widget.scene.id.hashCode % 100 + 1}',
-        wordCount: '${widget.scene.wordCount} 字',
-        isActive: widget.isActive,
-        actId: widget.actId,
-        chapterId: widget.chapterId,
-        sceneId: widget.scene.id,
-        isFirst: widget.isFirst,
-        controller: widget.sceneControllers[widget.sceneId]!,
-        summaryController: widget.sceneSummaryControllers[widget.sceneId]!,
-        editorBloc: widget.editorBloc,
-      ),
     );
   }
   
@@ -398,5 +358,28 @@ class _VirtualizedSceneLoaderState extends State<VirtualizedSceneLoader> {
     final randomAddition = hash % 800; // 0-800毫秒的随机附加延迟
     
     return Duration(milliseconds: baseDelay + randomAddition);
+  }
+
+  /// 获取或创建场景控制器
+  QuillController _getOrCreateSceneController() {
+    if (widget.sceneControllers.containsKey(widget.sceneId)) {
+      return widget.sceneControllers[widget.sceneId]!;
+    } else {
+      return QuillController(
+        document: Document.fromJson([{'insert': '\n'}]),
+        selection: const TextSelection.collapsed(offset: 0),
+      );
+    }
+  }
+
+  /// 获取或创建场景摘要控制器
+  TextEditingController _getOrCreateSummaryController() {
+    if (widget.sceneSummaryControllers.containsKey(widget.sceneId)) {
+      return widget.sceneSummaryControllers[widget.sceneId]!;
+    } else {
+      return TextEditingController(
+        text: '',
+      );
+    }
   }
 } 

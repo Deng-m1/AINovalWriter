@@ -1189,6 +1189,9 @@ class EditorMainAreaState extends State<EditorMainArea> {
   Widget _buildVirtualizedActSection(novel_models.Act act, List<String> visibleItems) {
     final isActVisible = true; // 总是将Act视为可见
     
+    // 获取Act索引（从1开始）
+    final int actIndex = widget.novel.acts.indexOf(act) + 1;
+    
     // 只处理应该渲染的章节
     final visibleChapters = act.chapters
         .where((chapter) => _shouldRenderChapter(act.id, chapter.id))
@@ -1206,12 +1209,21 @@ class EditorMainAreaState extends State<EditorMainArea> {
         child: ActSection(
           title: act.title,
           chapters: visibleChapters
-              .map((chapter) => _buildVirtualizedChapterSection(act.id, chapter, visibleItems))
+              .asMap()
+              .map((index, chapter) => MapEntry(
+                  index,
+                  _buildVirtualizedChapterSection(
+                      act.id, 
+                      chapter, 
+                      visibleItems,
+                      index + 1))) // 传递章节索引（从1开始）
+              .values
               .toList(),
           actId: act.id,
           editorBloc: widget.editorBloc,
           totalChaptersCount: act.chapters.length,
           loadedChaptersCount: act.chapters.where((chapter) => chapter.scenes.isNotEmpty).length,
+          actIndex: actIndex, // 传递Act索引
         ),
       ),
     );
@@ -1219,7 +1231,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
   
   // 优化的Chapter Section构建器
   Widget _buildVirtualizedChapterSection(
-      String actId, novel_models.Chapter chapter, List<String> visibleItems) {
+      String actId, novel_models.Chapter chapter, List<String> visibleItems, int chapterIndex) {
     // 创建章节Key
     final chapterKeyString = 'chapter_${actId}_${chapter.id}';
     // 使用 putIfAbsent 确保 Key 的创建和获取是原子性的，更稳定
@@ -1246,10 +1258,11 @@ class EditorMainAreaState extends State<EditorMainArea> {
         child: ChapterSection(
           title: chapter.title,
           scenes: chapter.scenes.isEmpty ? [] : 
-              _buildVirtualizedSceneList(actId, chapter, visibleItems),
+              _buildVirtualizedSceneList(actId, chapter, visibleItems, chapterIndex),
           actId: actId,
           chapterId: chapter.id,
           editorBloc: widget.editorBloc,
+          chapterIndex: chapterIndex, // 传递章节索引
         ),
       ),
     );
@@ -1257,7 +1270,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
   
   // 优化的Scene列表构建器
   List<Widget> _buildVirtualizedSceneList(
-      String actId, novel_models.Chapter chapter, List<String> visibleItems) {
+      String actId, novel_models.Chapter chapter, List<String> visibleItems, int chapterIndex) {
     final scenes = <Widget>[];
     
     // 获取当前活动章节和场景ID
@@ -1277,6 +1290,9 @@ class EditorMainAreaState extends State<EditorMainArea> {
       final isFirst = i == 0;
       final sceneId = '${actId}_${chapter.id}_${scene.id}';
       
+      // 场景索引（从1开始）
+      final int sceneIndex = i + 1;
+      
       // 判断场景是否为活动场景
       final bool isActiveScene = isActiveChapter && currentActiveSceneId == scene.id;
       
@@ -1293,6 +1309,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
           scene: scene,
           isFirst: isFirst,
           isActive: isActiveScene,
+          sceneIndex: sceneIndex, // 传递场景索引
           sceneControllers: widget.sceneControllers,
           sceneSummaryControllers: widget.sceneSummaryControllers,
           sceneKeys: widget.sceneKeys,
