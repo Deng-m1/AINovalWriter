@@ -360,9 +360,9 @@ class _PlanViewState extends State<PlanView> {
                 AppLogger.i('PlanView -> onTap', '分发 LoadMoreScenes 事件: fromChapterId=$chapterId, targetActId=$actId, targetChapterId=$chapterId, targetSceneId=${scene.id}');
                 editorBloc.add(editor.LoadMoreScenes(
                   fromChapterId: chapterId,
+                  actId: actId,
                   direction: 'center', // 保持 'center'，目标是加载并聚焦
                   chaptersLimit: 5, // 增加加载章节数量，确保加载足够的内容
-                  targetActId: actId,
                   targetChapterId: chapterId,
                   targetSceneId: scene.id
                 ));

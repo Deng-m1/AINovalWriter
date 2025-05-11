@@ -7,9 +7,6 @@ abstract class EditorEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-class LoadEditorContent extends EditorEvent {
-  const LoadEditorContent();
-}
 
 /// 使用分页加载编辑器内容事件
 class LoadEditorContentPaginated extends EditorEvent {
@@ -35,8 +32,8 @@ class LoadMoreScenes extends EditorEvent {
   const LoadMoreScenes({
     required this.fromChapterId,
     required this.direction,
+    required this.actId,
     this.chaptersLimit = 3,
-    this.targetActId,
     this.targetChapterId,
     this.targetSceneId,
     this.preventFocusChange = false,
@@ -46,8 +43,8 @@ class LoadMoreScenes extends EditorEvent {
   });
   final String fromChapterId;
   final String direction; // "up" 或 "down" 或 "center"
+  final String actId; // 现在将actId作为必需参数
   final int chaptersLimit;
-  final String? targetActId;
   final String? targetChapterId;
   final String? targetSceneId;
   final bool preventFocusChange;
@@ -60,7 +57,7 @@ class LoadMoreScenes extends EditorEvent {
     fromChapterId,
     direction,
     chaptersLimit,
-    targetActId,
+    actId,
     targetChapterId,
     targetSceneId,
     preventFocusChange,

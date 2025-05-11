@@ -266,6 +266,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
           fromChapterId: activeChapterId,
           direction: 'center',
           chaptersLimit: 3,
+          actId: activeActId,  // 添加actId参数
           preventFocusChange: true,  // 防止焦点自动变化
         ));
       }
@@ -417,179 +418,10 @@ class EditorMainAreaState extends State<EditorMainArea> {
     }
   }
   
-  // 用于记录上次检查的时间
-  DateTime? _lastScrollCheckTime;
-  // 用于记录上次检查的滚动位置
-  double? _lastScrollPosition;
   // 防抖定时器，用于在滚动停止后再检查
   Timer? _scrollDebounceTimer;
-  // 节流控制 - 记录最近成功触发加载的时间
-  DateTime? _lastVisibleCheckTime;
-  // 最大加载请求时间间隔
-  static const Duration _loadThrottleInterval = Duration(seconds: 3);
   
-  // 滚动监听回调
-  void _onScroll() {
-    // 取消之前的定时器
-    _scrollDebounceTimer?.cancel();
-    
-    // 获取当前时间和滚动位置
-    final now = DateTime.now();
-    final currentPosition = widget.scrollController.position.pixels;
-    
-    // 判断滚动方向
-    double? lastPosition = _lastScrollPosition;
-    bool isScrollingUp = lastPosition != null && currentPosition < lastPosition;
-    
-    // 更新最后滚动方向
-    _lastScrollDirection = isScrollingUp ? 'up' : 'down';
-    
-    _lastScrollPosition = currentPosition;
-    
-    // 如果向上滚动，降低检查阈值，更积极地加载上方内容
-    if (isScrollingUp) {
-      final threshold = widget.scrollController.position.viewportDimension * 0.3; // 更积极的阈值
-      final nearTop = currentPosition <= threshold;
-      
-      if (nearTop) {
-        AppLogger.i('EditorMainArea', '向上滚动接近顶部，主动加载上方内容');
-        _loadMoreInDirection('up', priority: true);
-      }
-    }
-    
-    // 判断是否需要检查（节流处理）
-    if (_lastScrollCheckTime != null && _lastScrollPosition != null) {
-      final timeDiff = now.difference(_lastScrollCheckTime!).inMilliseconds;
-      final posDiff = (currentPosition - _lastScrollPosition!).abs();
-      
-      // 如果滚动速度很快，先不检查
-      if (timeDiff < 500 && posDiff > 100) {
-        return;
-      }
-    }
-    
-    // 更新上次检查时间和位置
-    _lastScrollCheckTime = now;
-    
-    // 使用防抖，在滚动停止后再检查
-    // 减小延迟时间以提高响应速度
-    _scrollDebounceTimer = Timer(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        // 节流控制 - 避免频繁检查滚动边界
-        final now = DateTime.now();
-        if (_lastVisibleCheckTime != null && 
-            now.difference(_lastVisibleCheckTime!) < _loadThrottleInterval) {
-          AppLogger.d('EditorMainArea', '跳过滚动边界检查 - 间隔过短');
-          return;
-        }
-        
-        _lastVisibleCheckTime = now;
-        AppLogger.d('EditorMainArea', '滚动停止，检查滚动边界');
-        
-        // 检查是否需要加载上下方向的内容 - 优先级更高
-        _checkScrollBoundaries();
-      }
-    });
-  }
-  
-  // 检查滚动边界，决定是否需要向上或向下加载更多内容
-  void _checkScrollBoundaries() {
-    if (!widget.scrollController.hasClients) return;
-    
-    // 如果正在加载中，跳过边界检查
-    if (widget.editorBloc.state is editor_bloc.EditorLoaded) {
-      final state = widget.editorBloc.state as editor_bloc.EditorLoaded;
-      if (state.isLoading) {
-        AppLogger.d('EditorMainArea', '编辑器正在加载中，跳过边界检查');
-        return;
-      }
-      
-      // 获取当前焦点章节所在的Act信息
-      String? focusActId;
-      int focusActIndex = -1;
-      
-      if (_focusChapterId != null) {
-        // 查找当前焦点章节所属的Act及其索引
-        for (int i = 0; i < widget.novel.acts.length; i++) {
-          final act = widget.novel.acts[i];
-          for (final chapter in act.chapters) {
-            if (chapter.id == _focusChapterId) {
-              focusActId = act.id;
-              focusActIndex = i;
-              break;
-            }
-          }
-          if (focusActId != null) break;
-        }
-      }
-      
-      // 如果已到达底部边界
-      if (state.hasReachedEnd && focusActId != null) {
-        bool isLastAct = focusActIndex == widget.novel.acts.length - 1;
-        // 如果是最后一个Act，并且已经到达内容的末尾，则不应再尝试加载
-        if (isLastAct) {
-          AppLogger.i('EditorMainArea', '已到达小说最后一卷的底部，不再触发向下加载');
-          return; // 关键修改：如果是最后一卷的末尾，直接返回
-        }
-        // 如果不是最后一个Act，允许加载下一个Act（现有逻辑已处理或由导航按钮处理）
-        if (!isLastAct && focusActIndex >= 0) {
-          final nextActIndex = focusActIndex + 1;
-          if (nextActIndex < widget.novel.acts.length) {
-            final nextAct = widget.novel.acts[nextActIndex];
-            if (nextAct.chapters.isNotEmpty) {
-              AppLogger.i('EditorMainArea', '已到达当前Act底部，可以导航到下一个Act');
-              // 注意：这里原来是 return，现在注释掉，让它走到下面的 nearBottom 判断
-              // 因为即使可以导航，用户也可能只是滚动到底部而不是想立即导航
-              // _loadMoreInDirection 内部会处理 state.hasReachedEnd 和是否为 lastAct 的情况
-            }
-          }
-        }
-      }
-      
-      // 同样处理已到达顶部边界的情况
-      if (state.hasReachedStart && focusActId != null) {
-        bool isFirstAct = focusActIndex == 0;
-        // 如果是第一个Act，并且已经到达内容的起始，则不应再尝试加载
-        if (isFirstAct) {
-            AppLogger.i('EditorMainArea', '已到达小说第一卷的顶部，不再触发向上加载');
-            return; // 关键修改：如果是第一卷的开头，直接返回
-        }
-        // 如果不是第一个Act，允许加载上一个Act（现有逻辑已处理或由导航按钮处理）
-        if (!isFirstAct && focusActIndex > 0) {
-          AppLogger.i('EditorMainArea', '已到达当前Act顶部，可以导航到上一个Act');
-           // 注意：同上，注释掉 return
-        }
-      }
-    }
-    
-    final scrollPosition = widget.scrollController.position;
-    final currentOffset = scrollPosition.pixels;
-    final maxOffset = scrollPosition.maxScrollExtent;
-    final viewportHeight = scrollPosition.viewportDimension;
-    
-    // 定义边界阈值 - 使用视口高度的一定比例作为阈值
-    final threshold = viewportHeight * 0.2; // 进一步减小到20%以更积极地加载
-    
-    // 更加积极的顶部阈值，使上方加载更敏感
-    final topThreshold = viewportHeight * 0.25; // 增加到25%使顶部检测更敏感
-    
-    // 判断是否接近顶部或底部
-    bool nearTop = currentOffset <= topThreshold;
-    bool nearBottom = (maxOffset - currentOffset) <= threshold;
-    
-    AppLogger.d('EditorMainArea', '滚动位置检查: 当前=$currentOffset, 最大=$maxOffset, 顶部阈值=$topThreshold, 底部阈值=$threshold, 接近顶部=$nearTop, 接近底部=$nearBottom');
-    
-    if (nearTop) {
-      // 接近顶部，加载上方内容
-      AppLogger.i('EditorMainArea', '接近顶部边界，加载上方内容');
-      _loadMoreInDirection('up');
-    } else if (nearBottom) {
-      // 接近底部，加载下方内容
-      AppLogger.i('EditorMainArea', '接近底部边界，加载下方内容');
-      _loadMoreInDirection('down');
-    }
-  }
-  
+  // 检查滚动边界，决定是否需要向上或向下加载更多内
   // 记录上次加载方向的时间，用于防抖
   DateTime? _lastLoadUpTime;
   DateTime? _lastLoadDownTime;
@@ -626,201 +458,55 @@ class EditorMainAreaState extends State<EditorMainArea> {
     if (widget.editorBloc.state is editor_bloc.EditorLoaded) {
       final state = widget.editorBloc.state as editor_bloc.EditorLoaded;
       if (state.isLoading) {
-        AppLogger.d('EditorMainArea', '编辑器正在加载中，跳过加载请求');
+        AppLogger.d('EditorMainArea', 'EditorBloc正在加载中，跳过此次加载请求');
         return;
       }
-      
-      // 检查是否已经到达边界
-      if (direction == 'up' && state.hasReachedStart) {
-        // 如果已经到达顶部，检查是否可以跳转到上一卷
-        String? focusActId = _getCurrentFocusActId();
-        if (focusActId != null) {
-          int actIndex = -1;
-          for (int i = 0; i < widget.novel.acts.length; i++) {
-            if (widget.novel.acts[i].id == focusActId) {
-              actIndex = i;
-              break;
-            }
-          }
-          
-          // 如果不是第一卷，可以跳转到上一卷
-          if (actIndex > 0) {
-            AppLogger.i('EditorMainArea', '已到达当前Act顶部，可以导航到上一个Act');
-            return; // 跳出加载，避免额外的请求
-          }
-        }
-      }
-      
-      if (direction == 'down' && state.hasReachedEnd) {
-        // 如果已经到达底部，检查是否可以跳转到下一卷
-        String? focusActId = _getCurrentFocusActId();
-        if (focusActId != null) {
-          int actIndex = -1;
-          for (int i = 0; i < widget.novel.acts.length; i++) {
-            if (widget.novel.acts[i].id == focusActId) {
-              actIndex = i;
-              break;
-            }
-          }
-          
-          // 如果不是最后一卷，可以跳转到下一卷
-          if (actIndex >= 0 && actIndex < widget.novel.acts.length - 1) {
-            AppLogger.i('EditorMainArea', '已到达当前Act底部，可以导航到下一个Act');
-            return; // 跳出加载，避免额外的请求
-          }
-        }
-      }
-    } else {
-      AppLogger.d('EditorMainArea', '编辑器尚未初始化，跳过加载请求');
-      return;
     }
     
-    // ===== 处理向上滚动到上一卷的逻辑 =====
-    if (direction == 'up' && _focusChapterId != null) {
-      // 查找焦点章节所在的Act和索引
-      int focusActIndex = -1;
-      int focusChapterIndex = -1;
-      novel_models.Act? focusAct;
-      novel_models.Chapter? focusChapter;
-      
-      for (int i = 0; i < widget.novel.acts.length; i++) {
-        focusAct = widget.novel.acts[i];
-        for (int j = 0; j < focusAct.chapters.length; j++) {
-          if (focusAct.chapters[j].id == _focusChapterId) {
-            focusChapterIndex = j;
-            focusChapter = focusAct.chapters[j];
-            focusActIndex = i;
-            break;
-          }
-        }
-        if (focusActIndex >= 0) break;
-      }
-      
-      // 检查是否找到了焦点章节
-      if (focusAct != null && focusChapter != null && focusActIndex >= 0 && focusChapterIndex >= 0) {
-        // 检查当前章节是否是当前Act的第一个章节
-        bool isFirstChapterInAct = focusChapterIndex == 0;
-        bool isFirstAct = focusActIndex == 0;
-        
-        AppLogger.i('EditorMainArea', '检查向上跨Act加载: 焦点章节=${focusChapter.title}, 是所在Act第一章=$isFirstChapterInAct, 是第一个Act=$isFirstAct');
-        
-        if (isFirstChapterInAct) {
-          AppLogger.i('EditorMainArea', '已经是当前Act的第一章，检查是否可加载上一个Act');
-          
-          if (!isFirstAct && focusActIndex > 0) {
-            final prevAct = widget.novel.acts[focusActIndex - 1];
-            
-            // 如果上一个Act有章节，不再自动加载而是提示用户可以导航
-            if (prevAct.chapters.isNotEmpty) {
-              AppLogger.i('EditorMainArea', 
-                  '已到达当前Act顶部，显示导航按钮');
-              
-              // 设置hasReachedStart为true，显示导航按钮
-              widget.editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedStart: true));
-              
-              // 记录加载时间防止短时间内重复触发
-              _lastLoadUpTime = now;
-              
-              return;
-            }
-          } else if (isFirstAct) {
-            // 如果已经是第一个Act，显示信息
-            AppLogger.i('EditorMainArea', '已到达第一个Act的顶部，没有更多内容可加载');
-            
-            // 先重置标志，然后设置hasReachedStart为true
-            widget.editorBloc.add(const editor_bloc.ResetActLoadingFlags());
-            widget.editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedStart: true));
-            
-            // 记录加载时间防止短时间内重复触发
-            _lastLoadUpTime = now;
-            
-            AppLogger.i('EditorMainArea', '设置hasReachedStart标志为true，显示已到达顶部提示');
-            return;
-          }
-        }
-      }
-    }
-    
-    // 处理向下加载且已到达当前Act底部的情况
-    if (direction == 'down' && _focusChapterId != null) {
-      // 查找焦点章节所在的Act和索引
-      int focusActIndex = -1;
-      int focusChapterIndex = -1;
-      novel_models.Act? focusAct;
-      novel_models.Chapter? focusChapter;
-      
-      for (int i = 0; i < widget.novel.acts.length; i++) {
-        focusAct = widget.novel.acts[i];
-        for (int j = 0; j < focusAct.chapters.length; j++) {
-          if (focusAct.chapters[j].id == _focusChapterId) {
-            focusChapterIndex = j;
-            focusChapter = focusAct.chapters[j];
-            focusActIndex = i;
-            break;
-          }
-        }
-        if (focusActIndex >= 0) break;
-      }
-      
-      // 检查是否找到了焦点章节
-      if (focusAct != null && focusChapter != null && focusActIndex >= 0 && focusChapterIndex >= 0) {
-        // 检查当前章节是否是当前Act的最后一个章节
-        bool isLastChapterInAct = focusChapterIndex == focusAct.chapters.length - 1;
-        bool isLastAct = focusActIndex == widget.novel.acts.length - 1;
-        
-        AppLogger.i('EditorMainArea', '检查跨Act加载: 焦点章节=${focusChapter.title}, 是所在Act最后一章=$isLastChapterInAct, 是最后一个Act=$isLastAct');
-        
-        if (isLastChapterInAct) {
-          AppLogger.i('EditorMainArea', '已经是当前Act的最后一章，检查是否可加载下一个Act');
-          
-          if (!isLastAct && focusActIndex >= 0 && focusActIndex + 1 < widget.novel.acts.length) {
-            final nextAct = widget.novel.acts[focusActIndex + 1];
-            
-            // 如果下一个Act有章节，不再自动加载而是提示用户可以导航
-            if (nextAct.chapters.isNotEmpty) {
-              AppLogger.i('EditorMainArea', 
-                  '已到达当前Act底部，显示导航按钮');
-              
-              // 设置hasReachedEnd为true，显示导航按钮
-              widget.editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedEnd: true));
-              
-              // 记录加载时间防止短时间内重复触发
-              _lastLoadDownTime = now;
-              
-              return;
-            }
-          } else if (isLastAct) {
-            // 如果已经是最后一个Act，显示信息
-            AppLogger.i('EditorMainArea', '已到达最后一个Act的底部，没有更多内容可加载');
-            
-            // 先重置标志，然后设置hasReachedEnd为true
-            widget.editorBloc.add(const editor_bloc.ResetActLoadingFlags());
-            widget.editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedEnd: true));
-            
-            // 记录加载时间防止短时间内重复触发
-            _lastLoadDownTime = now;
-            
-            AppLogger.i('EditorMainArea', '设置hasReachedEnd标志为true，显示添加Act按钮');
-            return;
-          }
-        }
-      }
-    }
-    
-    // 查找起始章节ID
+    // 确定要加载章节的ID
     String? fromChapterId;
+    String? actId; // 添加actId变量，用于记录章节所属的卷
+    
     if (direction == 'up') {
       // 向上加载时，从找到的第一个非空章节开始
       fromChapterId = _findFirstNonEmptyChapterId();
+      
+      // 找到章节所属的卷ID
+      if (fromChapterId != null) {
+        for (final act in widget.novel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == fromChapterId) {
+              actId = act.id;
+              break;
+            }
+          }
+          if (actId != null) break;
+        }
+      }
+      
       _lastLoadUpTime = now;
     } else {
       // 向下加载时，从找到的最后一个非空章节开始
       fromChapterId = _findLastNonEmptyChapterId();
+      
+      // 找到章节所属的卷ID
+      if (fromChapterId != null) {
+        for (final act in widget.novel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == fromChapterId) {
+              actId = act.id;
+              break;
+            }
+          }
+          if (actId != null) break;
+        }
+      }
+      
       _lastLoadDownTime = now;
     }
     
-    if (fromChapterId != null) {
-      AppLogger.i('EditorMainArea', '加载${direction == 'up' ? '上方' : '下方'}内容，起始章节: $fromChapterId');
+    if (fromChapterId != null && actId != null) {
+      AppLogger.i('EditorMainArea', '加载${direction == 'up' ? '上方' : '下方'}内容，卷ID: $actId，起始章节: $fromChapterId');
       
       // 标记章节为加载中状态，避免重复请求
       _markChapterAsLoading(fromChapterId);
@@ -828,6 +514,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
       // 发送加载请求
       widget.editorBloc.add(editor_bloc.LoadMoreScenes(
         fromChapterId: fromChapterId,
+        actId: actId,
         direction: direction,
         chaptersLimit: 5, // 增加到5个章节，确保加载更多内容
         preventFocusChange: true, // 防止焦点改变
@@ -836,7 +523,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
       // 强制刷新UI以显示加载状态
       setState(() {});
     } else {
-      AppLogger.w('EditorMainArea', '无法找到适合加载的章节ID');
+      AppLogger.w('EditorMainArea', '无法找到适合加载的章节ID或卷ID');
     }
   }
   
@@ -1144,8 +831,8 @@ class EditorMainAreaState extends State<EditorMainArea> {
                       
                       
                       // 添加新Act按钮 - 修改显示逻辑
-                      if (_shouldShowAddActButton())
-                        const AddActButton(),
+                      // if (_shouldShowAddActButton())
+                      //   const AddActButton(),
                       
                       // 底部空间
                       const SizedBox(height: 60),
@@ -2287,6 +1974,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
       fromChapterId: _targetChapterId ?? _targetActId!, 
       direction: 'center', 
       chaptersLimit: 5, 
+      actId: _targetActId!,  // 添加actId参数
       preventFocusChange: true, // 对于上一卷，我们通常希望保持在加载内容的末尾附近，所以阻止焦点自动改变
     ));
     
@@ -2331,6 +2019,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
       fromChapterId: _targetChapterId ?? _targetActId!, 
       direction: 'center', 
       chaptersLimit: 5,
+      actId: _targetActId!,  // 添加actId参数
       preventFocusChange: _targetChapterId == null, 
     ));
     
@@ -2513,43 +2202,6 @@ class EditorMainAreaState extends State<EditorMainArea> {
     });
   }
   
-  // 监听新卷创建完成的事件 (实际上不会被使用，因为我们使用EditorScreenController中的方法，它已经包含了完整处理逻辑)
-  void _listenForNewActCreationComplete() {
-    late StreamSubscription<editor_bloc.EditorState> subscription;
-    
-    subscription = widget.editorBloc.stream.listen((state) {
-      if (state is editor_bloc.EditorLoaded && !state.isLoading && !state.isSaving) {
-        // 取消订阅，避免内存泄漏
-        subscription.cancel();
-        
-        // 隐藏加载状态
-        if (mounted) {
-          setState(() {
-            _isFullscreenLoading = false;
-          });
-          
-          // 重置边界标志
-          _resetBoundaryFlags();
-          
-          // 更新可见项目
-          _updateVisibleItemsAfterScroll();
-          
-          AppLogger.i('EditorMainArea', '新卷创建完成，已更新UI状态');
-        }
-      }
-    });
-    
-    // 添加超时处理，避免永久等待
-    Future.delayed(const Duration(seconds: 10), () {
-      subscription.cancel();
-      if (mounted && _isFullscreenLoading) {
-        setState(() {
-          _isFullscreenLoading = false;
-        });
-        AppLogger.w('EditorMainArea', '新卷创建监听超时，已重置加载状态');
-      }
-    });
-  }
   
   // 添加新方法：重置边界检查标志
   void _resetBoundaryFlags() {

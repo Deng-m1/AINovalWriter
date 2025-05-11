@@ -86,17 +86,12 @@ class EditorScreenController extends ChangeNotifier {
 
   // 新增变量
   double? _currentScrollSpeed;
-  // 调整预加载距离使其更合理
-  static const double _preloadDistance = 600.0;
 
   // 滚动相关变量
   DateTime? _lastScrollHandleTime;
   DateTime? _lastScrollTime;
   double? _lastScrollPosition;
-  static const Duration _scrollHandleInterval = Duration(milliseconds: 250); // 增加到250ms
   static const Duration _scrollThrottleInterval = Duration(milliseconds: 800); // 增加到800ms
-  // 添加惯性滚动控制变量
-  bool _isInertialScrolling = false;
   Timer? _inertialScrollTimer;
   // 添加滚动状态变量
   ScrollState _scrollState = ScrollState.idle;
@@ -241,11 +236,13 @@ class EditorScreenController extends ChangeNotifier {
       if (lastEditedChapterId != null && lastEditedChapterId.isNotEmpty) {
         // 如果有最后编辑的章节，从该章节开始加载
         AppLogger.i('EditorScreenController', '从最后编辑的章节加载: $lastEditedChapterId');
-        editorBloc.add(editor_bloc.LoadMoreScenes(
-          fromChapterId: lastEditedChapterId,
-          direction: 'center', // 从中间加载，包括上下章节
+        
+        // 先使用分页加载获取初始数据
+        editorBloc.add(editor_bloc.LoadEditorContentPaginated(
+          novelId: novel.id,
+          lastEditedChapterId: lastEditedChapterId,
           chaptersLimit: 3, // 减少初始加载的章节数量
-          preventFocusChange: false, // 允许焦点变化，因为这是初始加载
+          loadAllSummaries: false, // 不加载所有摘要，减少初始加载量
         ));
       } else {
         // 如果没有最后编辑的章节，使用常规分页加载，但限制章节数量
@@ -488,10 +485,6 @@ class EditorScreenController extends ChangeNotifier {
     );
   }
 
-  // 检查是否正在缓慢滚动
-  bool _isScrollingSlowly() {
-    return _currentScrollSpeed != null && _currentScrollSpeed! < 0.5; // 降低阈值使判断更准确
-  }
 
   // 检查滚动边界并触发加载
   void _checkScrollBoundaries() {
@@ -565,20 +558,6 @@ class EditorScreenController extends ChangeNotifier {
     }
   }
 
-  // 判断滚动是否已经稳定一段时间
-  bool _isScrollStable(int milliseconds) {
-    if (_lastScrollTime == null) return false;
-    
-    // 1. 检查时间条件
-    final now = DateTime.now();
-    final timeStable = now.difference(_lastScrollTime!).inMilliseconds >= milliseconds;
-    
-    // 2. 检查速度条件 - 速度接近0
-    final speedStable = _currentScrollSpeed != null && _currentScrollSpeed! < 0.1;
-    
-    // 同时满足时间和速度条件时，认为滚动稳定
-    return timeStable && speedStable;
-  }
 
   // 加载更多场景函数
   void _loadMoreScenes(String direction) {
@@ -800,6 +779,7 @@ class EditorScreenController extends ChangeNotifier {
       editorBloc.add(editor_bloc.LoadMoreScenes(
         fromChapterId: fromChapterId!,
         direction: direction,
+        actId: _findActIdForChapter(state.novel, fromChapterId!), // 查找章节所在的卷ID
         chaptersLimit: 3,
         preventFocusChange: true,  // 防止焦点变化，避免不必要的滚动
         skipIfLoading: true,  // 如果已经在加载，跳过这次请求
@@ -849,6 +829,7 @@ class EditorScreenController extends ChangeNotifier {
     // 发送加载请求
     editorBloc.add(editor_bloc.LoadMoreScenes(
       fromChapterId: lastChapterInPreviousAct.id,
+      actId: previousAct.id, // 使用上一个Act的ID
       direction: 'center', // 使用center方向确保可以加载章节前后的内容
       chaptersLimit: 5,    // 加载多个章节
       preventFocusChange: true,
@@ -928,62 +909,73 @@ class EditorScreenController extends ChangeNotifier {
   }
 
   // 为指定章节手动加载场景内容
-  void loadScenesForChapter(String chapterId) {
+  void loadScenesForChapter(String actId, String chapterId) {
+    AppLogger.i('EditorScreenController', '手动加载卷 $actId 章节 $chapterId 的场景');
+    
     editorBloc.add(editor_bloc.LoadMoreScenes(
       fromChapterId: chapterId,
+      actId: actId,
       direction: 'center',
-      chaptersLimit: 2, // 增加加载章节数量
+      chaptersLimit: 2, // 加载当前章节及其前后章节
     ));
   }
 
   // 为章节目录加载所有场景内容（不分页）
-  void loadAllScenesForChapter(String chapterId, {bool disableAutoScroll = true}) {
+  void loadAllScenesForChapter(String actId, String chapterId, {bool disableAutoScroll = true}) {
     AppLogger.i('EditorScreenController', '加载章节的所有场景内容: $chapterId, 禁用自动滚动: $disableAutoScroll');
 
     // 始终禁用自动跳转，通过不传递targetScene相关参数实现
     editorBloc.add(editor_bloc.LoadMoreScenes(
       fromChapterId: chapterId,
+      actId: actId,
       direction: 'center',
       chaptersLimit: 10, // 设置较大的限制，尝试加载更多场景
     ));
   }
 
   // 预加载章节场景但不改变焦点
-  void preloadChapterScenes(String chapterId) {
-    AppLogger.i('EditorScreenController', '预加载章节场景: $chapterId');
+  void preloadChapterScenes(String chapterId, {String? actId}) {
+    AppLogger.i('EditorScreenController', '预加载章节场景: 章节ID=$chapterId, ${actId != null ? "卷ID=$actId" : "自动查找卷ID"}');
 
     // 检查当前状态，如果场景已经加载，则不需要再次加载
     final state = editorBloc.state;
     if (state is editor_bloc.EditorLoaded) {
-      // 检查目标章节是否已经存在场景
-      bool hasScenes = false;
-      String? targetActId;
-
-      // 先在已加载的Acts中查找章节
-      for (final act in state.novel.acts) {
-        for (final chapter in act.chapters) {
-          if (chapter.id == chapterId) {
-            targetActId = act.id;
-            hasScenes = chapter.scenes.isNotEmpty;
-            break;
-          }
-        }
-        if (targetActId != null) break;
-      }
-
-      // 如果未找到章节所属的Act，则在API中查找或创建一个默认Act
+      // 如果没有提供actId，则自动查找章节所属的卷
+      String? targetActId = actId;
       if (targetActId == null) {
-        // 使用第一个Act作为目标Act，如果没有Act则创建一个
-        if (state.novel.acts.isNotEmpty) {
-          targetActId = state.novel.acts.first.id;
-          AppLogger.i('EditorScreenController', '找不到章节 $chapterId 所属的Act，使用第一个Act: $targetActId');
-        } else {
-          // 如果没有任何Act，可能需要先加载小说结构
-          AppLogger.w('EditorScreenController', '找不到章节 $chapterId 所属的Act，且小说中没有Act，无法预加载场景');
+        // 在当前加载的小说结构中查找章节所属的卷
+        for (final act in state.novel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == chapterId) {
+              targetActId = act.id;
+              break;
+            }
+          }
+          if (targetActId != null) break;
+        }
+        
+        if (targetActId == null) {
+          AppLogger.w('EditorScreenController', '无法确定章节 $chapterId 所属的卷ID');
           return;
         }
       }
-
+      
+      // 检查目标章节是否已经存在场景
+      bool hasScenes = false;
+      
+      // 先在已加载的Acts中查找章节
+      for (final act in state.novel.acts) {
+        if (act.id == targetActId) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == chapterId) {
+              hasScenes = chapter.scenes.isNotEmpty;
+              break;
+            }
+          }
+          break;
+        }
+      }
+      
       // 如果章节已经有场景，就不需要再次加载
       if (hasScenes) {
         AppLogger.i('EditorScreenController', '章节 $chapterId 已有场景，不需要重新加载');
@@ -993,6 +985,7 @@ class EditorScreenController extends ChangeNotifier {
       // 使用参数preventFocusChange=true确保不会改变焦点
       editorBloc.add(editor_bloc.LoadMoreScenes(
         fromChapterId: chapterId,
+        actId: targetActId,
         direction: 'center',
         chaptersLimit: 10,
         preventFocusChange: true, // 设置为true避免改变焦点
@@ -1161,77 +1154,9 @@ class EditorScreenController extends ChangeNotifier {
     return visibleSceneIds;
   }
 
-  // 新增：使用更长间隔的节流函数检查可见场景
-  void _checkVisibleScenesThrottled() {
-    _visibleScenesDebounceTimer?.cancel();
-    // 延长防抖时间到1000ms，减少处理频率
-    _visibleScenesDebounceTimer = Timer(const Duration(milliseconds: 1000), () {
-      _checkVisibleScenes(logEnabled: false); // 禁用日志
-    });
-  }
 
-  // 检查可见场景并优化控制器，增加日志控制参数
-  void _checkVisibleScenes({bool logEnabled = true}) {
-    final visibleSceneIds = _getVisibleSceneIds();
 
-    // 检查是否需要清理不可见场景的控制器
-    _cleanupUnusedControllers(visibleSceneIds);
 
-    // 只有在明确启用日志且可见场景少于3个时才记录日志
-    if (logEnabled && visibleSceneIds.length < 3 && kDebugMode) {
-      AppLogger.d('EditorScreenController', '当前可见场景: ${visibleSceneIds.length}个');
-    }
-  }
-
-  // 清理不再需要的控制器
-  void _cleanupUnusedControllers(List<String> visibleSceneIds) {
-    // 如果场景控制器数量低于阈值，不执行清理
-    if (sceneControllers.length < 30) return; // 提高阈值到30，减少清理频率
-
-    final controllersToRemove = <String>[];
-
-    // 保留所有可见控制器
-    final keysToKeep = <String>{...visibleSceneIds};
-
-    // 添加活动场景控制器(如果有)
-    if (editorBloc.state is editor_bloc.EditorLoaded) {
-      final state = editorBloc.state as editor_bloc.EditorLoaded;
-      if (state.activeActId != null && state.activeChapterId != null && state.activeSceneId != null) {
-        keysToKeep.add('${state.activeActId}_${state.activeChapterId}_${state.activeSceneId}');
-      }
-    }
-
-    // 在保持可见控制器的基础上，如果总数过多，移除最旧的
-    if (sceneControllers.length > 60) { // 维持最多60个控制器，提高阈值
-      final keysToConsider = sceneControllers.keys.toList()
-        ..removeWhere((key) => keysToKeep.contains(key));
-
-      // 只保留25个最近使用的，增加保留数量
-      if (keysToConsider.length > 35) { // 如果超过35个不可见控制器
-        final keysToRemove = keysToConsider.sublist(0, keysToConsider.length - 25);
-        controllersToRemove.addAll(keysToRemove);
-      }
-    }
-
-    // 安全释放资源
-    for (final id in controllersToRemove) {
-      try {
-        sceneControllers[id]?.dispose();
-        sceneControllers.remove(id);
-        sceneSummaryControllers.remove(id);
-      } catch (e) {
-        // 禁用日志以提高性能
-        if (kDebugMode) {
-          AppLogger.e('EditorScreenController', '释放控制器资源失败: $id', e);
-        }
-      }
-    }
-
-    // 只有在清理了大量控制器时才记录日志
-    if (controllersToRemove.length > 10 && kDebugMode) {
-      AppLogger.i('EditorScreenController', '已清理 ${controllersToRemove.length} 个不可见场景控制器，当前控制器数: ${sceneControllers.length}');
-    }
-  }
 
   // 确保控制器的优化版本
   void ensureControllersForNovel(novel_models.Novel novel) {
@@ -1441,204 +1366,6 @@ class EditorScreenController extends ChangeNotifier {
     });
   }
 
-  // 在EditorScreenController中添加新方法用于初始化结构边界
-  void _initializeNovelStructureBoundaries() {
-    final novelModel = editorBloc.state is editor_bloc.EditorLoaded 
-        ? (editorBloc.state as editor_bloc.EditorLoaded).novel 
-        : null;
-    
-    if (novelModel == null || novelModel.acts.isEmpty) return;
-    
-    AppLogger.i('EditorScreenController', '开始初始化小说结构边界，共${novelModel.acts.length}卷');
-    
-    // 处理起始边界
-    final firstAct = novelModel.acts.first;
-    if (firstAct.chapters.isEmpty) {
-      // 第一个卷是空的，直接标记已到达开始
-      editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedStart: true));
-      AppLogger.i('EditorScreenController', '小说第一卷为空，标记已到达开始边界');
-    } else {
-      // 加载第一个卷的第一个章节，确保起始章节被加载
-      final firstChapter = firstAct.chapters.first;
-      AppLogger.i('EditorScreenController', '加载起始卷第一个章节: ${firstChapter.id} (${firstChapter.title})');
-      editorBloc.add(editor_bloc.LoadMoreScenes(
-        fromChapterId: firstChapter.id,
-        direction: 'center',
-        chaptersLimit: 5, // 加载更多章节以减少后续分页
-        preventFocusChange: true,
-      ));
-    }
-    
-    // 处理结束边界
-    final lastAct = novelModel.acts.last;
-    if (lastAct.chapters.isEmpty) {
-      // 最后一个卷是空的，直接标记已到达末尾
-      editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedEnd: true));
-      AppLogger.i('EditorScreenController', '小说最后一卷为空，标记已到达结束边界');
-    } else {
-      // 加载最后一个卷的最后一个章节，确保结尾章节被加载
-      final lastChapter = lastAct.chapters.last;
-      AppLogger.i('EditorScreenController', '加载末尾卷最后一个章节: ${lastChapter.id} (${lastChapter.title})');
-      editorBloc.add(editor_bloc.LoadMoreScenes(
-        fromChapterId: lastChapter.id,
-        direction: 'center',
-        chaptersLimit: 5, // 加载更多章节以减少后续分页
-        preventFocusChange: true,
-      ));
-    }
-    
-    // 预加载空卷和边界卷
-    _preloadEmptyActs();
-  }
-
-  // 预加载所有空卷的章节和边界卷
-  void _preloadEmptyActs() {
-    final novelModel = editorBloc.state is editor_bloc.EditorLoaded 
-        ? (editorBloc.state as editor_bloc.EditorLoaded).novel 
-        : null;
-    
-    if (novelModel == null) return;
-    
-    // 用于记录已预加载的章节ID，避免重复加载
-    final Set<String> preloadedChapterIds = {};
-    
-    // 1. 处理所有空卷
-    for (int i = 0; i < novelModel.acts.length; i++) {
-      final act = novelModel.acts[i];
-      
-      // 处理完全空的卷
-      if (act.chapters.isEmpty) {
-        AppLogger.i('EditorScreenController', '检测到空卷: ${act.title}，无需预加载');
-        continue;
-      }
-      
-      // 检查卷中是否所有章节都没有场景
-      final bool allChaptersEmpty = act.chapters.every((chapter) => chapter.scenes.isEmpty);
-      
-      if (allChaptersEmpty) {
-        // 所有章节都是空的，预加载整个卷
-        AppLogger.i('EditorScreenController', '预加载整个空章节卷: ${act.title}，共${act.chapters.length}章');
-        
-        // 从第一个章节开始加载
-        if (act.chapters.isNotEmpty) {
-          final startChapterId = act.chapters.first.id;
-          editorBloc.add(editor_bloc.LoadMoreScenes(
-            fromChapterId: startChapterId,
-            direction: 'center',
-            chaptersLimit: act.chapters.length > 10 ? 10 : act.chapters.length, // 限制一次最多加载10章
-            preventFocusChange: true,
-          ));
-          
-          // 记录已加载的章节
-          preloadedChapterIds.add(startChapterId);
-          
-          // 如果章节超过10个，按批次加载
-          if (act.chapters.length > 10) {
-            // 从中间位置加载一批
-            if (act.chapters.length > 20) {
-              final midIndex = act.chapters.length ~/ 2;
-              final midChapterId = act.chapters[midIndex].id;
-              
-              editorBloc.add(editor_bloc.LoadMoreScenes(
-                fromChapterId: midChapterId,
-                direction: 'center',
-                chaptersLimit: 10,
-                preventFocusChange: true,
-              ));
-              
-              preloadedChapterIds.add(midChapterId);
-            }
-            
-            // 从末尾加载一批
-            final lastChapterId = act.chapters.last.id;
-            editorBloc.add(editor_bloc.LoadMoreScenes(
-              fromChapterId: lastChapterId,
-              direction: 'center',
-              chaptersLimit: 10,
-              preventFocusChange: true,
-            ));
-            
-            preloadedChapterIds.add(lastChapterId);
-          }
-        }
-      }
-    }
-    
-    // 2. 处理起始和结束卷之间有场景但不完整的卷
-    // 如果小说只有1-2卷，则直接全部加载
-    if (novelModel.acts.length <= 2) {
-      AppLogger.i('EditorScreenController', '小说卷数少于等于2，尝试直接加载所有章节');
-      
-      for (final act in novelModel.acts) {
-        if (act.chapters.isEmpty) continue;
-        
-        for (final chapter in act.chapters) {
-          // 检查是否已经加载过
-          if (preloadedChapterIds.contains(chapter.id)) continue;
-          
-          // 检查章节是否有场景
-          if (chapter.scenes.isEmpty) {
-            AppLogger.i('EditorScreenController', '预加载空章节: ${chapter.title} (${chapter.id})');
-            editorBloc.add(editor_bloc.LoadMoreScenes(
-              fromChapterId: chapter.id,
-              direction: 'center',
-              chaptersLimit: 2,
-              preventFocusChange: true,
-            ));
-            
-            preloadedChapterIds.add(chapter.id);
-          }
-        }
-      }
-    } else {
-      // 如果卷数较多，只处理首尾卷的前几个和后几个章节
-      // 处理第一卷的前几个章节
-      final firstAct = novelModel.acts.first;
-      if (firstAct.chapters.isNotEmpty) {
-        // 最多加载前5个章节
-        final chaptersToLoad = firstAct.chapters.length <= 5 ? firstAct.chapters : firstAct.chapters.sublist(0, 5);
-        
-        for (final chapter in chaptersToLoad) {
-          if (preloadedChapterIds.contains(chapter.id) || chapter.scenes.isNotEmpty) continue;
-          
-          AppLogger.i('EditorScreenController', '预加载首卷章节: ${chapter.title} (${chapter.id})');
-          editorBloc.add(editor_bloc.LoadMoreScenes(
-            fromChapterId: chapter.id,
-            direction: 'center',
-            chaptersLimit: 2,
-            preventFocusChange: true,
-          ));
-          
-          preloadedChapterIds.add(chapter.id);
-        }
-      }
-      
-      // 处理最后一卷的最后几个章节
-      final lastAct = novelModel.acts.last;
-      if (lastAct.chapters.isNotEmpty) {
-        // 最多加载后5个章节
-        final startIndex = lastAct.chapters.length <= 5 ? 0 : lastAct.chapters.length - 5;
-        final chaptersToLoad = lastAct.chapters.sublist(startIndex);
-        
-        for (final chapter in chaptersToLoad) {
-          if (preloadedChapterIds.contains(chapter.id) || chapter.scenes.isNotEmpty) continue;
-          
-          AppLogger.i('EditorScreenController', '预加载末卷章节: ${chapter.title} (${chapter.id})');
-          editorBloc.add(editor_bloc.LoadMoreScenes(
-            fromChapterId: chapter.id,
-            direction: 'center',
-            chaptersLimit: 2,
-            preventFocusChange: true,
-          ));
-          
-          preloadedChapterIds.add(chapter.id);
-        }
-      }
-    }
-    
-    // 标记结构边界已初始化完成
-    AppLogger.i('EditorScreenController', '小说结构边界初始化完成，已预加载${preloadedChapterIds.length}个章节');
-  }
 
   // 更新加载进度和消息
   void _updateLoadingProgress(String message, {bool isComplete = false}) {
@@ -1902,5 +1629,16 @@ Future<String> _internalCreateNewScene(String actId, String chapterId, String sc
         subscription?.cancel();
         rethrow;
     }
+}
+
+String _findActIdForChapter(novel_models.Novel novel, String chapterId) {
+  for (final act in novel.acts) {
+    for (final chapter in act.chapters) {
+      if (chapter.id == chapterId) {
+        return act.id;
+      }
+    }
+  }
+  throw Exception('章节 $chapterId 不存在于小说结构中');
 }
 }

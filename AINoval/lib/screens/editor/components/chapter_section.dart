@@ -67,12 +67,13 @@ class _ChapterSectionState extends State<ChapterSection> {
     
     try {
       final controller = Provider.of<EditorScreenController>(context, listen: false);
-      controller.loadScenesForChapter(widget.chapterId);
+      controller.loadScenesForChapter(widget.actId, widget.chapterId);
     } catch (e) {
       // 如果无法获取控制器，直接使用EditorBloc
       widget.editorBloc.add(LoadMoreScenes(
         fromChapterId: widget.chapterId,
         direction: 'center',
+        actId: widget.actId,
         chaptersLimit: 2,
         preventFocusChange: true,
       ));

@@ -196,12 +196,13 @@ public interface NovelService {
      * 加载更多场景内容 根据方向（向上或向下）加载更多章节的场景内容
      *
      * @param novelId 小说ID
+     * @param actId 卷ID，用于限制在指定卷内分页加载
      * @param fromChapterId 从哪个章节开始加载
      * @param direction 加载方向，"up"表示向上加载，"down"表示向下加载
      * @param chaptersLimit 要加载的章节数量
      * @return 加载的更多场景数据，按章节组织
      */
-    Mono<Map<String, List<Scene>>> loadMoreScenes(String novelId, String fromChapterId, String direction, int chaptersLimit);
+    Mono<Map<String, List<Scene>>> loadMoreScenes(String novelId, String actId, String fromChapterId, String direction, int chaptersLimit);
 
     /**
      * 更新卷标题

@@ -52,13 +52,6 @@ class ActMenuDefinitions {
         },
       ),
       MenuItemData(
-        icon: Icons.refresh,
-        label: '加载所有章节场景',
-        onTap: (context, editorBloc, actId, _, __) async {
-          _loadAllScenesForAct(context, editorBloc, actId);
-        },
-      ),
-      MenuItemData(
         icon: Icons.edit,
         label: '重命名Act',
         onTap: null,
@@ -107,32 +100,6 @@ class ActMenuDefinitions {
       ),
     ];
   }
-
-  /// 加载Act下所有章节的场景
-  static void _loadAllScenesForAct(BuildContext context, EditorBloc editorBloc, String actId) {
-    if (editorBloc.state is EditorLoaded) {
-      final state = editorBloc.state as EditorLoaded;
-      final novel = state.novel;
-      
-      // 查找当前Act的所有章节
-      for (final act in novel.acts) {
-        if (act.id == actId) {
-          // 找到每个未加载场景的章节，触发加载
-          for (final chapter in act.chapters) {
-            if (chapter.scenes.isEmpty) {
-              // 加载这个章节的场景
-              editorBloc.add(LoadMoreScenes(
-                fromChapterId: chapter.id,
-                direction: 'center',
-                chaptersLimit: 1,
-              ));
-            }
-          }
-          break;
-        }
-      }
-    }
-  }
 }
 
 /// Chapter菜单定义
@@ -145,13 +112,6 @@ class ChapterMenuDefinitions {
         label: '添加新场景',
         onTap: (context, editorBloc, actId, chapterId, _) async {
           _addNewScene(context, editorBloc, actId, chapterId!);
-        },
-      ),
-      MenuItemData(
-        icon: Icons.download,
-        label: '加载场景内容',
-        onTap: (context, editorBloc, actId, chapterId, _) async {
-          _loadScenes(context, editorBloc, chapterId!);
         },
       ),
       MenuItemData(
@@ -225,25 +185,6 @@ class ChapterMenuDefinitions {
       chapterId: chapterId,
       sceneId: newSceneId,
     ));
-  }
-
-  /// 加载场景内容
-  static void _loadScenes(BuildContext context, EditorBloc editorBloc, String chapterId) {
-    AppLogger.i('ChapterSection', '手动触发加载章节场景: $chapterId');
-    
-    try {
-      // 尝试使用控制器加载场景
-      final controller = Provider.of<EditorScreenController>(context, listen: false);
-      controller.loadScenesForChapter(chapterId);
-    } catch (e) {
-      // 如果无法获取控制器，直接使用EditorBloc
-      editorBloc.add(LoadMoreScenes(
-        fromChapterId: chapterId,
-        direction: 'center',
-        chaptersLimit: 2,
-        preventFocusChange: true,
-      ));
-    }
   }
 }
 

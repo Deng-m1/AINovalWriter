@@ -16,6 +16,11 @@ public class LoadMoreScenesRequestDto {
      * 小说ID
      */
     private String novelId;
+    
+    /**
+     * 卷ID，用于限制在指定卷内分页加载
+     */
+    private String actId;
 
     /**
      * 从哪个章节开始加载

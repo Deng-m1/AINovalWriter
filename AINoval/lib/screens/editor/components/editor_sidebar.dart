@@ -791,7 +791,7 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
       fromChapterId: chapterId,
       direction: 'center',
       chaptersLimit: 5, // 增加加载章节数量，确保足够加载所有内容
-      targetActId: actId,
+      actId: actId,
       targetChapterId: chapterId,
       targetSceneId: sceneId,
       preventFocusChange: false // 确保设置为false，允许改变焦点

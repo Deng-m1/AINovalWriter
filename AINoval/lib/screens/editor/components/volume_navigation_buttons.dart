@@ -105,9 +105,15 @@ class VolumeNavigationButtons extends StatelessWidget {
     
     if (isTop) {
       // 顶部按钮：上一卷
-      buttonText = prevVolumeName != null 
-          ? '上一卷：${prevVolumeName.length > 10 ? prevVolumeName.substring(0, 10) + '...' : prevVolumeName}'
-          : '返回首卷';
+      if (prevVolumeName == null) {
+        buttonText = '返回首卷';
+      } else {
+        String displayName = prevVolumeName;
+        if (displayName.length > 10) {
+          displayName = displayName.substring(0, 10) + '...';
+        }
+        buttonText = '上一卷：$displayName';
+      }
       buttonIcon = Icons.arrow_upward_rounded;
       onPressed = onPreviousAct;
     } else if (isAddNewVolume) {
@@ -117,9 +123,15 @@ class VolumeNavigationButtons extends StatelessWidget {
       onPressed = onAddNewAct;
     } else {
       // 底部按钮：下一卷
-      buttonText = nextVolumeName != null 
-          ? '下一卷：${nextVolumeName.length > 10 ? nextVolumeName.substring(0, 10) + '...' : nextVolumeName}'
-          : '下一卷';
+      if (nextVolumeName == null) {
+        buttonText = '下一卷';
+      } else {
+        String displayName = nextVolumeName;
+        if (displayName.length > 10) {
+          displayName = displayName.substring(0, 10) + '...';
+        }
+        buttonText = '下一卷：$displayName';
+      }
       buttonIcon = Icons.arrow_downward_rounded;
       onPressed = onNextAct;
     }

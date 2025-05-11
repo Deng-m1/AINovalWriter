@@ -383,15 +383,16 @@ class EditorRepositoryImpl implements EditorRepository {
   /// 加载更多章节场景
   /// 根据方向（向上或向下）加载更多章节的场景内容
   @override
-  Future<Map<String, List<Scene>>> loadMoreScenes(String novelId, String fromChapterId, String direction, {int chaptersLimit = 5}) async {
+  Future<Map<String, List<Scene>>> loadMoreScenes(String novelId, String? actId, String fromChapterId, String direction, {int chaptersLimit = 5}) async {
     try {
       AppLogger.i(
           'EditorRepositoryImpl/loadMoreScenes', 
-          '加载更多场景: novelId=$novelId, fromChapter=$fromChapterId, direction=$direction, limit=$chaptersLimit');
+          '加载更多场景: novelId=$novelId, actId=$actId, fromChapter=$fromChapterId, direction=$direction, limit=$chaptersLimit');
       
       // 调用API加载更多场景
       final data = await _apiClient.loadMoreScenes(
-        novelId, 
+        novelId,
+        actId,
         fromChapterId, 
         direction,
         chaptersLimit: chaptersLimit

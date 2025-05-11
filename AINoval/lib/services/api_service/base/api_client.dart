@@ -699,15 +699,22 @@ class ApiClient {
   /// - up: 加载fromChapterId之前的章节
   /// - down: 加载fromChapterId之后的章节
   /// - center: 只加载fromChapterId章节或前后各加载几章
-  Future<dynamic> loadMoreScenes(String novelId, String fromChapterId, String direction, {int chaptersLimit = 5}) async {
+  Future<dynamic> loadMoreScenes(String novelId, String? actId, String fromChapterId, String direction, {int chaptersLimit = 5}) async {
     try {
-      AppLogger.i('ApiClient', '加载更多场景: $novelId, 从章节: $fromChapterId, 方向: $direction, 限制: $chaptersLimit');
-      final response = await post('/novels/load-more-scenes', data: {
+      AppLogger.i('ApiClient', '加载更多场景: novelId=$novelId, actId=$actId, fromChapterId=$fromChapterId, direction=$direction, limit=$chaptersLimit');
+      final data = {
         'novelId': novelId,
         'fromChapterId': fromChapterId,
         'direction': direction,
         'chaptersLimit': chaptersLimit
-      });
+      };
+
+      // 如果actId不为空，添加到请求参数
+      if (actId != null && actId.isNotEmpty) {
+        data['actId'] = actId;
+      }
+
+      final response = await post('/novels/load-more-scenes', data: data);
       return response;
     } catch (e) {
       AppLogger.e('ApiClient', '加载更多场景失败', e);

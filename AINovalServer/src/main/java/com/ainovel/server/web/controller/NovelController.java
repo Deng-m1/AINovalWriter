@@ -120,20 +120,21 @@ public class NovelController extends ReactiveBaseController {
     /**
      * 加载更多场景内容 根据方向（向上或向下）加载更多章节的场景内容
      *
-     * @param loadMoreScenesRequestDto 包含小说ID、方向和章节数量的DTO
+     * @param loadMoreScenesRequestDto 包含小说ID、卷ID、方向和章节数量的DTO
      * @return 加载的更多场景数据，按章节组织
      */
     @PostMapping("/load-more-scenes")
     public Mono<Map<String, List<Scene>>> loadMoreScenes(@RequestBody LoadMoreScenesRequestDto loadMoreScenesRequestDto) {
         String novelId = loadMoreScenesRequestDto.getNovelId();
+        String actId = loadMoreScenesRequestDto.getActId();
         String fromChapterId = loadMoreScenesRequestDto.getFromChapterId();
         String direction = loadMoreScenesRequestDto.getDirection();
         int chaptersLimit = loadMoreScenesRequestDto.getChaptersLimit();
 
-        log.info("加载更多场景: novelId={}, fromChapterId={}, direction={}, chaptersLimit={}",
-                novelId, fromChapterId, direction, chaptersLimit);
+        log.info("加载更多场景: novelId={}, actId={}, fromChapterId={}, direction={}, chaptersLimit={}",
+                novelId, actId, fromChapterId, direction, chaptersLimit);
 
-        return novelService.loadMoreScenes(novelId, fromChapterId, direction, chaptersLimit);
+        return novelService.loadMoreScenes(novelId, actId, fromChapterId, direction, chaptersLimit);
     }
 
     /**

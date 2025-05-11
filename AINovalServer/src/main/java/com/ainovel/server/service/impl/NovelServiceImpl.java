@@ -44,6 +44,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
+import org.springframework.util.StringUtils;
 
 /**
  * 小说服务实现类
@@ -558,64 +559,105 @@ public class NovelServiceImpl implements NovelService {
     }
 
     @Override
-    public Mono<Map<String, List<Scene>>> loadMoreScenes(String novelId, String fromChapterId, String direction, int chaptersLimit) {
-        log.info("加载更多场景: novelId={}, fromChapterId={}, direction={}, chaptersLimit={}", novelId, fromChapterId, direction, chaptersLimit);
+    public Mono<Map<String, List<Scene>>> loadMoreScenes(String novelId, String actIdConstraint, String fromChapterId, String direction, int chaptersLimit) {
+        log.info("加载更多场景: novelId={}, actId={}, fromChapterId={}, direction={}, chaptersLimit={}", 
+                novelId, actIdConstraint, fromChapterId, direction, chaptersLimit);
         
         return novelRepository.findById(novelId)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
                 .flatMap(novel -> {
-                    // 准备一个所有章节的ID列表，以便确定加载范围
+                    // 准备一个章节的ID列表，以便确定加载范围
                     List<String> allChapterIds = new ArrayList<>();
                     
-                    // 遍历小说结构收集所有章节ID
-                    for (Novel.Act act : novel.getStructure().getActs()) {
-                        for (Novel.Chapter chapter : act.getChapters()) {
+                    // 如果指定了actId，只加载该卷内的章节
+                    if (StringUtils.hasText(actIdConstraint)) {
+                        // 查找指定的卷
+                        Act targetAct = null;
+                        for (Act act : novel.getStructure().getActs()) {
+                            if (act.getId().equals(actIdConstraint)) {
+                                targetAct = act;
+                                break;
+                            }
+                        }
+                        
+                        if (targetAct == null) {
+                            log.warn("找不到指定的卷: {}", actIdConstraint);
+                            return Mono.just(new HashMap<>());
+                        }
+                        
+                        // 从指定卷中收集章节ID
+                        for (Chapter chapter : targetAct.getChapters()) {
                             allChapterIds.add(chapter.getId());
                         }
+                        
+                        log.info("根据卷ID {}，找到 {} 个章节", actIdConstraint, allChapterIds.size());
+                    } else {
+                        // 没有指定actId，按照原有逻辑加载所有卷的章节
+                        for (Act act : novel.getStructure().getActs()) {
+                            for (Chapter chapter : act.getChapters()) {
+                                allChapterIds.add(chapter.getId());
+                            }
+                        }
+                        log.info("未指定卷ID，小说 {} 共有 {} 个章节", novelId, allChapterIds.size());
                     }
                     
-                    log.info("小说 {} 共有 {} 个章节", novelId, allChapterIds.size());
-                    
-                    int fromIndex = allChapterIds.indexOf(fromChapterId); // 当前章节在所有章节列表中的索引
-                    if (fromIndex == -1) {
-                        log.error("找不到指定的章节: {}", fromChapterId);
+                    if (allChapterIds.isEmpty()) {
+                        log.info("没有可加载的章节，返回空结果");
                         return Mono.just(new HashMap<>());
+                    }
+                    
+                    int fromIndex = -1;
+                    if (fromChapterId != null) {
+                        fromIndex = allChapterIds.indexOf(fromChapterId); // 当前章节在所有章节列表中的索引
+                        if (fromIndex == -1) {
+                            log.error("找不到指定的章节: {}", fromChapterId);
+                            return Mono.just(new HashMap<>());
+                        }
                     }
                     
                     List<String> chapterIdsToLoad;
 
                     if ("up".equalsIgnoreCase(direction)) {
                         // 向上加载
+                        if (fromIndex <= 0) {
+                            // 已经是第一章，没有更多内容可加载
+                            log.info("已经是第一章，没有更多内容可向上加载");
+                            return Mono.just(new HashMap<>());
+                        }
                         int startIndex = Math.max(0, fromIndex - chaptersLimit);
                         chapterIdsToLoad = allChapterIds.subList(startIndex, fromIndex); // 不包括 fromIndex 章节本身
                         log.info("向上加载章节，从索引{}到{}，共{}个章节", startIndex, fromIndex, chapterIdsToLoad.size());
                     } else if ("center".equalsIgnoreCase(direction)) {
-                        // 中心加载 - 修改逻辑，实现加载当前章节和之后的章节
-                        int startIndex = fromIndex; // 起始点是当前章节（包含）
-                        int endIndex = Math.min(allChapterIds.size(), fromIndex + chaptersLimit); // 加载当前章节及后续章节
-                        chapterIdsToLoad = allChapterIds.subList(startIndex, endIndex);
-                        log.info("中心加载章节，从当前章节开始加载，索引{}到{}，共{}个章节", startIndex, endIndex, chapterIdsToLoad.size());
-                    } else { // "down"
-                        // 向下加载（加载fromChapterId之后的章节）
-                        // 详细记录日志
-                        log.info("向下加载：fromChapterId={}, fromIndex={}, allChapterIds.size()={}", fromChapterId, fromIndex, allChapterIds.size());
-                        
-                        int startIndexForDown = fromIndex + 1; // 从fromChapterId的下一个开始
-                        int endIndexForDown = Math.min(allChapterIds.size(), startIndexForDown + chaptersLimit);
-                        
-                        log.info("向下加载计算：startIndexForDown={}, endIndexForDown={}", startIndexForDown, endIndexForDown);
-                        
-                        if (startIndexForDown < allChapterIds.size() && startIndexForDown < endIndexForDown) {
-                            chapterIdsToLoad = allChapterIds.subList(startIndexForDown, endIndexForDown);
-                            log.info("向下加载，待加载章节ID: {}", chapterIdsToLoad);
+                        // 中心加载 - 如果是初始加载（fromChapterId为null），加载前几章
+                        if (fromIndex == -1) {
+                            int endIndex = Math.min(allChapterIds.size(), chaptersLimit);
+                            chapterIdsToLoad = allChapterIds.subList(0, endIndex);
+                            log.info("初始加载章节，加载前{}章，实际加载{}章", chaptersLimit, chapterIdsToLoad.size());
                         } else {
-                            chapterIdsToLoad = new ArrayList<>();
-                            // 记录详细原因
-                            if (startIndexForDown >= allChapterIds.size()) {
-                                log.info("向下加载，已经是最后一个章节，没有更多章节可供加载");
-                            } else {
-                                log.warn("向下加载，起始索引{}大于或等于结束索引{}，无法加载", startIndexForDown, endIndexForDown);
-                            }
+                            // 加载当前章节和它周围的章节
+                            int beforeCount = chaptersLimit / 2;
+                            int afterCount = chaptersLimit - beforeCount;
+                            int startIndex = Math.max(0, fromIndex - beforeCount);
+                            int endIndex = Math.min(allChapterIds.size(), fromIndex + afterCount + 1); // +1 因为要包含当前章节
+                            chapterIdsToLoad = allChapterIds.subList(startIndex, endIndex);
+                            log.info("中心加载章节，从索引{}到{}，共{}个章节", startIndex, endIndex, chapterIdsToLoad.size());
+                        }
+                    } else { // "down"
+                        // 向下加载
+                        if (fromIndex == -1) {
+                            // 初始加载
+                            int endIndex = Math.min(allChapterIds.size(), chaptersLimit);
+                            chapterIdsToLoad = allChapterIds.subList(0, endIndex);
+                            log.info("初始向下加载，加载前{}章，实际加载{}章", chaptersLimit, chapterIdsToLoad.size());
+                        } else if (fromIndex >= allChapterIds.size() - 1) {
+                            // 已经是最后一章，没有更多内容可加载
+                            log.info("已经是最后一章，没有更多内容可向下加载");
+                            return Mono.just(new HashMap<>());
+                        } else {
+                            int startIndex = fromIndex + 1; // 从fromChapterId的下一个开始
+                            int endIndex = Math.min(allChapterIds.size(), startIndex + chaptersLimit);
+                            chapterIdsToLoad = allChapterIds.subList(startIndex, endIndex);
+                            log.info("向下加载章节，从索引{}到{}，共{}个章节", startIndex, endIndex, chapterIdsToLoad.size());
                         }
                     }
 
@@ -641,7 +683,6 @@ public class NovelServiceImpl implements NovelService {
                                 for (int i = 0; i < chapterIdsToLoad.size() && i < sceneLists.size(); i++) {
                                     String chapterId = chapterIdsToLoad.get(i);
                                     List<Scene> scenes = sceneLists.get(i);
-                                    log.info("处理章节 {}，场景数: {}", chapterId, scenes.size());
                                     groupedScenes.put(chapterId, scenes);
                                 }
                                 return groupedScenes;

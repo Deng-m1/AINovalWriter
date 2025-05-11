@@ -166,6 +166,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
             chaptersLimit: 3,
             preventFocusChange: true, // 防止焦点变化
             skipIfLoading: true, // 如果已有加载任务，跳过此次请求
+            actId: _findActIdForChapter(fromChapterId), // 添加必需的actId参数
           ));
         }
       }
@@ -210,6 +211,31 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
     }
     
     return null;
+  }
+  
+  // 辅助方法：查找章节所属的卷ID
+  String _findActIdForChapter(String chapterId) {
+    final state = _controller.editorBloc.state;
+    if (state is editor_bloc.EditorLoaded) {
+      // 在当前加载的小说结构中查找章节所属的卷
+      for (final act in state.novel.acts) {
+        for (final chapter in act.chapters) {
+          if (chapter.id == chapterId) {
+            return act.id;
+          }
+        }
+      }
+      
+      // 如果找不到章节所属的卷，返回第一个卷的ID作为fallback
+      if (state.novel.acts.isNotEmpty) {
+        AppLogger.w('EditorScreen', '未找到章节 $chapterId 所属的卷，默认使用第一个卷');
+        return state.novel.acts.first.id;
+      }
+    }
+    
+    // 如果状态无效或找不到任何卷，返回一个空字符串作为标记
+    AppLogger.e('EditorScreen', '无法确定章节 $chapterId 所属的卷ID，使用空字符串');
+    return '';
   }
   
   // 设置性能监控

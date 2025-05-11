@@ -14,7 +14,7 @@ abstract class EditorRepository {
 
   /// 加载更多章节场景
   /// 根据方向（向上或向下）加载更多章节的场景内容
-  Future<Map<String, List<Scene>>> loadMoreScenes(String novelId, String fromChapterId, String direction, {int chaptersLimit = 5});
+  Future<Map<String, List<Scene>>> loadMoreScenes(String novelId, String? actId, String fromChapterId, String direction, {int chaptersLimit = 5});
 
   /// 保存小说数据
   Future<bool> saveNovel(Novel novel);
