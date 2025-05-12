@@ -225,8 +225,16 @@ class _NextOutlineScreenContent extends StatelessWidget {
                       insertType: insertType,
                     );
                     
+                    // 查找选中的选项对应的索引
+                    final selectedOptionIndex = state.outlineOptions.indexWhere(
+                      (option) => option.optionId == optionId
+                    );
+                    
                     context.read<NextOutlineBloc>().add(
-                      SaveSelectedOutlineRequested(request: request),
+                      SaveSelectedOutlineRequested(
+                        request: request,
+                        selectedOutlineIndex: selectedOptionIndex >= 0 ? selectedOptionIndex : null,
+                      ),
                     );
                   },
                 ),

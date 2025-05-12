@@ -91,11 +91,15 @@ class OutlineSelected extends NextOutlineEvent {
 /// 保存选中的剧情大纲事件
 class SaveSelectedOutlineRequested extends NextOutlineEvent {
   final SaveNextOutlineRequest request;
+  final int? selectedOutlineIndex;
 
-  const SaveSelectedOutlineRequested({required this.request});
+  const SaveSelectedOutlineRequested({
+    required this.request,
+    this.selectedOutlineIndex,
+  });
 
   @override
-  List<Object?> get props => [request];
+  List<Object?> get props => [request, selectedOutlineIndex];
 }
 
 /// 接收到大纲生成块事件

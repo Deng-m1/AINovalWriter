@@ -275,3 +275,60 @@ class SaveNextOutlineResponse {
     };
   }
 }
+
+/// 大纲生成输出结果
+class NextOutlineOutput {
+  /// 大纲列表
+  final List<NextOutlineDTO> outlineList;
+  
+  /// 生成时间(毫秒)
+  final int generationTimeMs;
+  
+  /// 所选大纲索引
+  final int? selectedOutlineIndex;
+
+  NextOutlineOutput({
+    required this.outlineList,
+    required this.generationTimeMs,
+    this.selectedOutlineIndex,
+  });
+  
+  Map<String, dynamic> toJson() {
+    return {
+      'outlineList': outlineList.map((e) => e.toJson()).toList(),
+      'generationTimeMs': generationTimeMs,
+      if (selectedOutlineIndex != null) 'selectedOutlineIndex': selectedOutlineIndex,
+    };
+  }
+}
+
+/// 剧情大纲DTO
+class NextOutlineDTO {
+  /// 大纲ID
+  final String id;
+  
+  /// 大纲标题
+  final String title;
+  
+  /// 大纲内容
+  final String content;
+  
+  /// 模型配置ID
+  final String? configId;
+
+  NextOutlineDTO({
+    required this.id,
+    required this.title,
+    required this.content,
+    this.configId,
+  });
+  
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'content': content,
+      if (configId != null) 'configId': configId,
+    };
+  }
+}

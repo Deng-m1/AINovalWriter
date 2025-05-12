@@ -15,6 +15,7 @@ import 'package:ainoval/services/api_service/repositories/prompt_repository.dart
 import 'package:ainoval/services/local_storage_service.dart';
 import 'package:ainoval/services/sync_service.dart';
 import 'package:ainoval/utils/logger.dart';
+import 'package:ainoval/utils/event_bus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -140,6 +141,9 @@ class EditorScreenController extends ChangeNotifier {
   String get loadingMessage => _loadingMessage;
   double get loadingProgress => _loadingProgress;
 
+  // 添加事件订阅变量
+  StreamSubscription<NovelStructureUpdatedEvent>? _novelStructureSubscription;
+
   // 检查是否有任何加载正在进行
   bool _isAnyLoading() {
     // 检查编辑器状态
@@ -186,6 +190,9 @@ class EditorScreenController extends ChangeNotifier {
     
     // 监听EditorBloc状态变化，用于更新UI
     _setupEditorBlocListener();
+
+    // 添加对小说结构更新事件的监听
+    _setupNovelStructureListener();
 
     // 初始化PlanBloc
     planBloc = plan_bloc.PlanBloc(
@@ -1275,6 +1282,95 @@ class EditorScreenController extends ChangeNotifier {
     }
   }
 
+  // 添加小说结构更新事件监听
+  void _setupNovelStructureListener() {
+    _novelStructureSubscription = EventBus.instance.on<NovelStructureUpdatedEvent>().listen((event) {
+      // 只处理当前正在编辑的小说
+      if (novel.id != null && event.novelId == novel.id) {
+        AppLogger.i('EditorScreenController', '收到小说结构更新事件: ${event.updateType}');
+        
+        // 根据不同类型的更新进行处理
+        switch (event.updateType) {
+          case 'outline_saved':
+            _handleOutlineSaved(event.data);
+            break;
+          default:
+            // 默认情况下刷新整个小说结构
+            refreshNovelStructure();
+            break;
+        }
+      }
+    });
+  }
+  
+  // 刷新小说结构
+  void refreshNovelStructure() {
+    AppLogger.i('EditorScreenController', '刷新小说结构');
+    
+    // 获取当前焦点章节ID
+    String? focusChapterId;
+    if (editorBloc.state is editor_bloc.EditorLoaded) {
+      focusChapterId = (editorBloc.state as editor_bloc.EditorLoaded).focusChapterId;
+    }
+    
+    // 重新加载编辑器内容
+    editorBloc.add(editor_bloc.LoadEditorContentPaginated(
+      novelId: novel.id,
+      lastEditedChapterId: focusChapterId,
+      chaptersLimit: 3,
+      loadAllSummaries: false,
+    ));
+  }
+
+  // 处理大纲保存后的结构更新
+  void _handleOutlineSaved(Map<String, dynamic> data) {
+    AppLogger.i('EditorScreenController', '处理大纲保存后的结构更新: $data');
+    
+    // 从事件数据中获取关键信息
+    final String? newChapterId = data['newChapterId'] as String?;
+
+    // 重新加载小说结构
+    if (newChapterId != null) {
+      // 1. 查找章节所在的Act
+      String? actId;
+      if (editorBloc.state is editor_bloc.EditorLoaded) {
+        final state = editorBloc.state as editor_bloc.EditorLoaded;
+        for (final act in state.novel.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == newChapterId) {
+              actId = act.id;
+              break;
+            }
+          }
+          if (actId != null) break;
+        }
+      }
+      
+      // 2. 加载新创建的章节的场景
+      if (actId != null) {
+        AppLogger.i('EditorScreenController', '加载大纲保存后创建的新章节: actId=$actId, chapterId=$newChapterId');
+        
+        // 通知编辑器Bloc加载这个章节的场景
+        editorBloc.add(editor_bloc.LoadMoreScenes(
+          fromChapterId: newChapterId,
+          actId: actId,
+          direction: 'center',
+          chaptersLimit: 3,
+          preventFocusChange: true, // 不要自动改变焦点
+        ));
+      } else {
+        // 如果找不到章节对应的Act，则重新加载整个小说结构
+        AppLogger.i('EditorScreenController', '未找到新章节对应的卷，重新加载小说结构');
+        editorBloc.add(editor_bloc.LoadEditorContentPaginated(
+          novelId: novel.id,
+          lastEditedChapterId: newChapterId,
+          chaptersLimit: 3,
+          loadAllSummaries: false,
+        ));
+      }
+    }
+  }
+
   // 释放资源
   @override
   void dispose() {
@@ -1318,6 +1414,9 @@ class EditorScreenController extends ChangeNotifier {
 
     // 清理BLoC
     editorBloc.close();
+
+    // 取消小说结构更新事件订阅
+    _novelStructureSubscription?.cancel();
 
     super.dispose();
   }

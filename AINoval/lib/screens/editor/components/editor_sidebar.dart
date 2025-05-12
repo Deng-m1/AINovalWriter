@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/screens/editor/widgets/ai_generation_panel.dart';
 import 'package:ainoval/utils/logger.dart';
+import 'package:ainoval/utils/event_bus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
@@ -646,16 +648,23 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
   String _searchText = '';
   int? _selectedChapterNumber;
   final Map<String, bool> _expandedChapters = {};
-  late EditorScreenController _editorController;
+  final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
+  bool _isSearchMode = false;
+  
+  // 事件总线订阅
+  StreamSubscription? _novelStructureSubscription;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
     // 获取EditorScreenController实例
-    _editorController = Provider.of<EditorScreenController>(context, listen: false);
+    final editorController = Provider.of<EditorScreenController>(context, listen: false);
     // 默认第一个章节展开
     _initExpandedChapters();
+    
+    // 添加对小说结构更新事件的监听
+    _setupNovelStructureListener();
   }
 
   @override
@@ -664,14 +673,18 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _scrollController.dispose();
+    
+    // 取消事件订阅
+    _novelStructureSubscription?.cancel();
+    
     super.dispose();
   }
 
   void _initExpandedChapters() {
     // 获取小说结构并默认展开第一章
-    final novel = context.read<EditorBloc>().state;
-    if (novel is EditorLoaded && novel.novel.acts.isNotEmpty) {
-      for (final act in novel.novel.acts) {
+    final editorBloc = context.read<EditorBloc>();
+    if (editorBloc.state is EditorLoaded && (editorBloc.state as EditorLoaded).novel.acts.isNotEmpty) {
+      for (final act in (editorBloc.state as EditorLoaded).novel.acts) {
         if (act.chapters.isNotEmpty) {
           // 默认展开第一个章节
           _expandedChapters[act.chapters.first.id] = true;
@@ -694,7 +707,8 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
     if (!isCurrentlyExpanded) {
       // 使用控制器中的方法预加载场景，使用preventFocusChange=true确保不会导致跳转或改变焦点
       AppLogger.i('ChapterDirectoryTab', '展开章节，预加载场景: $chapterId');
-      _editorController.preloadChapterScenes(chapterId);
+      final editorController = Provider.of<EditorScreenController>(context, listen: false);
+      editorController.preloadChapterScenes(chapterId);
     }
     
     // 直接切换展开状态
@@ -711,11 +725,11 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
         return;
       }
 
-      final novel = context.read<EditorBloc>().state;
-      if (novel is EditorLoaded) {
+      final editorBloc = context.read<EditorBloc>();
+      if (editorBloc.state is EditorLoaded) {
         // 扁平化所有章节以便按序号查找
         final allChapters = <novel_models.Chapter>[];
-        for (final act in novel.novel.acts) {
+        for (final act in (editorBloc.state as EditorLoaded).novel.acts) {
           allChapters.addAll(act.chapters);
         }
         
@@ -798,10 +812,11 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
     ));
     
     // 关键修改：先尝试通过EditorMainArea实例设置活动章节
-    if (_editorController.editorMainAreaKey.currentState != null) {
+    final editorController = Provider.of<EditorScreenController>(context, listen: false);
+    if (editorController.editorMainAreaKey.currentState != null) {
       // 如果能获取到EditorMainArea实例，通过它设置活动章节
       AppLogger.i('ChapterDirectoryTab', '通过EditorMainArea明确设置活动章节: $actId - $chapterId');
-      _editorController.editorMainAreaKey.currentState!.setActiveChapter(actId, chapterId);
+      editorController.editorMainAreaKey.currentState!.setActiveChapter(actId, chapterId);
     }
     
     // 然后设置活动场景
@@ -821,8 +836,40 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
   void _scrollToActiveScene(String actId, String chapterId, String sceneId) {
     // 延迟500ms确保UI已经更新
     Future.delayed(const Duration(milliseconds: 500), () {
-      if (_editorController.editorMainAreaKey.currentState != null) {
-        _editorController.editorMainAreaKey.currentState!.scrollToActiveScene();
+      final editorController = Provider.of<EditorScreenController>(context, listen: false);
+      if (editorController.editorMainAreaKey.currentState != null) {
+        editorController.editorMainAreaKey.currentState!.scrollToActiveScene();
+      }
+    });
+  }
+
+  // 监听小说结构更新事件
+  void _setupNovelStructureListener() {
+    _novelStructureSubscription = EventBus.instance.on<NovelStructureUpdatedEvent>().listen((event) {
+      if (context.mounted && event.novelId == widget.novel.id) {
+        AppLogger.i('ChapterDirectoryTab', '收到小说结构更新事件: ${event.updateType}');
+        
+        // 强制更新UI，以显示最新的小说结构
+        setState(() {
+          AppLogger.i('ChapterDirectoryTab', '正在更新左侧边栏UI...');
+        });
+        
+        // 如果是从大纲保存的更新，立即刷新编辑器小说结构
+        if (event.updateType == 'outline_saved') {
+          AppLogger.i('ChapterDirectoryTab', '大纲保存触发刷新小说结构');
+          
+          // 先获取controller引用，避免在延迟函数中使用context
+          final editorController = Provider.of<EditorScreenController>(context, listen: false);
+          
+          // 确保使用延迟执行，避免状态更新冲突
+          Future.delayed(const Duration(milliseconds: 200), () {
+            // 这里不再使用context
+            if (mounted) {  // 检查widget是否仍然挂载
+              editorController.refreshNovelStructure();
+              AppLogger.i('ChapterDirectoryTab', '大纲保存后已刷新小说结构');
+            }
+          });
+        }
       }
     });
   }

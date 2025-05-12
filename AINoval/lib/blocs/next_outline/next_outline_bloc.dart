@@ -11,6 +11,7 @@ import 'package:ainoval/services/api_service/repositories/editor_repository.dart
 import 'package:ainoval/services/api_service/repositories/next_outline_repository.dart';
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
 import 'package:ainoval/utils/logger.dart';
+import 'package:ainoval/utils/event_bus.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ainoval/config/app_config.dart';
 
@@ -367,10 +368,30 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
     OutlineSelected event,
     Emitter<NextOutlineState> emit,
   ) {
-    emit(state.copyWith(
-      selectedOptionId: event.optionId,
-      clearError: true,
-    ));
+    // 获取选择的选项索引
+    final optionIndex = state.outlineOptions.indexWhere((option) => option.optionId == event.optionId);
+    
+    // 如果找到选项且outputGeneration存在
+    if (optionIndex != -1 && state.outputGeneration != null) {
+      // 创建新的outputGeneration，更新selectedOutlineIndex
+      final updatedOutputGeneration = NextOutlineOutput(
+        outlineList: state.outputGeneration!.outlineList,
+        generationTimeMs: state.outputGeneration!.generationTimeMs,
+        selectedOutlineIndex: optionIndex,
+      );
+      
+      emit(state.copyWith(
+        selectedOptionId: event.optionId,
+        outputGeneration: updatedOutputGeneration,
+        clearError: true,
+      ));
+    } else {
+      // 仅更新选项ID
+      emit(state.copyWith(
+        selectedOptionId: event.optionId,
+        clearError: true,
+      ));
+    }
   }
 
   /// 保存选中的剧情大纲
@@ -379,10 +400,43 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
     Emitter<NextOutlineState> emit,
   ) async {
     try {
+      // 设置状态为保存中
       emit(state.copyWith(
         generationStatus: GenerationStatus.saving,
         clearError: true,
       ));
+
+      // 检查是否有选中的大纲索引
+      int? outlineIndex = event.selectedOutlineIndex;
+      
+      // 如果没有传入索引，但有选中的选项ID，则尝试查找对应的索引
+      if (outlineIndex == null && state.selectedOptionId != null) {
+        AppLogger.i(_tag, '尝试使用selectedOptionId查找大纲索引');
+        final selectedOptionIndex = state.outlineOptions.indexWhere(
+          (option) => option.optionId == state.selectedOptionId
+        );
+        
+        if (selectedOptionIndex != -1) {
+          outlineIndex = selectedOptionIndex;
+          AppLogger.i(_tag, '已找到对应索引: $outlineIndex');
+        }
+      }
+      
+      // 检查输出生成结果和索引是否有效
+      if (outlineIndex == null || outlineIndex < 0 || 
+          state.outputGeneration == null || 
+          outlineIndex >= state.outputGeneration!.outlineList.length) {
+        final errorMsg = '未选择有效的大纲或大纲不存在: index=$outlineIndex, outputGeneration=${state.outputGeneration != null}, selectedOptionId=${state.selectedOptionId}';
+        AppLogger.e(_tag, errorMsg);
+        emit(state.copyWith(
+          generationStatus: GenerationStatus.error,
+          errorMessage: errorMsg,
+        ));
+        return;
+      }
+
+      var selectedOutline = state.outputGeneration!.outlineList[outlineIndex];
+      AppLogger.i(_tag, '正在保存大纲: ${selectedOutline.title}');
 
       // 调用保存API
       final response = await _nextOutlineRepository.saveNextOutline(
@@ -392,8 +446,26 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
 
       // 保存成功
       AppLogger.i(_tag, '剧情大纲保存成功');
+      
+      // 发送小说结构更新事件
+      EventBus.instance.fire(NovelStructureUpdatedEvent(
+        novelId: state.novelId,
+        updateType: 'outline_saved',
+        data: {
+          'outlineId': event.request.outlineId,
+          'insertType': event.request.insertType,
+          'newChapterId': response.newChapterId,
+          'newSceneId': response.newSceneId,
+          'targetChapterId': response.targetChapterId,
+          'outline': selectedOutline.toJson(),
+          'apiResult': response.toJson(),
+        },
+      ));
+      
+      // 保持状态不变，只更新生成状态为空闲
       emit(state.copyWith(
         generationStatus: GenerationStatus.idle,
+        // 不更改其他状态，保留当前大纲和选项
       ));
     } catch (e) {
       AppLogger.e(_tag, '保存剧情大纲失败', e);
@@ -492,8 +564,25 @@ class NextOutlineBloc extends Bloc<NextOutlineEvent, NextOutlineState> {
   void _checkAllOptionsComplete(Emitter<NextOutlineState> emit) {
     if (state.outlineOptions.every((option) => option.isComplete)) {
       // 所有选项都已完成生成
+      // 将outlineOptions转换为NextOutlineOutput
+      final outlineList = state.outlineOptions.map((option) => NextOutlineDTO(
+        id: option.optionId,
+        title: option.title ?? 'Untitled Outline',
+        content: option.content,
+        configId: option.configId,
+      )).toList();
+      
+      final outputGeneration = NextOutlineOutput(
+        outlineList: outlineList,
+        generationTimeMs: DateTime.now().millisecondsSinceEpoch,
+        selectedOutlineIndex: null, // 初始时没有选中的大纲
+      );
+      
+      // 更新状态，设置status为success
       emit(state.copyWith(
         generationStatus: GenerationStatus.idle,
+        status: NextOutlineStatus.success,
+        outputGeneration: outputGeneration,
       ));
     }
   }

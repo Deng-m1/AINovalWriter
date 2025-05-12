@@ -45,222 +45,31 @@ class EditorLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     // 清除内存缓存，确保每次build周期都使用新的内存缓存
     stateManager.clearMemoryCache();
-
-    return Scaffold(
-      body: BlocListener<editor_bloc.EditorBloc, editor_bloc.EditorState>(
-        listener: (context, state) {
-          if (state is editor_bloc.EditorLoaded && state.activeSceneId != null) {
-            // 智能判断是否需要滚动
-            final targetKeyId = '${state.activeActId}_${state.activeChapterId}_${state.activeSceneId}';
-            final key = controller.sceneKeys[targetKeyId];
-
-            // 记录当前激活的场景ID
-            final lastActiveSceneId = controller.lastActiveSceneId;
-            final currentActiveSceneId = targetKeyId;
-
-            // 只有在以下情况才滚动:
-            // 1. 场景ID发生变化（用户手动选择了新场景，而非仅触发焦点变化）
-            // 2. 当前焦点不在任何编辑器中
-            // 这样可以避免干扰用户正在输入的场景
-            bool shouldScroll = false;
-            bool isUserInitiated = lastActiveSceneId != currentActiveSceneId;
-            bool noEditorHasFocus = !FocusScope.of(context).hasPrimaryFocus;
-
-            // 更新控制器中记录的最后活动场景
-            controller.lastActiveSceneId = currentActiveSceneId;
-
-            // 检查当前场景是否在视图中
-            bool isSceneVisible = false;
-            if (key?.currentContext != null) {
-              // 获取场景组件的位置和尺寸
-              final RenderBox renderBox = key!.currentContext!.findRenderObject() as RenderBox;
-              final position = renderBox.localToGlobal(Offset.zero);
-
-              // 获取视口尺寸
-              final viewportHeight = MediaQuery.of(context).size.height;
-
-              // 判断场景是否在视图内（或部分在视图内）
-              isSceneVisible = position.dy < viewportHeight &&
-                              position.dy + renderBox.size.height > 0;
-            }
-
-            // 只有在场景不可见 且 满足滚动条件时才滚动
-            shouldScroll = !isSceneVisible && (isUserInitiated || noEditorHasFocus);
-
-            // 记录滚动决策日志
-            AppLogger.d('EditorLayout', '活动场景滚动决策: 场景=$targetKeyId, 是否滚动=$shouldScroll, 用户发起=$isUserInitiated, 无焦点=$noEditorHasFocus, 可见=$isSceneVisible');
-
-            // 执行滚动操作
-            if (shouldScroll) {
-              // 检查当前是否有滚动动画正在进行
-              bool isScrolling = controller.scrollController.position.isScrollingNotifier.value;
-              
-              // 使用两个延迟，确保平滑滚动
-              // 1. 等待布局完成
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                // 2. 如果正在滚动，等待当前滚动结束
-                if (isScrolling) {
-                  // 如果正在滚动，等待200ms让惯性滚动自然减速
-                  Future.delayed(const Duration(milliseconds: 200), () {
-                    _scrollToActiveSceneIfNeeded(controller, targetKeyId);
-                  });
-                } else {
-                  // 如果没有滚动，立即滚动到目标场景
-                  _scrollToActiveSceneIfNeeded(controller, targetKeyId);
-                }
-              });
-            }
-          }
-
-          if (state is editor_bloc.EditorLoaded) {
-            // 当生成状态开始或内容更新时，确保流式显示面板打开
-            if (state.isStreamingGeneration &&
-                state.aiSceneGenerationStatus == editor_bloc.AIGenerationStatus.generating) {
-              final layoutManager = Provider.of<EditorLayoutManager>(context, listen: false);
-              if (!layoutManager.isAISceneGenerationPanelVisible) {
-                AppLogger.i('EditorLayout', '检测到流式生成状态，自动打开AI生成面板');
-                layoutManager.toggleAISceneGenerationPanel();
-              }
-            }
-          }
-        },
-        // Listen only when activeSceneId might have changed meaningfully
-        listenWhen: (previous, current) {
-          if (previous is editor_bloc.EditorLoaded && current is editor_bloc.EditorLoaded) {
-            // Only trigger if activeSceneId actually changes *and* is not null
-            return previous.activeSceneId != current.activeSceneId &&
-                   current.activeSceneId != null;
-          }
-          // Trigger if transitioning into EditorLoaded with an activeSceneId
-          if (current is editor_bloc.EditorLoaded && current.activeSceneId != null) {
-             return true;
-          }
-          if (previous is editor_bloc.EditorLoaded && current is editor_bloc.EditorLoaded) {
-            // 当生成状态变化或内容有更新时触发
-            return previous.isStreamingGeneration != current.isStreamingGeneration ||
-                   previous.aiSceneGenerationStatus != current.aiSceneGenerationStatus ||
-                   previous.generatedSceneContent != current.generatedSceneContent;
-          }
-          return false;
-        },
-        child: BlocBuilder<editor_bloc.EditorBloc, editor_bloc.EditorState>(
-          buildWhen: (previous, current) {
-            // 只在状态类型变化或数据结构真正变化时重建UI
-            if (previous.runtimeType != current.runtimeType) {
-              return true; // 状态类型变化时重建
-            }
-
-            // 如果都是EditorLoaded状态，做深度比较
-            if (previous is editor_bloc.EditorLoaded && current is editor_bloc.EditorLoaded) {
-              final editor_bloc.EditorLoaded prevLoaded = previous;
-              final editor_bloc.EditorLoaded currLoaded = current;
-
-              // 先检查时间戳，如果相同且非零，大概率内容相同
-              final prevTimestamp = prevLoaded.novel.updatedAt.millisecondsSinceEpoch;
-              final currTimestamp = currLoaded.novel.updatedAt.millisecondsSinceEpoch;
-
-              // 如果时间戳都不为0但不同，内容肯定变化了
-              if (prevTimestamp != currTimestamp &&
-                  prevTimestamp > 0 && currTimestamp > 0) {
-                return true;
-              }
-
-              // 计算总章节数和场景数
-              int prevTotalChapters = 0;
-              int currTotalChapters = 0;
-              int prevTotalScenes = 0;
-              int currTotalScenes = 0;
-
-              // 计算前一个状态的总章节数和场景数
-              for (final act in prevLoaded.novel.acts) {
-                prevTotalChapters += act.chapters.length;
-                for (final chapter in act.chapters) {
-                  prevTotalScenes += chapter.scenes.length;
-                }
-              }
-
-              // 计算当前状态的总章节数和场景数
-              for (final act in currLoaded.novel.acts) {
-                currTotalChapters += act.chapters.length;
-                for (final chapter in act.chapters) {
-                  currTotalScenes += chapter.scenes.length;
-                }
-              }
-
-              // 如果章节数量或场景数量有变化，触发重建
-              final structureChanged = prevTotalChapters != currTotalChapters ||
-                                     prevTotalScenes != currTotalScenes;
-
-              if (structureChanged) {
-                AppLogger.i('EditorLayout', '检测到章节或场景数量变化: 章节 $prevTotalChapters->$currTotalChapters, 场景 $prevTotalScenes->$currTotalScenes');
-              }
-
-              // 严格限制重建条件，只有这些关键状态变化时才重建
-              final shouldRebuild = structureChanged ||
-                  prevLoaded.isSaving != currLoaded.isSaving ||
-                  prevLoaded.isLoading != currLoaded.isLoading ||
-                  prevLoaded.errorMessage != currLoaded.errorMessage ||
-                  prevLoaded.activeActId != currLoaded.activeActId ||
-                  prevLoaded.activeChapterId != currLoaded.activeChapterId ||
-                  prevLoaded.activeSceneId != currLoaded.activeSceneId ||
-                  // 小说基本结构变化检查
-                  prevLoaded.novel.acts.length != currLoaded.novel.acts.length;
-                  
-              // 明确注释focusChapterId的变化不应触发重建
-              // prevLoaded.focusChapterId != currLoaded.focusChapterId 
-
-              // 如果需要重建，记录原因以助调试
-              if (shouldRebuild && kDebugMode) {
-                String reason = '';
-                if (structureChanged) {
-                  reason = '章节或场景数量变化';
-                } else if (prevLoaded.isSaving != currLoaded.isSaving) {
-                  reason = '保存状态变化';
-                } else if (prevLoaded.isLoading != currLoaded.isLoading) {
-                  reason = '加载状态变化';
-                } else if (prevLoaded.activeActId != currLoaded.activeActId) {
-                  reason = '活动Act变化';
-                } else if (prevLoaded.activeChapterId != currLoaded.activeChapterId) {
-                  reason = '活动Chapter变化';
-                } else if (prevLoaded.activeSceneId != currLoaded.activeSceneId) {
-                  reason = '活动Scene变化';
-                }
-                else if (prevLoaded.novel.acts.length != currLoaded.novel.acts.length) {
-                  reason = 'Acts数量变化';
-                }
-
-                // 使用更低级别的日志记录重建原因，减少日志输出
-                if (prevLoaded.isLoading != currLoaded.isLoading) {
-                  // 加载状态变化较常见，可以常规记录
-                  AppLogger.d('EditorLayout', '重建UI，原因: $reason');
-                } else {
-                  // 其他变化仅在调试模式下记录
-                  AppLogger.d('EditorLayout', '重建UI，原因: $reason');
-                }
-              }
-
-              return shouldRebuild;
-            }
-
-            return false; // 默认不重建，减少不必要的UI刷新
-          },
+    
+    // 监听内容更新通知器
+    return ValueListenableBuilder<String>(
+      valueListenable: stateManager.contentUpdateNotifier,
+      builder: (context, updateValue, child) {
+        // 使用BlocBuilder获取当前编辑器状态
+        return BlocBuilder<editor_bloc.EditorBloc, editor_bloc.EditorState>(
           builder: (context, state) {
+            // 根据状态渲染UI
             if (state is editor_bloc.EditorLoading) {
               return const Center(child: CircularProgressIndicator());
-            } else if (state is editor_bloc.EditorError) {
-              return Center(child: Text('错误: ${state.message}'));
             } else if (state is editor_bloc.EditorLoaded) {
               // 使用节流函数决定是否需要检查控制器
               if (stateManager.shouldCheckControllers(state)) {
                 controller.ensureControllersForNovel(state.novel);
               }
               return _buildMainLayout(context, state);
+            } else if (state is editor_bloc.EditorError) {
+              return Center(child: Text('错误: ${state.message}'));
             } else {
               return const Center(child: Text('未知状态'));
             }
           },
-        ),
-      ),
+        );
+      }
     );
   }
 

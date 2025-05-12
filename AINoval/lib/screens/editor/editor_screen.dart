@@ -58,184 +58,10 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
     _layoutManager = EditorLayoutManager();
     _stateManager = EditorStateManager();
     
-    // 在编辑器初始化时加载所有场景摘要
-    _controller.loadAllSceneSummaries();
-    
     // 在调试模式下启动性能监控
     if (kDebugMode) {
       _setupPerformanceMonitoring();
     }
-    
-    // 确保滚动监听器被添加
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // 在第一次渲染完成后，确认滚动监听器工作正常
-      final ScrollController controller = _controller.scrollController;
-      AppLogger.i('EditorScreen', '初始化滚动监听器，当前是否已有监听器: ${controller.hasListeners}');
-      
-      // 如果滚动监听器没有被添加（防止重复添加），则添加监听器
-      if (!controller.hasListeners) {
-        controller.addListener(_onScrollWrapper);
-        AppLogger.i('EditorScreen', '已添加滚动监听器');
-      }
-    });
-  }
-  
-  // 滚动监听器包装方法，确保调用到控制器的_onScroll方法
-  void _onScrollWrapper() {
-    try {
-      // 获取ScrollController信息
-      final ScrollController controller = _controller.scrollController;
-      
-      // 如果控制器不可用，直接返回
-      if (!controller.hasClients) return;
-      
-      final offset = controller.offset;
-      final maxScroll = controller.position.maxScrollExtent;
-      final viewportHeight = controller.position.viewportDimension;
-      
-      // 获取编辑器状态
-      final editorState = _controller.editorBloc.state;
-      if (editorState is! editor_bloc.EditorLoaded) {
-        return; // 只在编辑器已加载状态处理
-      }
-      
-      // 如果编辑器正在加载，跳过本次检查
-      if (editorState.isLoading) {
-        AppLogger.d('EditorScreen', '编辑器正在加载，跳过分页检查');
-        return;
-      }
-      
-      // 使用视口高度的一定比例作为阈值
-      final threshold = viewportHeight * 0.5; // 50%的视口高度
-      
-      // 检查是否需要加载更多章节场景
-      String? fromChapterId;
-      String direction = '';
-      
-      AppLogger.d('EditorScreen', '滚动监测: 当前位置=$offset, 最大位置=$maxScroll, 阈值=$threshold');
-      
-      if (offset <= threshold) {
-        // 接近顶部，向上加载更多
-        AppLogger.i('EditorScreen', '检测到接近顶部，尝试向上加载');
-        fromChapterId = _findFirstChapterId(editorState.novel);
-        if (fromChapterId != null) {
-          direction = 'up';
-        }
-      } else if (maxScroll - offset <= threshold) {
-        // 接近底部，向下加载更多
-        AppLogger.i('EditorScreen', '检测到接近底部，尝试向下加载');
-        fromChapterId = _findLastChapterId(editorState.novel);
-        if (fromChapterId != null) {
-          direction = 'down';
-        }
-      }
-      
-      // 如果找到了章节ID且需要加载，触发加载事件
-      if (fromChapterId != null && direction.isNotEmpty) {
-        // 防抖控制，避免短时间内多次触发相同方向的加载
-        bool shouldLoadMore = true;
-        
-        // 根据加载方向判断是否需要节流
-        if (direction == 'up' && _lastUpLoadTime != null) {
-          final timeDiff = DateTime.now().difference(_lastUpLoadTime!).inSeconds;
-          shouldLoadMore = timeDiff >= 3; // 至少间隔3秒
-          if (!shouldLoadMore) {
-            AppLogger.d('EditorScreen', '向上加载频率过高，跳过此次请求 (间隔${timeDiff}秒)');
-          }
-        } else if (direction == 'down' && _lastDownLoadTime != null) {
-          final timeDiff = DateTime.now().difference(_lastDownLoadTime!).inSeconds;
-          shouldLoadMore = timeDiff >= 3; // 至少间隔3秒
-          if (!shouldLoadMore) {
-            AppLogger.d('EditorScreen', '向下加载频率过高，跳过此次请求 (间隔${timeDiff}秒)');
-          }
-        }
-        
-        if (shouldLoadMore) {
-          AppLogger.i('EditorScreen', '触发${direction=="up"?"向上":"向下"}加载，起始章节: $fromChapterId');
-          
-          // 记录本次加载时间
-          if (direction == 'up') {
-            _lastUpLoadTime = DateTime.now();
-          } else {
-            _lastDownLoadTime = DateTime.now();
-          }
-          
-          _controller.editorBloc.add(editor_bloc.LoadMoreScenes(
-            fromChapterId: fromChapterId,
-            direction: direction,
-            chaptersLimit: 3,
-            preventFocusChange: true, // 防止焦点变化
-            skipIfLoading: true, // 如果已有加载任务，跳过此次请求
-            actId: _findActIdForChapter(fromChapterId), // 添加必需的actId参数
-          ));
-        }
-      }
-    } catch (e) {
-      AppLogger.e('EditorScreen', '滚动监听器出错', e);
-    }
-  }
-  
-  // 辅助方法：查找第一个有场景的章节ID
-  String? _findFirstChapterId(novel_models.Novel novel) {
-    for (final act in novel.acts) {
-      for (final chapter in act.chapters) {
-        if (chapter.scenes.isNotEmpty) {
-          return chapter.id;
-        }
-      }
-    }
-    
-    // 如果没有有场景的章节，返回第一个章节
-    if (novel.acts.isNotEmpty && novel.acts.first.chapters.isNotEmpty) {
-      return novel.acts.first.chapters.first.id;
-    }
-    
-    return null;
-  }
-  
-  // 辅助方法：查找最后一个有场景的章节ID
-  String? _findLastChapterId(novel_models.Novel novel) {
-    for (int i = novel.acts.length - 1; i >= 0; i--) {
-      final act = novel.acts[i];
-      for (int j = act.chapters.length - 1; j >= 0; j--) {
-        final chapter = act.chapters[j];
-        if (chapter.scenes.isNotEmpty) {
-          return chapter.id;
-        }
-      }
-    }
-    
-    // 如果没有有场景的章节，返回最后一个章节
-    if (novel.acts.isNotEmpty && novel.acts.last.chapters.isNotEmpty) {
-      return novel.acts.last.chapters.last.id;
-    }
-    
-    return null;
-  }
-  
-  // 辅助方法：查找章节所属的卷ID
-  String _findActIdForChapter(String chapterId) {
-    final state = _controller.editorBloc.state;
-    if (state is editor_bloc.EditorLoaded) {
-      // 在当前加载的小说结构中查找章节所属的卷
-      for (final act in state.novel.acts) {
-        for (final chapter in act.chapters) {
-          if (chapter.id == chapterId) {
-            return act.id;
-          }
-        }
-      }
-      
-      // 如果找不到章节所属的卷，返回第一个卷的ID作为fallback
-      if (state.novel.acts.isNotEmpty) {
-        AppLogger.w('EditorScreen', '未找到章节 $chapterId 所属的卷，默认使用第一个卷');
-        return state.novel.acts.first.id;
-      }
-    }
-    
-    // 如果状态无效或找不到任何卷，返回一个空字符串作为标记
-    AppLogger.e('EditorScreen', '无法确定章节 $chapterId 所属的卷ID，使用空字符串');
-    return '';
   }
   
   // 设置性能监控
@@ -347,24 +173,26 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
       child: BlocListener<editor_bloc.EditorBloc, editor_bloc.EditorState>(
         bloc: _controller.editorBloc,
         listener: (context, state) {
-          // 监听状态变化，当加载完成时强制刷新UI
+          // 监听状态变化，当加载完成时更新必要的UI部分
           if (state is editor_bloc.EditorLoaded && !state.isLoading) {
             // 确保是从加载中变为非加载状态
             // 使用微任务确保在当前帧结束后执行
             Future.microtask(() {
               if (mounted) {
-                AppLogger.i('EditorScreen', '检测到加载完成，强制刷新UI以显示新章节');
-                setState(() {
-                  // 这里不需要做任何事情，只是触发重建
-                });
+                AppLogger.i('EditorScreen', '检测到加载完成，刷新编辑区域以显示新章节');
                 
-                // 通知EditorMainArea刷新
+                // 直接刷新EditorMainArea，避免调用setState刷新整个屏幕
                 try {
                   final mainAreaState = _controller.editorMainAreaKey.currentState;
                   if (mainAreaState != null) {
                     mainAreaState.setState(() {
                       AppLogger.i('EditorScreen', '通知EditorMainArea刷新UI');
                     });
+                  } else {
+                    AppLogger.w('EditorScreen', '无法访问EditorMainArea，跳过UI更新');
+                    // 如果无法获取到mainAreaState，再考虑局部更新
+                    // 注意：这仅作为后备方案，应尽量避免执行到这里
+                    _stateManager.notifyContentUpdate('structure_changed');
                   }
                 } catch (e) {
                   AppLogger.e('EditorScreen', '尝试刷新EditorMainArea失败', e);

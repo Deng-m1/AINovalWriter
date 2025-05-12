@@ -267,14 +267,13 @@ public class NextOutlineServiceImpl implements NextOutlineService {
                                             String insertType = request.getInsertType();
                                             if (insertType == null) insertType = "NEW_CHAPTER";
                                             switch (insertType) {
-                                                case "NEW_CHAPTER":
-                                                    return createNewChapterAndScene(novelId, savedOutline, request);
                                                 case "CHAPTER_END":
                                                     return addSceneToChapterEnd(novelId, savedOutline, request);
                                                 case "BEFORE_SCENE":
                                                     return addSceneBeforeTarget(novelId, savedOutline, request);
                                                 case "AFTER_SCENE":
                                                     return addSceneAfterTarget(novelId, savedOutline, request);
+                                                case "NEW_CHAPTER":
                                                 default:
                                                     return createNewChapterAndScene(novelId, savedOutline, request);
                                             }

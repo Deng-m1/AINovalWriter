@@ -254,4 +254,13 @@ class EditorStateManager {
     
     return false;
   }
+
+  // 内容更新通知器  
+  final ValueNotifier<String> contentUpdateNotifier = ValueNotifier<String>('');
+  
+  // 通知内容更新
+  void notifyContentUpdate(String reason) {
+    AppLogger.i('EditorStateManager', '通知内容更新: $reason');
+    contentUpdateNotifier.value = '${DateTime.now().millisecondsSinceEpoch}_$reason';
+  }
 }
