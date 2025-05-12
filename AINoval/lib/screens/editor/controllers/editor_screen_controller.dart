@@ -128,6 +128,7 @@ class EditorScreenController extends ChangeNotifier {
   // 用于EditorBloc状态监听的字段
   int? _lastScenesCount;
   int? _lastChaptersCount;
+  int? _lastActsCount;
 
   // 添加更多的状态变量
   bool _isFullscreenLoading = false;
@@ -200,6 +201,8 @@ class EditorScreenController extends ChangeNotifier {
       novelId: novel.id,
     );
 
+    planBloc.add(const plan_bloc.LoadPlanContent());
+
     _updateLoadingProgress('正在初始化同步服务...');
     
     // 初始化同步服务
@@ -216,7 +219,7 @@ class EditorScreenController extends ChangeNotifier {
       });
     });
 
-    // 分开大纲和编辑区加载逻辑
+/*     // 分开大纲和编辑区加载逻辑
     // 1. 为侧边栏和大纲加载完整小说结构（包含所有场景摘要）
     editorRepository.getNovelWithSceneSummaries(novel.id).then((novelWithSummaries) {
       if (novelWithSummaries != null) {
@@ -230,7 +233,7 @@ class EditorScreenController extends ChangeNotifier {
       }
     }).catchError((error) {
       AppLogger.e('EditorScreenController', '加载带摘要的小说结构出错', error);
-    });
+    }); */
 
     // 2. 主编辑区使用分页加载，仅加载必要的章节场景内容
     String? lastEditedChapterId = novel.lastEditedChapterId;
@@ -300,6 +303,7 @@ class EditorScreenController extends ChangeNotifier {
         // 计算当前场景和章节总数
         int currentScenesCount = 0;
         int currentChaptersCount = 0;
+        int currentActsCount = state.novel.acts.length;
         
         for (final act in state.novel.acts) {
           currentChaptersCount += act.chapters.length;
@@ -308,32 +312,54 @@ class EditorScreenController extends ChangeNotifier {
           }
         }
         
-        // 如果章节或场景数量发生变化，通知UI更新
-        if (_lastScenesCount != null && _lastScenesCount != currentScenesCount) {
-          AppLogger.i('EditorScreenController', 
-              '检测到章节或场景数量变化: 章节 ${_lastChaptersCount}->$currentChaptersCount, 场景 ${_lastScenesCount}->$currentScenesCount');
+        bool shouldRefreshUI = false;
+        
+        // 检测结构变化
+        if (_lastScenesCount != null) {
+          // Act数量变化
+          if (_lastActsCount != null && _lastActsCount != currentActsCount) {
+            AppLogger.i('EditorScreenController', 
+                '检测到Act数量变化: ${_lastActsCount}->$currentActsCount，触发UI更新');
+            shouldRefreshUI = true;
+          }
           
-          // 通知UI刷新
-          _notifyMainAreaToRefresh();
+          // 章节数量变化
+          if (_lastChaptersCount != null && _lastChaptersCount != currentChaptersCount) {
+            AppLogger.i('EditorScreenController', 
+                '检测到章节数量变化: ${_lastChaptersCount}->$currentChaptersCount，触发UI更新');
+            shouldRefreshUI = true;
+          }
+          
+          // 场景数量变化
+          if (_lastScenesCount != currentScenesCount) {
+            AppLogger.i('EditorScreenController', 
+                '检测到场景数量变化: ${_lastScenesCount}->$currentScenesCount，触发UI更新');
+            shouldRefreshUI = true;
+          }
         }
         
-        // 如果加载状态为false且之前记录的isLoadingMore为true，表示刚完成加载
+        // 加载状态变化检测
         if (!state.isLoading && _isLoadingMore) {
           AppLogger.i('EditorScreenController', '加载完成，通知UI刷新');
-          
-          // 更新加载状态
+          shouldRefreshUI = true;
           _isLoadingMore = false;
-          
-          // 通知UI刷新
-          _notifyMainAreaToRefresh();
         }
         
         // 更新记录的数量
+        _lastActsCount = currentActsCount;
         _lastScenesCount = currentScenesCount;
         _lastChaptersCount = currentChaptersCount;
         
         // 记录加载状态
         _isLoadingMore = state.isLoading;
+        
+        // 如果需要刷新UI，通知EditorMainArea
+        if (shouldRefreshUI) {
+          _notifyMainAreaToRefresh();
+        }
+      } else if (state is editor_bloc.EditorLoading) {
+        // 记录Loading状态开始
+        _isLoadingMore = true;
       }
     });
   }
@@ -346,6 +372,16 @@ class EditorScreenController extends ChangeNotifier {
       AppLogger.i('EditorScreenController', '通知EditorMainArea刷新UI');
     } else {
       AppLogger.w('EditorScreenController', '无法获取EditorMainArea实例，无法刷新UI');
+      
+      // 如果无法获取EditorMainArea实例，使用备用方案
+      try {
+        // 尝试通过setState刷新
+        editorMainAreaKey.currentState?.setState(() {
+          AppLogger.i('EditorScreenController', '尝试通过setState刷新EditorMainArea');
+        });
+      } catch (e) {
+        AppLogger.e('EditorScreenController', '尝试刷新EditorMainArea失败', e);
+      }
       
       // 通过重建整个编辑区来强制刷新
       notifyListeners();

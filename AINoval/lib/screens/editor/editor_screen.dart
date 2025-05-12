@@ -41,9 +41,6 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
   int _buildCount = 0;
   int _totalBuildTimeMs = 0;
 
-  // 记录上次加载的时间，用于节流控制
-  DateTime? _lastUpLoadTime;
-  DateTime? _lastDownLoadTime;
   
   // 自动续写对话框控制
   bool _showContinueWritingForm = false;
@@ -170,104 +167,11 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
         ChangeNotifierProvider.value(value: _controller),
         ChangeNotifierProvider.value(value: _layoutManager),
       ],
-      child: BlocListener<editor_bloc.EditorBloc, editor_bloc.EditorState>(
-        bloc: _controller.editorBloc,
-        listener: (context, state) {
-          // 监听状态变化，当加载完成时更新必要的UI部分
-          if (state is editor_bloc.EditorLoaded && !state.isLoading) {
-            // 确保是从加载中变为非加载状态
-            // 使用微任务确保在当前帧结束后执行
-            Future.microtask(() {
-              if (mounted) {
-                AppLogger.i('EditorScreen', '检测到加载完成，刷新编辑区域以显示新章节');
-                
-                // 直接刷新EditorMainArea，避免调用setState刷新整个屏幕
-                try {
-                  final mainAreaState = _controller.editorMainAreaKey.currentState;
-                  if (mainAreaState != null) {
-                    mainAreaState.setState(() {
-                      AppLogger.i('EditorScreen', '通知EditorMainArea刷新UI');
-                    });
-                  } else {
-                    AppLogger.w('EditorScreen', '无法访问EditorMainArea，跳过UI更新');
-                    // 如果无法获取到mainAreaState，再考虑局部更新
-                    // 注意：这仅作为后备方案，应尽量避免执行到这里
-                    _stateManager.notifyContentUpdate('structure_changed');
-                  }
-                } catch (e) {
-                  AppLogger.e('EditorScreen', '尝试刷新EditorMainArea失败', e);
-                }
-              }
-            });
-          }
-        },
-        // 添加listenWhen条件，确保在章节数量变化时也触发刷新
-        listenWhen: (previous, current) {
-          // 从Loading变为Loaded状态
-          if (previous is editor_bloc.EditorLoading && current is editor_bloc.EditorLoaded) {
-            return true;
-          }
-          
-          // 检测加载状态变化
-          if (previous is editor_bloc.EditorLoaded && current is editor_bloc.EditorLoaded) {
-            // 加载状态变化：从加载中变为非加载状态
-            if (previous.isLoading && !current.isLoading) {
-              return true;
-            }
-            
-            // 章节数量变化
-            int previousChapterCount = 0;
-            int currentChapterCount = 0;
-            
-            // 计算前一个状态的总章节数
-            for (final act in previous.novel.acts) {
-              previousChapterCount += act.chapters.length;
-            }
-            
-            // 计算当前状态的总章节数
-            for (final act in current.novel.acts) {
-              currentChapterCount += act.chapters.length;
-            }
-            
-            // 检测场景数量变化
-            int previousSceneCount = 0;
-            int currentSceneCount = 0;
-            
-            // 计算前一个状态的总场景数
-            for (final act in previous.novel.acts) {
-              for (final chapter in act.chapters) {
-                previousSceneCount += chapter.scenes.length;
-              }
-            }
-            
-            // 计算当前状态的总场景数
-            for (final act in current.novel.acts) {
-              for (final chapter in act.chapters) {
-                currentSceneCount += chapter.scenes.length;
-              }
-            }
-            
-            // 检测Act数量变化
-            if (previous.novel.acts.length != current.novel.acts.length) {
-              AppLogger.i('EditorScreen', '检测到Act数量变化: ${previous.novel.acts.length} -> ${current.novel.acts.length}');
-              return true;
-            }
-            
-            // 如果章节数量或场景数量有变化，触发刷新
-            if (previousChapterCount != currentChapterCount || previousSceneCount != currentSceneCount) {
-              AppLogger.i('EditorScreen', '检测到章节或场景数量变化: 章节 $previousChapterCount->$currentChapterCount, 场景 $previousSceneCount->$currentSceneCount');
-              return true;
-            }
-          }
-          
-          return false;
-        },
-        child: EditorLayout(
-          controller: _controller,
-          layoutManager: _layoutManager,
-          stateManager: _stateManager,
-          onAutoContinueWritingPressed: _showAutoContinueWritingDialog,
-        ),
+      child: EditorLayout(
+        controller: _controller,
+        layoutManager: _layoutManager,
+        stateManager: _stateManager,
+        onAutoContinueWritingPressed: _showAutoContinueWritingDialog,
       ),
     );
     
