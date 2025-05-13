@@ -1726,52 +1726,74 @@ public class NovelAIServiceImpl implements NovelAIService {
             .switchIfEmpty(userAIModelConfigService.getValidatedDefaultConfiguration(userId))
             .switchIfEmpty(Mono.error(new RuntimeException("无法找到有效的AI配置")));
 
-        // 2. 构建作者引导（如果有写作风格）
+        // 2. 使用NovelRagAssistant检索相关上下文和设定
+        Mono<String> relevantContextMono = novelRagAssistant.retrieveRelevantContext(novelId, currentContext);
+        Mono<String> relevantSettingsMono = novelRagAssistant.retrieveRelevantSettings(novelId, currentContext);
+
+        // 3. 构建作者引导（如果有写作风格）
         String authorGuidance = "";
         if (writingStyle != null && !writingStyle.isEmpty()) {
             authorGuidance = "写作风格: " + writingStyle;
         }
 
-        // 3. 创建单个大纲生成请求
+        // 4. 整合所有信息并生成请求
         String finalAuthorGuidance = authorGuidance;
-        return configMono.flatMap(config -> {
-            // 3.1 获取配置ID
-            String configId = config.getId();
-            
-            // 3.2 生成一个UUID作为临时选项ID
-            String optionId = UUID.randomUUID().toString();
-            
-            // 3.3 使用NextOutline生成逻辑生成单个大纲选项
-            return generateSingleOutlineOptionStream(
-                    userId, 
-                    novelId, 
-                    currentContext, 
-                    finalAuthorGuidance, 
-                    0, // 单一选项时索引为0
-                    configId
-                )
-                .reduce(new StringBuilder(), (sb, chunk) -> {
-                    if (chunk.getError() != null) {
-                        log.error("生成摘要出错: {}", chunk.getError());
-                        throw new RuntimeException("生成摘要失败: " + chunk.getError());
-                    }
-                    return sb.append(chunk.getTextChunk());
-                })
-                .map(StringBuilder::toString)
-                .flatMap(outlineContent -> {
-                    // 4. 解析生成的内容，提取出适合作为章节摘要的部分
-                    return processOutlineToSummary(outlineContent);
-                })
-                .doOnSuccess(summary -> {
-                    log.info("成功生成下一章摘要, 长度: {}, 开头: {}", 
-                             summary.length(), 
-                             summary.substring(0, Math.min(50, summary.length())));
-                })
-                .onErrorResume(e -> {
-                    log.error("生成下一章摘要失败: {}", e.getMessage(), e);
-                    return Mono.error(new RuntimeException("生成摘要失败: " + e.getMessage()));
-                });
-        });
+        return Mono.zip(configMono, relevantContextMono, relevantSettingsMono)
+            .flatMap(tuple -> {
+                UserAIModelConfig config = tuple.getT1();
+                String relevantContext = tuple.getT2();
+                String relevantSettings = tuple.getT3();
+                
+                // 4.1 获取配置ID
+                String configId = config.getId();
+                
+                // 4.2 生成一个UUID作为临时选项ID
+                String optionId = UUID.randomUUID().toString();
+                
+                // 4.3 构建完整上下文
+                StringBuilder enrichedContext = new StringBuilder(currentContext);
+                
+                // 添加检索到的上下文（如果有）
+                if (!relevantContext.isEmpty()) {
+                    enrichedContext.append("\n\n## 相关上下文\n\n").append(relevantContext);
+                }
+                
+                // 添加设定信息（如果有）
+                if (!relevantSettings.isEmpty()) {
+                    enrichedContext.append("\n\n## 相关设定\n\n").append(relevantSettings);
+                }
+                
+                // 4.4 使用NextOutline生成逻辑生成单个大纲选项
+                return generateSingleOutlineOptionStream(
+                        userId, 
+                        novelId, 
+                        enrichedContext.toString(), 
+                        finalAuthorGuidance, 
+                        0, // 单一选项时索引为0
+                        configId
+                    )
+                    .reduce(new StringBuilder(), (sb, chunk) -> {
+                        if (chunk.getError() != null) {
+                            log.error("生成摘要出错: {}", chunk.getError());
+                            throw new RuntimeException("生成摘要失败: " + chunk.getError());
+                        }
+                        return sb.append(chunk.getTextChunk());
+                    })
+                    .map(StringBuilder::toString)
+                    .flatMap(outlineContent -> {
+                        // 5. 解析生成的内容，提取出适合作为章节摘要的部分
+                        return processOutlineToSummary(outlineContent);
+                    })
+                    .doOnSuccess(summary -> {
+                        log.info("成功生成下一章摘要, 长度: {}, 开头: {}", 
+                                summary.length(), 
+                                summary.substring(0, Math.min(50, summary.length())));
+                    })
+                    .onErrorResume(e -> {
+                        log.error("生成下一章摘要失败: {}", e.getMessage(), e);
+                        return Mono.error(new RuntimeException("生成摘要失败: " + e.getMessage()));
+                    });
+            });
     }
 
     /**

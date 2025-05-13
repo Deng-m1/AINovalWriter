@@ -7,6 +7,7 @@ import com.ainovel.server.domain.model.Character;
 import com.ainovel.server.domain.model.Novel;
 import com.ainovel.server.domain.model.Novel.Act;
 import com.ainovel.server.domain.model.Novel.Chapter;
+import com.ainovel.server.domain.model.NovelSceneContent;
 import com.ainovel.server.domain.model.Scene;
 import com.ainovel.server.domain.model.Setting;
 import com.ainovel.server.web.dto.CreatedChapterInfo;
@@ -139,6 +140,7 @@ public interface NovelService {
      * @return 场景列表
      */
     Flux<Scene> getNovelScenes(String novelId);
+
 
     /**
      * 获取小说的所有角色
