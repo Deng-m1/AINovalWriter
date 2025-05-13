@@ -1,21 +1,16 @@
 package com.ainovel.server.web.controller;
 
 import java.security.Principal;
-import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -25,6 +20,7 @@ import com.ainovel.server.domain.model.NovelSettingItem.SettingRelationship;
 import com.ainovel.server.domain.model.SettingGroup;
 import com.ainovel.server.service.NovelSettingService;
 import com.ainovel.server.web.dto.SettingSearchRequest;
+import com.ainovel.server.web.dto.novelsetting.*;
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -51,7 +47,7 @@ public class NovelSettingController {
     /**
      * 创建小说设定条目
      */
-    @PostMapping("/items")
+    @PostMapping("/items/create")
     @ResponseStatus(HttpStatus.CREATED)
     public Mono<NovelSettingItem> createSettingItem(
             @PathVariable String novelId,
@@ -70,38 +66,39 @@ public class NovelSettingController {
     /**
      * 获取小说设定条目列表
      */
-    @GetMapping("/items")
+    @PostMapping("/items/list")
     public Flux<NovelSettingItem> getNovelSettingItems(
             @PathVariable String novelId,
-            @RequestParam(required = false) String type,
-            @RequestParam(required = false) String name,
-            @RequestParam(required = false) Integer priority,
-            @RequestParam(required = false) String generatedBy,
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false, defaultValue = "0") int page,
-            @RequestParam(required = false, defaultValue = "20") int size,
-            @RequestParam(required = false, defaultValue = "priority") String sortBy,
-            @RequestParam(required = false, defaultValue = "desc") String sortDirection,
+            @RequestBody SettingItemListRequest request,
             Principal principal) {
 
-        Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection) ? 
+        Sort.Direction direction = "asc".equalsIgnoreCase(request.getSortDirection()) ? 
                 Sort.Direction.ASC : Sort.Direction.DESC;
-        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortBy));
+        Pageable pageable = PageRequest.of(
+                request.getPage(), 
+                request.getSize(), 
+                Sort.by(direction, request.getSortBy()));
 
         return novelSettingService.getNovelSettingItems(
-                novelId, type, name, priority, generatedBy, status, pageable);
+                novelId, 
+                request.getType(), 
+                request.getName(), 
+                request.getPriority(), 
+                request.getGeneratedBy(), 
+                request.getStatus(), 
+                pageable);
     }
 
     /**
      * 获取小说设定条目详情
      */
-    @GetMapping("/items/{itemId}")
+    @PostMapping("/items/detail")
     public Mono<NovelSettingItem> getSettingItemDetail(
             @PathVariable String novelId,
-            @PathVariable String itemId,
+            @RequestBody SettingItemDetailRequest request,
             Principal principal) {
 
-        return novelSettingService.getSettingItemById(itemId)
+        return novelSettingService.getSettingItemById(request.getItemId())
                 .filter(item -> item.getNovelId().equals(novelId))
                 .switchIfEmpty(Mono.error(new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "设定条目不存在或不属于该小说")));
@@ -110,20 +107,21 @@ public class NovelSettingController {
     /**
      * 更新小说设定条目
      */
-    @PutMapping("/items/{itemId}")
+    @PostMapping("/items/update")
     public Mono<NovelSettingItem> updateSettingItem(
             @PathVariable String novelId,
-            @PathVariable String itemId,
-            @RequestBody NovelSettingItem settingItem,
+            @RequestBody SettingItemUpdateRequest request,
             Principal principal) {
 
+        NovelSettingItem settingItem = request.getSettingItem();
+        
         if (!novelId.equals(settingItem.getNovelId())) {
             return Mono.error(new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "设定条目的novelId与路径参数不匹配"));
         }
 
-        settingItem.setId(itemId);
-        return novelSettingService.updateSettingItem(itemId, settingItem)
+        settingItem.setId(request.getItemId());
+        return novelSettingService.updateSettingItem(request.getItemId(), settingItem)
                 .doOnSuccess(item -> log.info("用户 {} 更新了小说 {} 的设定项: {}", 
                         principal.getName(), novelId, item.getName()));
     }
@@ -131,61 +129,59 @@ public class NovelSettingController {
     /**
      * 删除小说设定条目
      */
-    @DeleteMapping("/items/{itemId}")
+    @PostMapping("/items/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> deleteSettingItem(
             @PathVariable String novelId,
-            @PathVariable String itemId,
+            @RequestBody SettingItemDeleteRequest request,
             Principal principal) {
 
-        return novelSettingService.getSettingItemById(itemId)
+        return novelSettingService.getSettingItemById(request.getItemId())
                 .filter(item -> item.getNovelId().equals(novelId))
                 .switchIfEmpty(Mono.error(new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "设定条目不存在或不属于该小说")))
-                .flatMap(item -> novelSettingService.deleteSettingItem(itemId))
+                .flatMap(item -> novelSettingService.deleteSettingItem(request.getItemId()))
                 .doOnSuccess(v -> log.info("用户 {} 删除了小说 {} 的设定项 {}", 
-                        principal.getName(), novelId, itemId));
+                        principal.getName(), novelId, request.getItemId()));
     }
 
     /**
      * 添加设定条目之间的关系
      */
-    @PostMapping("/items/{itemId}/relationships/{targetItemId}")
+    @PostMapping("/items/add-relationship")
     public Mono<NovelSettingItem> addSettingRelationship(
             @PathVariable String novelId,
-            @PathVariable String itemId,
-            @PathVariable String targetItemId,
-            @RequestParam String relationshipType,
-            @RequestParam(required = false) String description,
+            @RequestBody SettingRelationshipRequest request,
             Principal principal) {
 
         // 创建关系对象
         SettingRelationship relationship = SettingRelationship.builder()
-                .targetItemId(targetItemId)
-                .type(relationshipType)
-                .description(description)
+                .targetItemId(request.getTargetItemId())
+                .type(request.getRelationshipType())
+                .description(request.getDescription())
                 .build();
 
-        return novelSettingService.addSettingRelationship(itemId, relationship)
+        return novelSettingService.addSettingRelationship(request.getItemId(), relationship)
                 .doOnSuccess(item -> log.info("用户 {} 为小说 {} 的设定项 {} 添加了关系: {} -> {}", 
-                        principal.getName(), novelId, item.getName(), relationshipType, targetItemId));
+                        principal.getName(), novelId, item.getName(), request.getRelationshipType(), request.getTargetItemId()));
     }
 
     /**
      * 删除设定条目之间的关系
      */
-    @DeleteMapping("/items/{itemId}/relationships/{targetItemId}")
+    @PostMapping("/items/remove-relationship")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> removeSettingRelationship(
             @PathVariable String novelId,
-            @PathVariable String itemId,
-            @PathVariable String targetItemId,
-            @RequestParam(required = false) String relationshipType,
+            @RequestBody SettingRelationshipDeleteRequest request,
             Principal principal) {
 
-        return novelSettingService.removeSettingRelationship(itemId, targetItemId, relationshipType)
+        return novelSettingService.removeSettingRelationship(
+                request.getItemId(), 
+                request.getTargetItemId(), 
+                request.getRelationshipType())
                 .doOnSuccess(v -> log.info("用户 {} 删除了小说 {} 的设定项关系: {} -> {}", 
-                        principal.getName(), novelId, itemId, targetItemId));
+                        principal.getName(), novelId, request.getItemId(), request.getTargetItemId()));
     }
 
     // ==================== 设定组管理 ====================
@@ -193,7 +189,7 @@ public class NovelSettingController {
     /**
      * 创建设定组
      */
-    @PostMapping("/groups")
+    @PostMapping("/groups/create")
     @ResponseStatus(HttpStatus.CREATED)
     public Mono<SettingGroup> createSettingGroup(
             @PathVariable String novelId,
@@ -211,26 +207,28 @@ public class NovelSettingController {
     /**
      * 获取小说的设定组列表
      */
-    @GetMapping("/groups")
+    @PostMapping("/groups/list")
     public Flux<SettingGroup> getNovelSettingGroups(
             @PathVariable String novelId,
-            @RequestParam(required = false) String name,
-            @RequestParam(required = false) Boolean isActiveContext,
+            @RequestBody SettingGroupListRequest request,
             Principal principal) {
 
-        return novelSettingService.getNovelSettingGroups(novelId, name, isActiveContext);
+        return novelSettingService.getNovelSettingGroups(
+                novelId, 
+                request.getName(), 
+                request.getIsActiveContext());
     }
 
     /**
      * 获取设定组详情
      */
-    @GetMapping("/groups/{groupId}")
+    @PostMapping("/groups/detail")
     public Mono<SettingGroup> getSettingGroupDetail(
             @PathVariable String novelId,
-            @PathVariable String groupId,
+            @RequestBody SettingGroupDetailRequest request,
             Principal principal) {
 
-        return novelSettingService.getSettingGroupById(groupId)
+        return novelSettingService.getSettingGroupById(request.getGroupId())
                 .filter(group -> group.getNovelId().equals(novelId))
                 .switchIfEmpty(Mono.error(new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "设定组不存在或不属于该小说")));
@@ -239,20 +237,21 @@ public class NovelSettingController {
     /**
      * 更新设定组
      */
-    @PutMapping("/groups/{groupId}")
+    @PostMapping("/groups/update")
     public Mono<SettingGroup> updateSettingGroup(
             @PathVariable String novelId,
-            @PathVariable String groupId,
-            @RequestBody SettingGroup settingGroup,
+            @RequestBody SettingGroupUpdateRequest request,
             Principal principal) {
 
+        SettingGroup settingGroup = request.getSettingGroup();
+        
         if (!novelId.equals(settingGroup.getNovelId())) {
             return Mono.error(new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "设定组的novelId与路径参数不匹配"));
         }
 
-        settingGroup.setId(groupId);
-        return novelSettingService.updateSettingGroup(groupId, settingGroup)
+        settingGroup.setId(request.getGroupId());
+        return novelSettingService.updateSettingGroup(request.getGroupId(), settingGroup)
                 .doOnSuccess(group -> log.info("用户 {} 更新了小说 {} 的设定组: {}", 
                         principal.getName(), novelId, group.getName()));
     }
@@ -260,66 +259,63 @@ public class NovelSettingController {
     /**
      * 删除设定组
      */
-    @DeleteMapping("/groups/{groupId}")
+    @PostMapping("/groups/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> deleteSettingGroup(
             @PathVariable String novelId,
-            @PathVariable String groupId,
+            @RequestBody SettingGroupDeleteRequest request,
             Principal principal) {
 
-        return novelSettingService.getSettingGroupById(groupId)
+        return novelSettingService.getSettingGroupById(request.getGroupId())
                 .filter(group -> group.getNovelId().equals(novelId))
                 .switchIfEmpty(Mono.error(new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "设定组不存在或不属于该小说")))
-                .flatMap(group -> novelSettingService.deleteSettingGroup(groupId))
+                .flatMap(group -> novelSettingService.deleteSettingGroup(request.getGroupId()))
                 .doOnSuccess(v -> log.info("用户 {} 删除了小说 {} 的设定组 {}", 
-                        principal.getName(), novelId, groupId));
+                        principal.getName(), novelId, request.getGroupId()));
     }
 
     /**
      * 添加设定条目到设定组
      */
-    @PostMapping("/groups/{groupId}/items/{itemId}")
+    @PostMapping("/groups/add-item")
     public Mono<SettingGroup> addItemToGroup(
             @PathVariable String novelId,
-            @PathVariable String groupId,
-            @PathVariable String itemId,
+            @RequestBody GroupItemRequest request,
             Principal principal) {
 
-        return novelSettingService.addItemToGroup(groupId, itemId)
+        return novelSettingService.addItemToGroup(request.getGroupId(), request.getItemId())
                 .doOnSuccess(group -> log.info("用户 {} 将设定项 {} 添加到设定组 {}", 
-                        principal.getName(), itemId, groupId));
+                        principal.getName(), request.getItemId(), request.getGroupId()));
     }
 
     /**
      * 从设定组中移除设定条目
      */
-    @DeleteMapping("/groups/{groupId}/items/{itemId}")
+    @PostMapping("/groups/remove-item")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> removeItemFromGroup(
             @PathVariable String novelId,
-            @PathVariable String groupId,
-            @PathVariable String itemId,
+            @RequestBody GroupItemRequest request,
             Principal principal) {
 
-        return novelSettingService.removeItemFromGroup(groupId, itemId)
+        return novelSettingService.removeItemFromGroup(request.getGroupId(), request.getItemId())
                 .doOnSuccess(v -> log.info("用户 {} 从设定组 {} 移除了设定项 {}", 
-                        principal.getName(), groupId, itemId));
+                        principal.getName(), request.getGroupId(), request.getItemId()));
     }
 
     /**
      * 激活/停用设定组作为上下文
      */
-    @PutMapping("/groups/{groupId}/active-context")
+    @PostMapping("/groups/set-active")
     public Mono<SettingGroup> setActiveContext(
             @PathVariable String novelId,
-            @PathVariable String groupId,
-            @RequestParam boolean isActive,
+            @RequestBody SetGroupActiveRequest request,
             Principal principal) {
 
-        return novelSettingService.setGroupActiveContext(groupId, isActive)
+        return novelSettingService.setGroupActiveContext(request.getGroupId(), request.isActive())
                 .doOnSuccess(group -> log.info("用户 {} 将设定组 {} 的激活状态设置为: {}", 
-                        principal.getName(), groupId, isActive));
+                        principal.getName(), request.getGroupId(), request.isActive()));
     }
 
     // ==================== 高级功能 ====================
@@ -330,11 +326,14 @@ public class NovelSettingController {
     @PostMapping("/extract")
     public Flux<NovelSettingItem> extractSettingsFromText(
             @PathVariable String novelId,
-            @RequestBody String text,
-            @RequestParam(required = false, defaultValue = "auto") String type,
+            @RequestBody ExtractSettingsRequest request,
             Principal principal) {
 
-        return novelSettingService.extractSettingsFromText(novelId, text, type, principal.getName())
+        return novelSettingService.extractSettingsFromText(
+                novelId, 
+                request.getText(), 
+                request.getType(), 
+                principal.getName())
                 .doOnComplete(() -> log.info("用户 {} 从文本中为小说 {} 提取了设定条目", 
                         principal.getName(), novelId));
     }
