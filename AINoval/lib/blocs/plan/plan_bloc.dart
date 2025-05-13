@@ -5,6 +5,8 @@ import 'package:ainoval/services/api_service/repositories/impl/editor_repository
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../utils/logger.dart';
+
 part 'plan_event.dart';
 part 'plan_state.dart';
 
@@ -33,6 +35,7 @@ class PlanBloc extends Bloc<PlanEvent, PlanState> {
     emit(PlanLoading());
 
     try {
+      AppLogger.i('PlanBloc/_onLoadContent', '开始加载小说大纲数据');
       // 获取小说数据（带场景摘要）
       final novel = await repository.getNovelWithSceneSummaries(novelId);
 
