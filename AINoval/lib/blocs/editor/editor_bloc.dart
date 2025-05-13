@@ -53,9 +53,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   final EditorSettings _settings = const EditorSettings();
   bool? hasReachedEnd;
   bool? hasReachedStart;
-  // 加载场景节流控制
-  DateTime? _lastLoadRequestTime;
-  static const _loadThrottleInterval = Duration(milliseconds: 500);
+
   StreamSubscription<String>? _generationStreamSubscription;
 
   /// 待保存场景的缓冲队列

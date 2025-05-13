@@ -1457,49 +1457,49 @@ class EditorScreenController extends ChangeNotifier {
     super.dispose();
   }
 
-  /// 加载所有场景摘要
-  void loadAllSceneSummaries() {
-    // 防止重复加载，添加节流控制
-    final now = DateTime.now();
-    if (_isLoadingSummaries) {
-      AppLogger.i('EditorScreenController', '正在加载摘要，跳过重复请求');
-      return;
-    }
+  // /// 加载所有场景摘要
+  // void loadAllSceneSummaries() {
+  //   // 防止重复加载，添加节流控制
+  //   final now = DateTime.now();
+  //   if (_isLoadingSummaries) {
+  //     AppLogger.i('EditorScreenController', '正在加载摘要，跳过重复请求');
+  //     return;
+  //   }
     
-    if (_lastSummaryLoadTime != null && 
-        now.difference(_lastSummaryLoadTime!) < _summaryLoadThrottleInterval) {
-      AppLogger.i('EditorScreenController', 
-          '摘要加载过于频繁，上次加载时间: ${_lastSummaryLoadTime!.toString()}, 跳过此次请求');
-      return;
-    }
+  //   if (_lastSummaryLoadTime != null && 
+  //       now.difference(_lastSummaryLoadTime!) < _summaryLoadThrottleInterval) {
+  //     AppLogger.i('EditorScreenController', 
+  //         '摘要加载过于频繁，上次加载时间: ${_lastSummaryLoadTime!.toString()}, 跳过此次请求');
+  //     return;
+  //   }
     
-    _isLoadingSummaries = true;
-    _lastSummaryLoadTime = now;
+  //   _isLoadingSummaries = true;
+  //   _lastSummaryLoadTime = now;
     
-    AppLogger.i('EditorScreenController', '开始加载所有场景摘要');
+  //   AppLogger.i('EditorScreenController', '开始加载所有场景摘要');
     
-    // 使用带有场景摘要的API直接加载完整小说数据
-    editorRepository.getNovelWithSceneSummaries(novel.id).then((novelWithSummaries) {
-      if (novelWithSummaries != null) {
-        AppLogger.i('EditorScreenController', '已加载所有场景摘要');
+  //   // 使用带有场景摘要的API直接加载完整小说数据
+  //   editorRepository.getNovelWithSceneSummaries(novel.id).then((novelWithSummaries) {
+  //     if (novelWithSummaries != null) {
+  //       AppLogger.i('EditorScreenController', '已加载所有场景摘要');
 
-        // 更新编辑器状态
-        editorBloc.add(editor_bloc.LoadEditorContentPaginated(
-          novelId: novel.id,
-          lastEditedChapterId: novel.lastEditedChapterId,
-          chaptersLimit: 10,
-          loadAllSummaries: true,  // 指示加载所有摘要
-        ));
-      } else {
-        AppLogger.w('EditorScreenController', '加载所有场景摘要失败');
-      }
-    }).catchError((error) {
-      AppLogger.e('EditorScreenController', '加载所有场景摘要出错', error);
-    }).whenComplete(() {
-      // 无论成功失败，完成后更新状态
-      _isLoadingSummaries = false;
-    });
-  }
+  //       // 更新编辑器状态
+  //       editorBloc.add(editor_bloc.LoadEditorContentPaginated(
+  //         novelId: novel.id,
+  //         lastEditedChapterId: novel.lastEditedChapterId,
+  //         chaptersLimit: 10,
+  //         loadAllSummaries: true,  // 指示加载所有摘要
+  //       ));
+  //     } else {
+  //       AppLogger.w('EditorScreenController', '加载所有场景摘要失败');
+  //     }
+  //   }).catchError((error) {
+  //     AppLogger.e('EditorScreenController', '加载所有场景摘要出错', error);
+  //   }).whenComplete(() {
+  //     // 无论成功失败，完成后更新状态
+  //     _isLoadingSummaries = false;
+  //   });
+  // }
 
 
   // 更新加载进度和消息
