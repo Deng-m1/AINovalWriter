@@ -2,6 +2,7 @@ import 'package:ainoval/config/app_config.dart';
 import 'package:ainoval/models/editor_content.dart';
 import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart';
+import 'package:ainoval/models/novel_with_summaries_dto.dart';
 import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/services/api_service/base/api_exception.dart';
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
@@ -1832,11 +1833,121 @@ class EditorRepositoryImpl implements EditorRepository {
   @override
   Future<Novel?> getNovelWithSceneSummaries(String novelId) async {
     try {
+      AppLogger.i('EditorRepository/getNovelWithSceneSummaries', '正在获取带场景摘要的小说结构: $novelId');
+      
+      // 调用API获取带场景摘要的小说数据
       final data = await _apiClient.post('/novels/get-with-scene-summaries', data: {'id': novelId});
-      return _convertBackendNovelWithScenesToFrontend(data);
+      
+      if (data != null) {
+        try {
+          AppLogger.i('EditorRepository/getNovelWithSceneSummaries', '成功获取服务器数据，开始解析');
+          
+          // 在解析前记录数据结构摘要，帮助调试
+          if (data is Map) {
+            final keys = data.keys.toList();
+            AppLogger.i('EditorRepository/getNovelWithSceneSummaries', 
+                '服务器返回数据包含以下字段: $keys');
+                
+            // 检查novel字段结构
+            if (data.containsKey('novel') && data['novel'] is Map) {
+              final novelData = data['novel'] as Map;
+              final novelKeys = novelData.keys.toList();
+              AppLogger.i('EditorRepository/getNovelWithSceneSummaries', 
+                  'novel字段包含以下子字段: $novelKeys');
+                  
+              // 特别检查structure字段和acts字段
+              if (novelData.containsKey('structure')) {
+                if (novelData['structure'] is Map) {
+                  final structureData = novelData['structure'] as Map;
+                  AppLogger.i('EditorRepository/getNovelWithSceneSummaries', 
+                      'structure字段包含以下子字段: ${structureData.keys.toList()}');
+                      
+                  if (structureData.containsKey('acts')) {
+                    final actsData = structureData['acts'];
+                    final actsType = actsData.runtimeType.toString();
+                    final actsLength = actsData is List ? actsData.length : 'non-list';
+                    AppLogger.i('EditorRepository/getNovelWithSceneSummaries', 
+                        'acts字段类型: $actsType, 长度: $actsLength');
+                  } else {
+                    AppLogger.w('EditorRepository/getNovelWithSceneSummaries', 
+                        'structure字段中缺少acts字段');
+                  }
+                } else {
+                  AppLogger.w('EditorRepository/getNovelWithSceneSummaries', 
+                      'structure字段不是Map类型: ${novelData['structure'].runtimeType}');
+                }
+              } else {
+                AppLogger.w('EditorRepository/getNovelWithSceneSummaries', 
+                    'novel字段中缺少structure字段');
+              }
+            }
+            
+            // 检查sceneSummariesByChapter字段
+            if (data.containsKey('sceneSummariesByChapter')) {
+              final summariesData = data['sceneSummariesByChapter'];
+              final summariesType = summariesData.runtimeType.toString();
+              AppLogger.i('EditorRepository/getNovelWithSceneSummaries', 
+                  'sceneSummariesByChapter字段类型: $summariesType');
+                  
+              if (summariesData is Map) {
+                final chapterIds = summariesData.keys.toList();
+                AppLogger.i('EditorRepository/getNovelWithSceneSummaries', 
+                    'sceneSummariesByChapter包含 ${chapterIds.length} 个章节ID');
+                    
+                // 检查第一个章节的场景摘要结构
+                if (chapterIds.isNotEmpty) {
+                  final firstChapterScenes = summariesData[chapterIds.first];
+                  AppLogger.i('EditorRepository/getNovelWithSceneSummaries', 
+                      '第一个章节 ${chapterIds.first} 的场景摘要类型: ${firstChapterScenes.runtimeType}');
+                }
+              }
+            } else {
+              AppLogger.w('EditorRepository/getNovelWithSceneSummaries', 
+                  '服务器返回数据中缺少sceneSummariesByChapter字段');
+            }
+          }
+          
+          // 使用新的DTO模型处理返回数据
+          final novelWithSummaries = NovelWithSummariesDto.fromJson(data);
+          
+          // 将场景摘要合并到小说模型中
+          final novelWithMergedSummaries = novelWithSummaries.mergeSceneSummariesToNovel();
+          
+          AppLogger.i('EditorRepository/getNovelWithSceneSummaries', 
+              '成功获取小说结构和场景摘要，共有${novelWithSummaries.novel.acts.length}个卷，${novelWithSummaries.sceneSummariesByChapter.length}个章节包含摘要');
+              
+          // 缓存处理后的小说模型到本地存储
+          await _localStorageService.saveNovel(novelWithMergedSummaries);
+          
+          return novelWithMergedSummaries;
+        } catch (e) {
+          AppLogger.e('EditorRepository/getNovelWithSceneSummaries', '解析小说摘要数据失败', e);
+          
+          // 解析失败时尝试使用原来的方法
+          try {
+            AppLogger.i('EditorRepository/getNovelWithSceneSummaries', '尝试使用后备转换方法');
+            final novel = _convertBackendNovelWithScenesToFrontend(data);
+            
+            // 保存到本地存储
+            await _localStorageService.saveNovel(novel);
+            
+            return novel;
+          } catch (backupError) {
+            AppLogger.e('EditorRepository/getNovelWithSceneSummaries', '后备转换方法也失败', backupError);
+            // 如果后备方法也失败，尝试从本地获取
+            AppLogger.i('EditorRepository/getNovelWithSceneSummaries', '尝试从本地存储获取小说数据');
+            return await getNovel(novelId);
+          }
+        }
+      }
+      
+      AppLogger.w('EditorRepository/getNovelWithSceneSummaries', '服务器返回空数据');
+      // 从本地存储获取
+      return await getNovel(novelId);
     } catch (e) {
       AppLogger.e('EditorRepository/getNovelWithSceneSummaries', '获取小说带摘要失败', e);
       // 尝试从本地获取
+      AppLogger.i('EditorRepository/getNovelWithSceneSummaries', '尝试从本地存储获取小说数据');
       return await getNovel(novelId);
     }
   }

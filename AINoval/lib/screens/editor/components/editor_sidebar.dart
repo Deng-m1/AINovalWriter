@@ -1,14 +1,13 @@
-import 'dart:async';
 import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/screens/editor/widgets/ai_generation_panel.dart';
 import 'package:ainoval/utils/logger.dart';
-import 'package:ainoval/utils/event_bus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 import 'package:ainoval/screens/editor/controllers/editor_screen_controller.dart';
+import 'package:ainoval/blocs/sidebar/sidebar_bloc.dart';
 
 class EditorSidebar extends StatefulWidget {
   const EditorSidebar({
@@ -571,70 +570,9 @@ class _CodexEmptyState extends StatelessWidget {
   }
 }
 
-class _ChatRedirectTab extends StatelessWidget {
-  const _ChatRedirectTab({
-    this.onOpenAIChat,
-  });
-
-  final VoidCallback? onOpenAIChat;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      color: Colors.grey.shade50,
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.forum_outlined, size: 48, color: Colors.grey.shade400),
-              const SizedBox(height: 16),
-              Text(
-                'AI 聊天已移至右侧',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade800,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '点击顶部工具栏的聊天图标或下方按钮即可打开 AI 助手。',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: onOpenAIChat,
-                icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                label: const Text('打开 AI 聊天'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  elevation: 0,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// 章节目录标签页组件
 class ChapterDirectoryTab extends StatefulWidget {
-  const ChapterDirectoryTab({
-    super.key,
-    required this.novel,
-  });
+  const ChapterDirectoryTab({super.key, required this.novel});
   final NovelSummary novel;
 
   @override
@@ -642,79 +580,145 @@ class ChapterDirectoryTab extends StatefulWidget {
 }
 
 class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
-  final TextEditingController _jumpController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _jumpController = TextEditingController();
+  final Map<String, bool> _expandedChapters = {};
   String _searchText = '';
   int? _selectedChapterNumber;
-  final Map<String, bool> _expandedChapters = {};
-  final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
-  bool _isSearchMode = false;
-  
-  // 事件总线订阅
-  StreamSubscription? _novelStructureSubscription;
+  late final EditorScreenController _editorController;
 
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(_onSearchChanged);
-    // 获取EditorScreenController实例
-    final editorController = Provider.of<EditorScreenController>(context, listen: false);
-    // 默认第一个章节展开
-    _initExpandedChapters();
+    _editorController = Provider.of<EditorScreenController>(context, listen: false);
+
+    // 监听搜索文本变化
+    _searchController.addListener(() {
+      setState(() {
+        _searchText = _searchController.text;
+      });
+    });
     
-    // 添加对小说结构更新事件的监听
-    _setupNovelStructureListener();
+    // 加载 SidebarBloc 数据
+    final sidebarBloc = context.read<SidebarBloc>();
+    
+    // 使用日志记录当前状态
+    if (sidebarBloc.state is SidebarInitial) {
+      AppLogger.i('ChapterDirectoryTab', 'SidebarBloc 处于初始状态，开始加载小说结构');
+      // 首次加载
+      sidebarBloc.add(LoadNovelStructure(widget.novel.id));
+    } else if (sidebarBloc.state is SidebarLoaded) {
+      AppLogger.i('ChapterDirectoryTab', 'SidebarBloc 已加载，使用已有数据');
+      // 如果已经加载，检查一下是否是当前小说的数据
+      final state = sidebarBloc.state as SidebarLoaded;
+      if (state.novelStructure.id != widget.novel.id) {
+        AppLogger.w('ChapterDirectoryTab', 
+          '当前加载的小说(${state.novelStructure.id})与目标小说(${widget.novel.id})不同，重新加载');
+        sidebarBloc.add(LoadNovelStructure(widget.novel.id));
+      } else {
+        // 如果已经是当前小说，检查每个章节是否有场景
+        int chaptersWithoutScenes = 0;
+        for (final act in state.novelStructure.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.scenes.isEmpty) {
+              chaptersWithoutScenes++;
+            }
+          }
+        }
+        
+        if (chaptersWithoutScenes > 0) {
+          AppLogger.i('ChapterDirectoryTab', 
+            '发现 $chaptersWithoutScenes 个章节没有场景数据，重新加载小说结构');
+          sidebarBloc.add(LoadNovelStructure(widget.novel.id));
+        }
+      }
+    } else if (sidebarBloc.state is SidebarError) {
+      AppLogger.e('ChapterDirectoryTab', 
+        '之前加载小说结构失败，重试: ${(sidebarBloc.state as SidebarError).message}');
+      // 之前加载失败，重试
+      sidebarBloc.add(LoadNovelStructure(widget.novel.id));
+    } else {
+      AppLogger.w('ChapterDirectoryTab', '未知的SidebarBloc状态，重新加载');
+      sidebarBloc.add(LoadNovelStructure(widget.novel.id));
+    }
   }
 
   @override
   void dispose() {
-    _jumpController.dispose();
-    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
-    _scrollController.dispose();
-    
-    // 取消事件订阅
-    _novelStructureSubscription?.cancel();
-    
+    _jumpController.dispose();
     super.dispose();
   }
 
-  void _initExpandedChapters() {
-    // 获取小说结构并默认展开第一章
-    final editorBloc = context.read<EditorBloc>();
-    if (editorBloc.state is EditorLoaded && (editorBloc.state as EditorLoaded).novel.acts.isNotEmpty) {
-      for (final act in (editorBloc.state as EditorLoaded).novel.acts) {
-        if (act.chapters.isNotEmpty) {
-          // 默认展开第一个章节
-          _expandedChapters[act.chapters.first.id] = true;
-          break;
-        }
-      }
-    }
-  }
-
-  void _onSearchChanged() {
-    setState(() {
-      _searchText = _searchController.text.trim();
-    });
-  }
-
-  void _toggleChapter(String chapterId) {
+  // 切换章节展开状态
+  void _toggleChapter(String chapterId) async {
     final isCurrentlyExpanded = _expandedChapters[chapterId] ?? false;
     
-    // 如果要展开章节并且该章节的场景可能是空的，加载所有场景
     if (!isCurrentlyExpanded) {
-      // 使用控制器中的方法预加载场景，使用preventFocusChange=true确保不会导致跳转或改变焦点
-      AppLogger.i('ChapterDirectoryTab', '展开章节，预加载场景: $chapterId');
-      final editorController = Provider.of<EditorScreenController>(context, listen: false);
-      editorController.preloadChapterScenes(chapterId);
+      // 在UI立即展开章节，不等待加载完成
+      setState(() {
+        _expandedChapters[chapterId] = true;
+      });
+      
+      AppLogger.i('ChapterDirectoryTab', '展开章节: $chapterId');
+      
+      // 获取当前状态，检查章节是否有场景摘要
+      bool needsPreload = false;
+      String? actId;
+      
+      // 查找章节所属的 Act ID
+      final sidebarState = context.read<SidebarBloc>().state;
+      if (sidebarState is SidebarLoaded) {
+        for (final act in sidebarState.novelStructure.acts) {
+          for (final chapter in act.chapters) {
+            if (chapter.id == chapterId) {
+              actId = act.id;
+              needsPreload = chapter.scenes.isEmpty; // 如果没有场景，需要预加载
+              break;
+            }
+          }
+          if (actId != null) break;
+        }
+      }
+      
+      // 如果章节已有场景摘要数据，不需要额外加载
+      if (!needsPreload) {
+        AppLogger.i('ChapterDirectoryTab', '章节 $chapterId 已有场景摘要数据，无需预加载');
+        return;
+      }
+      
+      // 如果需要预加载，进行异步预加载
+      if (actId != null) {
+        AppLogger.i('ChapterDirectoryTab', '章节 $chapterId 需要预加载场景数据');
+        
+        try {
+          // 异步预加载场景并在完成后更新UI
+          await _editorController.preloadChapterScenes(chapterId, actId: actId);
+          
+          // 如果组件还在树中，更新UI
+          if (mounted) {
+            setState(() {
+              // 更新完成后的状态刷新
+              AppLogger.i('ChapterDirectoryTab', '章节 $chapterId 场景预加载完成，刷新UI');
+            });
+          }
+        } catch (e) {
+          AppLogger.e('ChapterDirectoryTab', '预加载章节场景失败', e);
+          
+          // 即使失败也保持章节展开状态
+          if (mounted) {
+            setState(() {});
+          }
+        }
+      } else {
+        AppLogger.w('ChapterDirectoryTab', '无法确定章节 $chapterId 所属的卷ID，无法预加载场景');
+      }
+    } else {
+      // 收起章节
+      setState(() {
+        _expandedChapters[chapterId] = false;
+      });
     }
-    
-    // 直接切换展开状态
-    setState(() {
-      _expandedChapters[chapterId] = !isCurrentlyExpanded;
-    });
   }
 
   void _jumpToChapter() {
@@ -725,11 +729,12 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
         return;
       }
 
-      final editorBloc = context.read<EditorBloc>();
-      if (editorBloc.state is EditorLoaded) {
+      // 使用 SidebarBloc 中的数据
+      final sidebarState = context.read<SidebarBloc>().state;
+      if (sidebarState is SidebarLoaded) {
         // 扁平化所有章节以便按序号查找
         final allChapters = <novel_models.Chapter>[];
-        for (final act in (editorBloc.state as EditorLoaded).novel.acts) {
+        for (final act in sidebarState.novelStructure.acts) {
           allChapters.addAll(act.chapters);
         }
         
@@ -781,7 +786,6 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
   
   // 获取章节的BuildContext，用于滚动定位
   BuildContext? _getChapterContext(String chapterId) {
-    final key = GlobalKey();
     final chapterKey = GlobalObjectKey('chapter_$chapterId');
     return chapterKey.currentContext;
   }
@@ -812,11 +816,10 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
     ));
     
     // 关键修改：先尝试通过EditorMainArea实例设置活动章节
-    final editorController = Provider.of<EditorScreenController>(context, listen: false);
-    if (editorController.editorMainAreaKey.currentState != null) {
+    if (_editorController.editorMainAreaKey.currentState != null) {
       // 如果能获取到EditorMainArea实例，通过它设置活动章节
       AppLogger.i('ChapterDirectoryTab', '通过EditorMainArea明确设置活动章节: $actId - $chapterId');
-      editorController.editorMainAreaKey.currentState!.setActiveChapter(actId, chapterId);
+      _editorController.editorMainAreaKey.currentState!.setActiveChapter(actId, chapterId);
     }
     
     // 然后设置活动场景
@@ -836,40 +839,8 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
   void _scrollToActiveScene(String actId, String chapterId, String sceneId) {
     // 延迟500ms确保UI已经更新
     Future.delayed(const Duration(milliseconds: 500), () {
-      final editorController = Provider.of<EditorScreenController>(context, listen: false);
-      if (editorController.editorMainAreaKey.currentState != null) {
-        editorController.editorMainAreaKey.currentState!.scrollToActiveScene();
-      }
-    });
-  }
-
-  // 监听小说结构更新事件
-  void _setupNovelStructureListener() {
-    _novelStructureSubscription = EventBus.instance.on<NovelStructureUpdatedEvent>().listen((event) {
-      if (context.mounted && event.novelId == widget.novel.id) {
-        AppLogger.i('ChapterDirectoryTab', '收到小说结构更新事件: ${event.updateType}');
-        
-        // 强制更新UI，以显示最新的小说结构
-        setState(() {
-          AppLogger.i('ChapterDirectoryTab', '正在更新左侧边栏UI...');
-        });
-        
-        // 如果是从大纲保存的更新，立即刷新编辑器小说结构
-        if (event.updateType == 'outline_saved') {
-          AppLogger.i('ChapterDirectoryTab', '大纲保存触发刷新小说结构');
-          
-          // 先获取controller引用，避免在延迟函数中使用context
-          final editorController = Provider.of<EditorScreenController>(context, listen: false);
-          
-          // 确保使用延迟执行，避免状态更新冲突
-          Future.delayed(const Duration(milliseconds: 200), () {
-            // 这里不再使用context
-            if (mounted) {  // 检查widget是否仍然挂载
-              editorController.refreshNovelStructure();
-              AppLogger.i('ChapterDirectoryTab', '大纲保存后已刷新小说结构');
-            }
-          });
-        }
+      if (_editorController.editorMainAreaKey.currentState != null) {
+        _editorController.editorMainAreaKey.currentState!.scrollToActiveScene();
       }
     });
   }
@@ -878,11 +849,12 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
-    return BlocBuilder<EditorBloc, EditorState>(
+    // 使用 BlocBuilder 构建UI，基于 SidebarBloc 的状态
+    return BlocBuilder<SidebarBloc, SidebarState>(
       builder: (context, state) {
-        if (state is EditorLoading) {
+        if (state is SidebarLoading) {
           return const Center(child: CircularProgressIndicator());
-        } else if (state is EditorLoaded) {
+        } else if (state is SidebarLoaded) {
           return Container(
             color: Colors.grey.shade50,
             child: Column(
@@ -892,16 +864,46 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
                 
                 // 章节列表
                 Expanded(
-                  child: state.novel.acts.isEmpty
+                  child: state.novelStructure.acts.isEmpty
                       ? _buildEmptyState(theme)
-                      : _buildChapterList(state.novel, theme),
+                      : _buildChapterList(state.novelStructure, theme),
+                ),
+              ],
+            ),
+          );
+        } else if (state is SidebarError) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error_outline, color: Colors.red.shade400, size: 48),
+                const SizedBox(height: 16),
+                Text('加载目录失败: ${state.message}', 
+                  style: TextStyle(color: Colors.grey.shade700),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    // 重新加载
+                    context.read<SidebarBloc>().add(LoadNovelStructure(widget.novel.id));
+                  },
+                  child: const Text('重试'),
                 ),
               ],
             ),
           );
         } else {
+          // 初始状态或未知状态
           return Center(
-            child: Text('加载失败，请重试', style: TextStyle(color: Colors.grey.shade600)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('正在初始化目录...', style: TextStyle(color: Colors.grey.shade600)),
+                const SizedBox(height: 16),
+                const CircularProgressIndicator(),
+              ],
+            ),
           );
         }
       },
@@ -1288,7 +1290,6 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
     }
     
     return ListView(
-      controller: _scrollController,
       padding: const EdgeInsets.symmetric(vertical: 12),
       children: chapters,
     );
@@ -1307,6 +1308,30 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
     final editorState = context.read<EditorBloc>().state;
     if (editorState is EditorLoaded) {
       activeSceneId = editorState.activeSceneId;
+    }
+    
+    AppLogger.i('ChapterDirectoryTab', '构建章节 ${chapter.id} 的场景列表，章节有 ${chapter.scenes.length} 个场景');
+    
+    // 如果章节没有场景，但已经展开，显示加载指示器
+    if (chapter.scenes.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(strokeWidth: 2),
+              const SizedBox(height: 12),
+              Text('加载场景信息...', 
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     
     for (int i = 0; i < chapter.scenes.length; i++) {
@@ -1375,7 +1400,7 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
                         
                         // 场景标题
                         Text(
-                          'Scene ${i + 1}',
+                          scene.title.isNotEmpty ? scene.title : 'Scene ${i + 1}',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: isActiveScene ? FontWeight.w600 : FontWeight.w500,
@@ -1476,6 +1501,8 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
         ),
       );
     }
+    
+    AppLogger.i('ChapterDirectoryTab', '构建场景列表完成: ${chapter.scenes.length}个场景');
     
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),

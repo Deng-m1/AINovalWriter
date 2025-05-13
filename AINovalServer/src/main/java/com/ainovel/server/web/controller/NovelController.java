@@ -714,7 +714,7 @@ public class NovelController extends ReactiveBaseController {
      * @return 小说及其场景摘要数据
      */
     @PostMapping("/get-with-scene-summaries")
-    public Mono<NovelWithSummariesDto> getNovelWithSceneSummaries(@RequestBody IdDto idDto) {
+    public Mono<NovelWithSummariesDto>  getNovelWithSceneSummaries(@RequestBody IdDto idDto) {
         String novelId = idDto.getId();
         log.info("获取小说及其场景摘要: novelId={}", novelId);
 

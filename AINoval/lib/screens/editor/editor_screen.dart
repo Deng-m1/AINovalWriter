@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:ainoval/blocs/editor/editor_bloc.dart' as editor_bloc;
+import 'package:ainoval/blocs/editor/editor_bloc.dart';
+import 'package:ainoval/blocs/sidebar/sidebar_bloc.dart';
 import 'package:ainoval/config/app_config.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/models/novel_summary.dart';
@@ -45,6 +46,8 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
   // 自动续写对话框控制
   bool _showContinueWritingForm = false;
 
+  late final SidebarBloc _sidebarBloc;
+
   @override
   void initState() {
     super.initState();
@@ -54,6 +57,14 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
     );
     _layoutManager = EditorLayoutManager();
     _stateManager = EditorStateManager();
+    
+    // 初始化 SidebarBloc
+    _sidebarBloc = SidebarBloc(
+      editorRepository: _controller.editorRepository,
+    );
+    
+    // 加载小说结构数据
+    _sidebarBloc.add(LoadNovelStructure(widget.novel.id));
     
     // 在调试模式下启动性能监控
     if (kDebugMode) {
@@ -141,6 +152,9 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
     _performanceMonitorTimer?.cancel();
     _buildStopwatch.stop();
     
+    // 关闭SidebarBloc
+    _sidebarBloc.close();
+    
     // 尝试同步当前小说数据
     _controller.syncCurrentNovel();
 
@@ -164,6 +178,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
     final editorWidget = MultiProvider(
       providers: [
         BlocProvider.value(value: _controller.editorBloc),
+        BlocProvider.value(value: _sidebarBloc),
         ChangeNotifierProvider.value(value: _controller),
         ChangeNotifierProvider.value(value: _layoutManager),
       ],

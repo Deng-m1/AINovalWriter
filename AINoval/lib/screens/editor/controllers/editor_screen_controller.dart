@@ -977,7 +977,7 @@ class EditorScreenController extends ChangeNotifier {
   }
 
   // 预加载章节场景但不改变焦点
-  void preloadChapterScenes(String chapterId, {String? actId}) {
+  Future<void> preloadChapterScenes(String chapterId, {String? actId}) async {
     AppLogger.i('EditorScreenController', '预加载章节场景: 章节ID=$chapterId, ${actId != null ? "卷ID=$actId" : "自动查找卷ID"}');
 
     // 检查当前状态，如果场景已经加载，则不需要再次加载
@@ -1025,17 +1025,58 @@ class EditorScreenController extends ChangeNotifier {
         return;
       }
 
+      // 为防止方法返回void类型导致的错误，创建一个Completer
+      final completer = Completer<void>();
+      
+      // 定义一个订阅变量
+      StreamSubscription<editor_bloc.EditorState>? subscription;
+      
+      // 监听状态变化，以便在加载完成时完成Future
+      subscription = editorBloc.stream.listen((state) {
+        if (state is editor_bloc.EditorLoaded && !state.isLoading) {
+          // 检查章节是否已有场景
+          bool nowHasScenes = false;
+          for (final act in state.novel.acts) {
+            if (act.id == targetActId) {
+              for (final chapter in act.chapters) {
+                if (chapter.id == chapterId) {
+                  nowHasScenes = chapter.scenes.isNotEmpty;
+                  break;
+                }
+              }
+              break;
+            }
+          }
+          
+          if (nowHasScenes) {
+            AppLogger.i('EditorScreenController', '章节 $chapterId 场景已成功加载');
+            subscription?.cancel();
+            if (!completer.isCompleted) completer.complete();
+          }
+        }
+      });
+      
+      // 设置超时，防止无限等待
+      Future.delayed(const Duration(seconds: 5), () {
+        if (!completer.isCompleted) {
+          AppLogger.w('EditorScreenController', '预加载章节场景超时');
+          subscription?.cancel();
+          completer.complete(); // 即使超时也完成Future
+        }
+      });
+
       // 使用参数preventFocusChange=true确保不会改变焦点
       editorBloc.add(editor_bloc.LoadMoreScenes(
         fromChapterId: chapterId,
         actId: targetActId,
         direction: 'center',
-        chaptersLimit: 10,
+        chaptersLimit: 5,
         preventFocusChange: true, // 设置为true避免改变焦点
-        loadFromLocalOnly: true  // 新增参数，仅从本地加载，避免不必要的网络请求
+        loadFromLocalOnly: false  // 从服务器加载，确保有最新数据
       ));
-    } else {
-      AppLogger.w('EditorScreenController', '编辑器尚未加载，无法预加载章节场景');
+      
+      // 返回Future，以便调用者等待加载完成
+      return completer.future;
     }
   }
 
