@@ -96,27 +96,31 @@ class _NovelSettingsViewState extends State<NovelSettingsView> {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
     
-    return Container(
-      color: Colors.grey[100], // Add light grey background
-      // Use all available height if needed, or constrain it
-      // height: double.infinity, 
-      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 48),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1100),
-          // Use Column to stack Navigation Bar and Content
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch, // Stretch content horizontally
-            children: [
-              // Navigation Bar
-              _buildNavigationBar(),
-              const SizedBox(height: 24), // Spacing below nav bar
+    return Material(
+      child: Container(
+        color: Colors.grey[100], // Add light grey background
+        // Use all available height if needed, or constrain it
+        // height: double.infinity, 
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 48),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1100),
+            // Use Column to stack Navigation Bar and Content
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch, // Stretch content horizontally
+              children: [
+                // Navigation Bar
+                _buildNavigationBar(),
+                const SizedBox(height: 24), // Spacing below nav bar
 
-              // Content Area based on selected tab
-              Expanded( // Use Expanded to take remaining vertical space
-                child: _buildSelectedTabView(),
-              ),
-            ],
+                // Content Area based on selected tab
+                Expanded( // Use Expanded to take remaining vertical space
+                  child: SingleChildScrollView(
+                    child: _buildSelectedTabView(),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -206,104 +210,18 @@ class _NovelSettingsViewState extends State<NovelSettingsView> {
         // --- Left Column: Metadata Form and Danger Zone --- 
         Expanded(
           flex: 3,
-          child: SingleChildScrollView( // Make the left column scrollable independently
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // --- Metadata Card --- 
-                _buildCard(
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'METADATA',
-                          style: textTheme.labelSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey.shade600,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                        Text(
-                          '这是您小说的元数据，用于整理您的小说集锦。', // Chinese
-                          style: textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
-                        ),
-                        const SizedBox(height: 24),
-                        
-                        _buildLabeledTextField(
-                          controller: _titleController,
-                          label: '小说标题', // Chinese
-                          required: true,
-                        ),
-                        const SizedBox(height: 20),
-                        
-                        _buildLabeledTextField(
-                          controller: _authorController,
-                          label: '作者 / 笔名', // Chinese
-                        ),
-                        const SizedBox(height: 20),
-                        
-                        _buildSeriesInput(), // Contains Chinese text inside
-                        
-                        const SizedBox(height: 32),
-                        
-                        Row(
-                          children: [
-                            ElevatedButton(
-                              onPressed: _hasChanges && !_isSaving 
-                                ? _saveMetadata 
-                                : null,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: theme.colorScheme.primary,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                textStyle: textTheme.labelLarge,
-                              ),
-                              child: _isSaving 
-                                ? const SizedBox(
-                                    width: 18, 
-                                    height: 18, 
-                                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white)
-                                  )
-                                : const Text('保存更改'), // Chinese
-                            ),
-                            const SizedBox(width: 12),
-                            TextButton(
-                              onPressed: widget.onSettingsClose, // This button might navigate away entirely now
-                              child: const Text('取消'), // Chinese
-                              style: TextButton.styleFrom(
-                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                 textStyle: textTheme.labelLarge,
-                              )
-                            ),
-                          ],
-                        ),
-                        
-                        if (_saveError != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: Text(
-                              _saveError!, // Error messages likely still in English from backend
-                              style: TextStyle(
-                                color: theme.colorScheme.error,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24), // Spacing between cards
-
-                // --- Danger Zone Card --- 
-                _buildCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // --- Metadata Card --- 
+              _buildCard(
+                child: Form(
+                  key: _formKey,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'DANGER ZONE',
+                        'METADATA',
                         style: textTheme.labelSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: Colors.grey.shade600,
@@ -311,41 +229,125 @@ class _NovelSettingsViewState extends State<NovelSettingsView> {
                         ),
                       ),
                       Text(
-                        '本节中的某些操作无法撤销，并可能产生意想不到的后果。', // Chinese
+                        '这是您小说的元数据，用于整理您的小说集锦。', // Chinese
                         style: textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 24),
+                      
+                      _buildLabeledTextField(
+                        controller: _titleController,
+                        label: '小说标题', // Chinese
+                        required: true,
                       ),
                       const SizedBox(height: 20),
                       
+                      _buildLabeledTextField(
+                        controller: _authorController,
+                        label: '作者 / 笔名', // Chinese
+                      ),
+                      const SizedBox(height: 20),
+                      
+                      _buildSeriesInput(), // Contains Chinese text inside
+                      
+                      const SizedBox(height: 32),
+                      
                       Row(
                         children: [
-                           TextButton.icon(
-                            onPressed: () => _showArchiveConfirmDialog(context),
-                            icon: const Icon(Icons.archive_outlined, size: 18),
-                            label: const Text('归档小说'), // Chinese
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.grey.shade700,
-                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          ElevatedButton(
+                            onPressed: _hasChanges && !_isSaving 
+                              ? _saveMetadata 
+                              : null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: theme.colorScheme.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              textStyle: textTheme.labelLarge,
                             ),
+                            child: _isSaving 
+                              ? const SizedBox(
+                                  width: 18, 
+                                  height: 18, 
+                                  child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white)
+                                )
+                              : const Text('保存更改'), // Chinese
                           ),
-                          const SizedBox(width: 16),
-                          
-                          TextButton.icon(
-                            onPressed: () => _showDeleteConfirmDialog(context),
-                            icon: Icon(Icons.delete_outline, size: 18, color: theme.colorScheme.error),
-                            label: Text('删除小说', style: TextStyle(color: theme.colorScheme.error)), // Chinese
+                          const SizedBox(width: 12),
+                          TextButton(
+                            onPressed: widget.onSettingsClose, // This button might navigate away entirely now
+                            child: const Text('取消'), // Chinese
                             style: TextButton.styleFrom(
-                               foregroundColor: theme.colorScheme.error,
-                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            ),
+                               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                               textStyle: textTheme.labelLarge,
+                            )
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16), // Bottom padding inside card
+                      
+                      if (_saveError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(
+                            _saveError!, // Error messages likely still in English from backend
+                            style: TextStyle(
+                              color: theme.colorScheme.error,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 24), // Spacing between cards
+
+              // --- Danger Zone Card --- 
+              _buildCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'DANGER ZONE',
+                      style: textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade600,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    Text(
+                      '本节中的某些操作无法撤销，并可能产生意想不到的后果。', // Chinese
+                      style: textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    Row(
+                      children: [
+                         TextButton.icon(
+                          onPressed: () => _showArchiveConfirmDialog(context),
+                          icon: const Icon(Icons.archive_outlined, size: 18),
+                          label: const Text('归档小说'), // Chinese
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.grey.shade700,
+                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        
+                        TextButton.icon(
+                          onPressed: () => _showDeleteConfirmDialog(context),
+                          icon: Icon(Icons.delete_outline, size: 18, color: theme.colorScheme.error),
+                          label: Text('删除小说', style: TextStyle(color: theme.colorScheme.error)), // Chinese
+                          style: TextButton.styleFrom(
+                             foregroundColor: theme.colorScheme.error,
+                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16), // Bottom padding inside card
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         

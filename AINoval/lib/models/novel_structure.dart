@@ -24,50 +24,123 @@ class Novel {
     try {
       // --- 这是关键部分 ---
       List<Act> parsedActs = [];
-      if (json['acts'] != null && json['acts'] is List) {
-        // 检查 'acts' 是否存在且是一个列表
+      
+      // 处理acts数据 - 优先检查structure.acts路径
+      if (json.containsKey('structure') && json['structure'] is Map) {
+        final structure = json['structure'] as Map<String, dynamic>;
+        
+        if (structure.containsKey('acts') && structure['acts'] is List) {
+          AppLogger.v('NovelModel',
+              'Found "structure.acts" list with ${(structure['acts'] as List).length} items.');
+              
+          parsedActs = (structure['acts'] as List)
+              .map((actJson) {
+                if (actJson is Map<String, dynamic>) {
+                  // 对列表中的每个元素调用 Act.fromJson
+                  return Act.fromJson(actJson);
+                } else {
+                  // 处理无效数据项
+                  AppLogger.w('NovelModel',
+                      'Invalid item in "structure.acts" list: $actJson');
+                  return null; // 返回null让whereType过滤掉
+                }
+              })
+              .whereType<Act>() // 过滤掉可能的 null 值
+              .toList();
+              
+          AppLogger.v('NovelModel',
+              'Successfully parsed ${parsedActs.length} acts from structure.acts.');
+        } else {
+          AppLogger.w('NovelModel',
+              '"structure.acts" field is missing, null, or not a list in JSON for Novel ${json['id']}');
+        }
+      }
+      // 如果在structure中没有找到有效的acts，尝试直接从json的acts字段读取
+      else if (json.containsKey('acts') && json['acts'] is List) {
         AppLogger.v('NovelModel',
-            'Found "acts" list with ${json['acts'].length} items.'); // 记录找到的 acts 数量
-        parsedActs = (json['acts'] as List<dynamic>)
+            'Found direct "acts" list with ${(json['acts'] as List).length} items.');
+            
+        parsedActs = (json['acts'] as List)
             .map((actJson) {
               if (actJson is Map<String, dynamic>) {
-                // 对列表中的每个元素调用 Act.fromJson
                 return Act.fromJson(actJson);
               } else {
-                // 处理无效数据项
                 AppLogger.w('NovelModel',
-                    'Invalid item found in "acts" list: $actJson');
-                return null; // 或者抛出错误，或者返回一个默认的 Act
+                    'Invalid item in direct "acts" list: $actJson');
+                return null;
               }
             })
-            .whereType<Act>() // 过滤掉可能的 null 值
+            .whereType<Act>()
             .toList();
+            
         AppLogger.v('NovelModel',
-            'Successfully parsed ${parsedActs.length} acts.'); // 记录成功解析的数量
+            'Successfully parsed ${parsedActs.length} acts from direct acts field.');
       } else {
         AppLogger.w('NovelModel',
-            '"acts" field is missing, null, or not a list in JSON for Novel ${json['id']}'); // 记录 acts 字段问题
+            'No valid acts field found in JSON for Novel ${json['id']}');
       }
       // --- 关键部分结束 ---
 
       // 解析元数据
       final metadata = json['metadata'] as Map<String, dynamic>? ?? {};
-      final wordCount = metadata['wordCount'] as int? ?? 0;
-      final readTime = metadata['readTime'] as int? ?? 0;
-      final version = metadata['version'] as int? ?? 1;
-      final contributors = (metadata['contributors'] as List?)?.cast<String>() ?? <String>[];
+      final wordCount = metadata['wordCount'] is int ? metadata['wordCount'] as int : 0;
+      final readTime = metadata['readTime'] is int ? metadata['readTime'] as int : 0;
+      final version = metadata['version'] is int ? metadata['version'] as int : 1;
+      
+      // 处理contributors列表
+      List<String> contributors = [];
+      if (metadata.containsKey('contributors') && metadata['contributors'] is List) {
+        // 尝试转换每个元素为String
+        for (var item in metadata['contributors'] as List) {
+          if (item is String) {
+            contributors.add(item);
+          }
+        }
+      }
+      
+      // 解析日期
+      DateTime createdAt;
+      DateTime updatedAt;
+      
+      try {
+        createdAt = json.containsKey('createdAt') && json['createdAt'] is String
+            ? DateTime.parse(json['createdAt'] as String)
+            : DateTime.now();
+      } catch (e) {
+        AppLogger.w('NovelModel', '解析createdAt失败，使用当前时间', e);
+        createdAt = DateTime.now();
+      }
+      
+      try {
+        updatedAt = json.containsKey('updatedAt') && json['updatedAt'] is String
+            ? DateTime.parse(json['updatedAt'] as String)
+            : DateTime.now();
+      } catch (e) {
+        AppLogger.w('NovelModel', '解析updatedAt失败，使用当前时间', e);
+        updatedAt = DateTime.now();
+      }
 
+      // 处理封面URL字段
+      String coverUrl = '';
+      if (json.containsKey('coverUrl') && json['coverUrl'] is String) {
+        coverUrl = json['coverUrl'] as String;
+      } else if (json.containsKey('coverImage') && json['coverImage'] is String) {
+        // 兼容后端可能使用coverImage字段
+        coverUrl = json['coverImage'] as String;
+      }
+      
+      // 创建Novel对象
       return Novel(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        coverUrl: json['coverUrl'] as String? ?? '', // 处理可能的 null
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        updatedAt: DateTime.parse(json['updatedAt'] as String),
-        acts: parsedActs, // 使用上面解析得到的列表
-        lastEditedChapterId: json['lastEditedChapterId'] as String?, // 如果有这个字段
+        id: json['id'] as String? ?? 'unknown_${DateTime.now().millisecondsSinceEpoch}',
+        title: json['title'] as String? ?? '无标题',
+        coverUrl: coverUrl,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        acts: parsedActs,
+        lastEditedChapterId: json['lastEditedChapterId'] as String?,
         author: json['author'] != null
-            ? Author.fromJson(json['author'])
-            : null, // 如果有 Author 字段
+            ? Author.fromJson(json['author'] as Map<String, dynamic>)
+            : null,
         wordCount: wordCount,
         readTime: readTime,
         version: version,
@@ -76,10 +149,16 @@ class Novel {
     } catch (e, stackTrace) {
       AppLogger.e('NovelModel', 'Error parsing Novel from JSON: ${json['id']}',
           e, stackTrace);
-      // 可以抛出错误，或者返回一个带有默认值的对象，取决于你的错误处理策略
-      rethrow; // 重新抛出错误，让上层知道解析失败
-      // 或者返回一个默认/错误状态的 Novel 对象
-      // return Novel(id: json['id'] ?? 'error', title: 'Error Parsing', acts: [], /* ... 其他默认值 ... */);
+      // 返回一个基本的空Novel对象，避免应用崩溃
+      return Novel(
+        id: json['id'] as String? ?? 'error_${DateTime.now().millisecondsSinceEpoch}',
+        title: '解析错误 - ${json['title'] ?? '无标题'}',
+        coverUrl: '',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        acts: [],
+        wordCount: 0,
+      );
     }
   }
   final String id;

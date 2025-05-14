@@ -171,7 +171,7 @@ class _CustomDropdownState extends State<CustomDropdown> {
 class DropdownItem extends StatelessWidget {
   final IconData icon;
   final String label;
-  final VoidCallback? onTap;
+  final Future<void> Function()? onTap;
   final bool hasSubmenu;
   final bool disabled;
   final bool isDarkTheme;
@@ -191,17 +191,14 @@ class DropdownItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: disabled ? null : () {
-        // 查找并关闭最近的OverlayEntry
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          // 延迟关闭overlay，确保点击事件先处理完
-          if (Navigator.canPop(context)) {
-            Navigator.of(context).pop();
-          }
-        });
-        
-        // 执行点击回调
-        if (onTap != null) onTap!();
+      onTap: disabled ? null : () async {
+        if (onTap != null) {
+          await onTap!();
+        }
+
+        if (context.mounted && Navigator.canPop(context)) {
+          Navigator.of(context).pop();
+        }
       },
       child: Opacity(
         opacity: disabled ? 0.5 : 1.0,

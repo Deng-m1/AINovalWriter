@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 生成场景摘要任务参数
+ * 生成场景摘要任务的参数DTO
  */
 @Data
 @Builder
@@ -20,12 +20,23 @@ public class GenerateSummaryParameters {
     private String sceneId;
     
     /**
-     * AI配置ID
+     * 小说ID
      */
-    private String aiConfigId;
+    private String novelId;
     
     /**
-     * 预期版本号，用于乐观锁检查
+     * 用户自定义提示（可选）
      */
-    private int expectedVersion;
+    private String customPrompt;
+    
+    /**
+     * 最大摘要长度（可选）
+     */
+    private Integer maxLength;
+    
+    /**
+     * 是否使用AI模型增强（可选）
+     */
+    @Builder.Default
+    private Boolean useAIEnhancement = true;
 } 

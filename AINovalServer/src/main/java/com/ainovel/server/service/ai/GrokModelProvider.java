@@ -16,6 +16,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
 import com.ainovel.server.domain.model.ModelInfo;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -25,6 +26,7 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -259,7 +261,7 @@ public class GrokModelProvider extends AbstractAIModelProvider {
                                     log.info("Grok: 收到首个响应, 耗时: {}ms, 模型: {}, 内容: {}",
                                             firstChunkTime.get() - requestStartTime, modelName, chunk);
                                 } else {
-                                    log.debug("Grok: 收到流式响应块: {}", chunk);
+                                    //log.debug("Grok: 收到流式响应块: {}", chunk);
                                 }
                                 
                                 // 解析流式响应
@@ -278,10 +280,10 @@ public class GrokModelProvider extends AbstractAIModelProvider {
                                     if (choice.getDelta() != null) {
                                         String content = choice.getDelta().getContent();
                                         if (content != null) {
-                                            log.debug("解析到内容片段: {}", content);
+                                            //log.debug("解析到内容片段: {}", content);
                                             sink.tryEmitNext(content);
                                         } else {
-                                            log.debug("解析到空内容片段, delta: {}", choice.getDelta());
+                                            //log.debug("解析到空内容片段, delta: {}", choice.getDelta());
                                         }
                                     } else {
                                         log.debug("选择项没有delta字段: {}", choice);
@@ -871,6 +873,8 @@ public class GrokModelProvider extends AbstractAIModelProvider {
      * Grok API响应结构
      */
     @Data
+    @NoArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private static class GrokResponse {
         private String id;
         private String object;
@@ -882,6 +886,8 @@ public class GrokModelProvider extends AbstractAIModelProvider {
         private String systemFingerprint;
         
         @Data
+        @NoArgsConstructor
+        @JsonIgnoreProperties(ignoreUnknown = true)
         public static class Choice {
             private int index;
             private Message message;
@@ -899,6 +905,8 @@ public class GrokModelProvider extends AbstractAIModelProvider {
         }
         
         @Data
+        @NoArgsConstructor
+        @JsonIgnoreProperties(ignoreUnknown = true)
         public static class Message {
             private String role;
             private String content;
@@ -910,6 +918,8 @@ public class GrokModelProvider extends AbstractAIModelProvider {
         }
         
         @Data
+        @NoArgsConstructor
+        @JsonIgnoreProperties(ignoreUnknown = true)
         public static class Delta {
             private String role;
             private String content;
@@ -921,6 +931,8 @@ public class GrokModelProvider extends AbstractAIModelProvider {
         }
         
         @Data
+        @NoArgsConstructor
+        @JsonIgnoreProperties(ignoreUnknown = true)
         public static class Usage {
             @JsonProperty("prompt_tokens")
             private int promptTokens;

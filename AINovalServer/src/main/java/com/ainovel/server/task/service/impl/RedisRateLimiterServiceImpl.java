@@ -9,7 +9,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 // import org.springframework.data.redis.core.ReactiveRedisTemplate;
 // import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
-// import reactor.core.publisher.Mono;
+import reactor.core.publisher.Mono;
 
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
@@ -80,86 +80,64 @@ public class RedisRateLimiterServiceImpl implements RateLimiterService {
     }
     
     @Override
+    public Mono<Boolean> acquirePermit(String userId, String resource) {
+        logger.warn("Redis限流服务被禁用，默认返回允许请求。请添加Redis相关依赖并解注释相关代码。");
+        return Mono.just(true);
+    }
+
+    @Override
+    public Mono<Void> waitForPermit(String userId, String resource, Duration timeout) {
+        logger.warn("Redis限流服务被禁用，默认立即返回。请添加Redis相关依赖并解注释相关代码。");
+        return Mono.empty();
+    }
+
+    @Override
+    public Mono<Void> releasePermit(String userId, String resource) {
+        logger.warn("Redis限流服务被禁用，无需释放。请添加Redis相关依赖并解注释相关代码。");
+        return Mono.empty();
+    }
+
+    @Override
+    public Mono<Integer> getAvailablePermits(String resource) {
+        logger.warn("Redis限流服务被禁用，返回配置的突发容量作为估计值");
+        return Mono.just(configuration.getConfigFor(resource).getBurstCapacity());
+    }
+
+    @Override
+    public Mono<Void> resetLimiter(String resource) {
+        logger.warn("Redis限流服务被禁用，无法重置限流器。请添加Redis相关依赖并解注释相关代码。");
+        return Mono.empty();
+    }
+
+    // 以下是旧接口方法，保留以兼容现有代码
+    // 这些方法在将来会被移除
+    
+    /**
+     * @deprecated 使用 {@link #acquirePermit(String, String)} 替代
+     */
+    @Deprecated
     public boolean acquirePermit(String providerOrModelKey) {
         RateLimiterConfiguration.RateConfig config = configuration.getConfigFor(providerOrModelKey);
         return acquirePermit(providerOrModelKey, config.getDefaultTimeoutMillis());
     }
 
-    @Override
+    /**
+     * @deprecated 使用 {@link #acquirePermit(String, String)} 替代
+     */
+    @Deprecated
     public boolean acquirePermit(String providerOrModelKey, long timeoutMillis) {
         logger.warn("Redis限流服务被禁用，默认返回允许请求。请添加Redis相关依赖并解注释相关代码。");
         return true;
-        
-        /*
-        RateLimiterConfiguration.RateConfig config = configuration.getConfigFor(providerOrModelKey);
-        double rate = config.getRate();
-        int capacity = config.getBurstCapacity();
-        
-        String tokenKey = "rate_limiter:" + providerOrModelKey + ":tokens";
-        String timestampKey = "rate_limiter:" + providerOrModelKey + ":timestamp";
-        
-        List<String> keys = Arrays.asList(tokenKey, timestampKey);
-        Instant now = Instant.now();
-        List<String> args = Arrays.asList(
-                Double.toString(rate),
-                Integer.toString(capacity),
-                Long.toString(now.getEpochSecond()),
-                "1"); // 请求1个令牌
-        
-        try {
-            List<Long> result = redisTemplate.execute(redisRateLimiterScript, keys, args)
-                    .timeout(Duration.ofMillis(timeoutMillis))
-                    .block();
-            
-            if (result == null || result.size() < 2) {
-                logger.error("Redis限流器脚本执行返回异常结果: {}", result);
-                return false;
-            }
-            
-            Long newTokens = result.get(0);  // 剩余令牌数
-            Long allowed = result.get(1);    // 0或1，表示是否允许
-            
-            boolean acquired = allowed == 1L;
-            
-            if (!acquired) {
-                logger.warn("获取{}的限流许可失败，当前剩余令牌: {}", providerOrModelKey, newTokens);
-            }
-            
-            return acquired;
-        } catch (Exception e) {
-            if (e instanceof TimeoutException) {
-                logger.warn("Redis限流器执行超时: {}", e.getMessage());
-            } else {
-                logger.error("执行Redis限流器时发生异常", e);
-            }
-            return false;
-        }
-        */
     }
 
-    @Override
-    public double getAvailablePermits(String providerOrModelKey) {
+    /**
+     * @deprecated 使用 {@link #getAvailablePermits(String)} 替代 
+     * 注意：该方法返回的是double类型，新方法返回Mono<Integer>
+     */
+    @Deprecated
+    public double getAvailablePermitsDeprecated(String providerOrModelKey) {
         logger.warn("Redis限流服务被禁用，返回配置的突发容量作为估计值");
         return configuration.getConfigFor(providerOrModelKey).getBurstCapacity();
-        
-        /*
-        String tokenKey = "rate_limiter:" + providerOrModelKey + ":tokens";
-        
-        try {
-            String value = redisTemplate.opsForValue().get(tokenKey)
-                    .timeout(Duration.ofMillis(500))
-                    .block();
-            
-            if (value != null) {
-                return Double.parseDouble(value);
-            }
-        } catch (Exception e) {
-            logger.error("获取Redis中的可用许可数失败", e);
-        }
-        
-        // 如果无法从Redis获取，则返回配置的突发容量作为估计值
-        return configuration.getConfigFor(providerOrModelKey).getBurstCapacity();
-        */
     }
 
     @Override

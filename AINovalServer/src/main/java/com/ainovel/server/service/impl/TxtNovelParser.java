@@ -23,10 +23,10 @@ public class TxtNovelParser implements NovelParser {
 
     /**
      * 章节标题模式 匹配： 1. 第[数字/中文数字][章节部回] 标题 - 中文模式 2. Chapter [数字] 标题 - 英文模式 3.
-     * 罗马数字章节 4. 增加了更多常见的分章格式
+     * 罗马数字章节 4. 增加了更多常见的分章格式，包括"正文/番外"系列格式
      */
     private static final Pattern CHAPTER_TITLE_PATTERN = Pattern.compile(
-            "^\\s*(?:(?:第[一二三四五六七八九十百千万零〇\\d]+[章卷节部回集])|(?:[\\(（【]?\\s*[一二三四五六七八九十百千万零〇\\d]+\\s*[\\)）】]?[\\s.、：:])|(?:Chapter\\s+\\d+)|(?:[IVXLCDM]+))[\\s.、.:：]*(.*)$",
+            "^\\s*(?:(?:(?:正文|番外)(?:\\s+)?(?:第[一二三四五六七八九十百千万零〇\\d]+章)?)|(?:序章|楔子|尾声|后记|(?:第[一二三四五六七八九十百千万零〇\\d]+[章卷节部回集]))|(?:[\\(（【]?\\s*[一二三四五六七八九十百千万零〇\\d]+\\s*[\\)）】]?[\\s.、：:])|(?:Chapter\\s+\\d+)|(?:[IVXLCDM]+))[\\s.、.:：]*(.*)$",
             Pattern.CASE_INSENSITIVE
     );
 
@@ -96,10 +96,12 @@ public class TxtNovelParser implements NovelParser {
                         titleText = titleText.trim();
                     }
                     currentChapterTitle.set(trimmedLine);
+                    log.debug("通过正则表达式识别到章节标题: {}", trimmedLine);
                 } else {
                     // 使用备用识别的标题
                     titleText = trimmedLine;
                     currentChapterTitle.set(trimmedLine);
+                    log.debug("通过备用方式识别到章节标题: {}", trimmedLine);
                 }
 
                 chapterCount.incrementAndGet();

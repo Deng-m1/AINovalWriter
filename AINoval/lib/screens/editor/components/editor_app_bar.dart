@@ -19,6 +19,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
     this.onWritePressed, // 新增可选参数
     this.onAIGenerationPressed,
     this.onAISummaryPressed,
+    this.onAutoContinueWritingPressed, // 新增自动续写回调
     this.onNextOutlinePressed,
     this.isAIGenerationActive = false,
     this.isNextOutlineActive = false,
@@ -37,6 +38,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
   final VoidCallback? onWritePressed;
   final VoidCallback? onAIGenerationPressed;
   final VoidCallback? onAISummaryPressed;
+  final VoidCallback? onAutoContinueWritingPressed; // 新增自动续写回调
   final VoidCallback? onNextOutlinePressed;
   final bool isAIGenerationActive;
   final bool isNextOutlineActive;
@@ -110,6 +112,8 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
                       onAIGenerationPressed?.call();
                     } else if (value == 'summary') {
                       onAISummaryPressed?.call();
+                    } else if (value == 'continue-writing') {
+                      onAutoContinueWritingPressed?.call();
                     }
                   },
                   itemBuilder: (context) => [
@@ -130,6 +134,16 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
                           Icon(Icons.summarize),
                           SizedBox(width: 8),
                           Text('AI生成摘要'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'continue-writing',
+                      child: Row(
+                        children: [
+                          Icon(Icons.auto_stories),
+                          SizedBox(width: 8),
+                          Text('自动续写'),
                         ],
                       ),
                     ),

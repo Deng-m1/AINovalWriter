@@ -70,6 +70,18 @@ class ApiClient {
   /// 基础POST请求方法
   Future<dynamic> post(String path, {dynamic data, Options? options}) async {
     try {
+      // 添加日志记录，显示请求正文
+      AppLogger.d('ApiClient', '发送POST请求到 $path');
+      
+      if (data != null) {
+        try {
+          final String jsonData = jsonEncode(data);
+          AppLogger.d('ApiClient', '请求正文: $jsonData');
+        } catch (e) {
+          AppLogger.d('ApiClient', '请求正文(无法序列化): $data');
+        }
+      }
+      
       final response = await _dio.post(path, data: data, options: options);
       return response.data;
     } on DioException catch (e) {
@@ -687,15 +699,22 @@ class ApiClient {
   /// - up: 加载fromChapterId之前的章节
   /// - down: 加载fromChapterId之后的章节
   /// - center: 只加载fromChapterId章节或前后各加载几章
-  Future<dynamic> loadMoreScenes(String novelId, String fromChapterId, String direction, {int chaptersLimit = 5}) async {
+  Future<dynamic> loadMoreScenes(String novelId, String? actId, String fromChapterId, String direction, {int chaptersLimit = 5}) async {
     try {
-      AppLogger.i('ApiClient', '加载更多场景: $novelId, 从章节: $fromChapterId, 方向: $direction, 限制: $chaptersLimit');
-      final response = await post('/novels/load-more-scenes', data: {
+      AppLogger.i('ApiClient', '加载更多场景: novelId=$novelId, actId=$actId, fromChapterId=$fromChapterId, direction=$direction, limit=$chaptersLimit');
+      final data = {
         'novelId': novelId,
         'fromChapterId': fromChapterId,
         'direction': direction,
         'chaptersLimit': chaptersLimit
-      });
+      };
+
+      // 如果actId不为空，添加到请求参数
+      if (actId != null && actId.isNotEmpty) {
+        data['actId'] = actId;
+      }
+
+      final response = await post('/novels/load-more-scenes', data: data);
       return response;
     } catch (e) {
       AppLogger.e('ApiClient', '加载更多场景失败', e);
@@ -1584,5 +1603,185 @@ class ApiClient {
       AppLogger.e('ApiClient', '归档小说失败: $novelId', e);
       throw ApiException(-1, '归档小说失败: ${e.toString()}');
     }
+  }
+
+  /// 删除场景
+  Future<Map<String, dynamic>?> deleteScene(
+    String novelId,
+    String actId,
+    String chapterId,
+    String sceneId,
+  ) async {
+    try {
+      final data = {
+        'novelId': novelId,
+        'actId': actId,
+        'chapterId': chapterId,
+        'sceneId': sceneId,
+      };
+      
+      final response = await _dio.post(
+        '/novels/delete-scene',
+        data: data,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '删除场景失败: $novelId', e);
+      throw ApiException(-1, '删除场景失败: ${e.toString()}');
+    }
+  }
+
+  /// 删除章节
+  Future<Map<String, dynamic>?> deleteChapter(
+    String novelId,
+    String actId,
+    String chapterId,
+  ) async {
+    try {
+      final data = {
+        'novelId': novelId,
+        'actId': actId,
+        'chapterId': chapterId,
+      };
+      
+      final response = await _dio.post(
+        '/novels/delete-chapter',
+        data: data,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '删除章节失败: $novelId, $chapterId', e);
+      throw ApiException(-1, '删除章节失败: ${e.toString()}');
+    }
+  }
+
+  /// 更新小说最后编辑的章节ID
+  Future<void> updateLastEditedChapter(String novelId, String chapterId) async {
+    final data = {
+      'novelId': novelId,
+      'chapterId': chapterId,
+    };
+    
+    await post('/novels/update-last-edited-chapter', data: data);
+  }
+
+  /// 批量更新场景内容
+  Future<void> updateScenesBatch(String novelId, List<Map<String, dynamic>> scenes) async {
+    final data = {
+      'novelId': novelId,
+      'scenes': scenes,
+    };
+    
+    await post('/scenes/update-batch', data: data);
+  }
+
+  /// 批量更新小说字数统计
+  Future<void> updateNovelWordCounts(String novelId, Map<String, int> sceneWordCounts) async {
+    final data = {
+      'novelId': novelId,
+      'sceneWordCounts': sceneWordCounts,
+    };
+    
+    await post('/novels/update-word-counts', data: data);
+  }
+
+  /// 更新小说结构（不包含场景内容）
+  Future<void> updateNovelStructure(Map<String, dynamic> novelStructure) async {
+    await post('/novels/update-structure', data: novelStructure);
+  }
+
+  /// 细粒度添加卷 - 只提供必要信息
+  Future<Map<String, dynamic>> addActFine(String novelId, String title, {String? description}) async {
+    final data = {
+      'novelId': novelId,
+      'title': title,
+    };
+    
+    if (description != null) {
+      data['description'] = description;
+    }
+    
+    return await post('/novels/add-act-fine', data: data);
+  }
+  
+  /// 细粒度添加章节 - 只提供必要信息
+  Future<Map<String, dynamic>> addChapterFine(String novelId, String actId, String title, {String? description}) async {
+    final data = {
+      'novelId': novelId,
+      'actId': actId,
+      'title': title,
+    };
+    
+    if (description != null) {
+      data['description'] = description;
+    }
+    
+    return await post('/novels/add-chapter-fine', data: data);
+  }
+  
+  /// 细粒度添加场景 - 只提供必要信息
+  Future<Map<String, dynamic>> addSceneFine(String novelId, String chapterId, String title, 
+      {String? summary, int? position}) async {
+    final data = {
+      'novelId': novelId,
+      'chapterId': chapterId,
+      'title': title,
+    };
+    
+    if (summary != null) {
+      data['summary'] = summary;
+    }
+    
+    if (position != null) {
+      data['position'] = position.toString();
+    }
+    
+    return await post('/scenes/add-scene-fine', data: data);
+  }
+  
+  /// 细粒度批量添加场景 - 一次添加多个场景到同一章节
+  Future<List<Map<String, dynamic>>> addScenesBatchFine(String novelId, String chapterId, 
+      List<Map<String, dynamic>> scenes) async {
+    final data = {
+      'novelId': novelId,
+      'chapterId': chapterId,
+      'scenes': scenes,
+    };
+    
+    return await post('/novels/upsert-chapter-scenes-batch', data: data);
+  }
+  
+  /// 细粒度删除卷 - 只提供ID
+  Future<bool> deleteActFine(String novelId, String actId) async {
+    final data = {
+      'novelId': novelId,
+      'actId': actId,
+    };
+    
+    return await post('/novels/delete-act-fine', data: data);
+  }
+  
+  /// 细粒度删除章节 - 只提供ID
+  Future<bool> deleteChapterFine(String novelId, String actId, String chapterId) async {
+    final data = {
+      'novelId': novelId,
+      'actId': actId,
+      'chapterId': chapterId,
+    };
+    
+    return await post('/novels/delete-chapter-fine', data: data);
+  }
+  
+  /// 细粒度删除场景 - 只提供ID
+  Future<bool> deleteSceneFine(String sceneId) async {
+    final data = {
+      'sceneId': sceneId,
+    };
+    
+    return await post('/scenes/delete-scene-fine', data: data);
   }
 }

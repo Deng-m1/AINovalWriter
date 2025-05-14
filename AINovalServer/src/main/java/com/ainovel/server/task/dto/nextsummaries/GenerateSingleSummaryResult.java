@@ -15,9 +15,14 @@ import lombok.NoArgsConstructor;
 public class GenerateSingleSummaryResult {
     
     /**
+     * 小说ID
+     */
+    private String novelId;
+    
+    /**
      * 新创建的章节ID
      */
-    private String newChapterId;
+    private String chapterId;
     
     /**
      * 生成的摘要内容
@@ -28,6 +33,11 @@ public class GenerateSingleSummaryResult {
      * 章节序号（在当前任务中的索引，从0开始）
      */
     private int chapterIndex;
+    
+    /**
+     * 章节全局序号
+     */
+    private int chapterOrder;
     
     /**
      * 章节标题

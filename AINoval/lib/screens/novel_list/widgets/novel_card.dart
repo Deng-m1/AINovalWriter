@@ -1,6 +1,14 @@
 import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/utils/date_formatter.dart';
 import 'package:flutter/material.dart';
+import 'package:ainoval/screens/editor/widgets/novel_settings_view.dart';
+import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
+import 'package:ainoval/services/api_service/repositories/storage_repository.dart';
+import 'package:ainoval/services/api_service/repositories/impl/aliyun_oss_storage_repository.dart';
+import 'package:ainoval/blocs/novel_list/novel_list_bloc.dart';
+import 'package:ainoval/utils/logger.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:provider/provider.dart';
 
 class NovelCard extends StatefulWidget {
   const NovelCard({
@@ -271,11 +279,11 @@ class NovelCoverWidget extends StatelessWidget {
             ),
           ),
 
-          // 右上角显示字数指示
+          // 左上角显示字数指示
           if (novel.wordCount > 0)
             Positioned(
               top: 8,
-              right: 8,
+              left: 8,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
@@ -292,9 +300,244 @@ class NovelCoverWidget extends StatelessWidget {
                 ),
               ),
             ),
+            
+          // 右上角添加三点水按钮
+          Positioned(
+            top: 8,
+            right: 8,
+            child: PopupMenuButton<String>(
+              icon: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.more_vert,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+              tooltip: '小说操作',
+              padding: EdgeInsets.zero,
+              splashRadius: 20,
+              elevation: 4,
+              onSelected: (String result) => _handleMenuAction(context, result),
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                const PopupMenuItem<String>(
+                  value: 'metadata',
+                  child: ListTile(
+                    leading: Icon(Icons.info_outline, size: 18),
+                    title: Text('查看元数据', style: TextStyle(fontSize: 14)),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                    dense: true,
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'export',
+                  child: ListTile(
+                    leading: Icon(Icons.file_download_outlined, size: 18),
+                    title: Text('导出小说', style: TextStyle(fontSize: 14)),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                    dense: true,
+                  ),
+                ),
+                const PopupMenuDivider(),
+                PopupMenuItem<String>(
+                  value: 'delete',
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.delete_outline,
+                      size: 18,
+                      color: Colors.red.shade700,
+                    ),
+                    title: Text(
+                      '删除小说',
+                      style: TextStyle(fontSize: 14, color: Colors.red.shade700),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    dense: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
+  }
+  
+  // 处理菜单选项点击
+  void _handleMenuAction(BuildContext context, String action) async {
+    final theme = Theme.of(context);
+    
+    switch (action) {
+      case 'metadata':
+        _navigateToMetadataSettings(context);
+        break;
+      case 'export':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('导出功能将在下一个版本中实现')),
+        );
+        break;
+      case 'delete':
+        _showDeleteConfirmDialog(context);
+        break;
+    }
+  }
+  
+  // 跳转到元数据设置页面
+  void _navigateToMetadataSettings(BuildContext context) {
+    // 获取必要的repository实例
+    final editorRepository = context.read<EditorRepository>();
+    final storageRepository = context.read<StorageRepository>();
+    
+    // 跳转到编辑器界面并打开设置页面
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MultiRepositoryProvider(
+          providers: [
+            RepositoryProvider<EditorRepository>.value(value: editorRepository),
+            RepositoryProvider<StorageRepository>.value(value: storageRepository),
+          ],
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text(novel.title),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+            body: NovelSettingsView(
+              novel: novel,
+              onSettingsClose: () => Navigator.pop(context),
+            ),
+          ),
+        ),
+      ),
+    ).then((value) {
+      // 返回后刷新列表
+      context.read<NovelListBloc>().add(LoadNovels());
+    });
+  }
+  
+  // 显示删除确认对话框
+  void _showDeleteConfirmDialog(BuildContext context) async {
+    final theme = Theme.of(context);
+    final novelTitle = novel.title;
+    final TextEditingController confirmController = TextEditingController();
+    bool isConfirmed = false;
+    
+    final confirmedResult = await showDialog<bool?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+         return StatefulBuilder(
+          builder: (context, setDialogState) {
+             return AlertDialog(
+               title: Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error),
+                  const SizedBox(width: 8),
+                  const Text('永久删除'), 
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: ListBody(
+                  children: <Widget>[
+                     const Text(
+                      '警告：此操作无法撤销!',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      '删除这本小说将永久移除其所有内容、章节和设置。这些数据将无法恢复。',
+                    ),
+                    const SizedBox(height: 16),
+                    RichText(
+                       text: TextSpan(
+                         style: DefaultTextStyle.of(context).style,
+                         children: <TextSpan>[
+                           const TextSpan(text: '请输入小说标题 '),
+                           TextSpan(text: '"$novelTitle"', style: const TextStyle(fontWeight: FontWeight.bold)),
+                           const TextSpan(text: ' 以确认删除:'),
+                         ],
+                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: confirmController,
+                      decoration: InputDecoration(
+                        border: const OutlineInputBorder(),
+                        hintText: '输入 "$novelTitle"',
+                        errorText: !isConfirmed && confirmController.text.isNotEmpty && confirmController.text != novelTitle 
+                          ? '标题不匹配'
+                          : null,
+                      ),
+                      autofocus: true,
+                       onChanged: (value) {
+                         setDialogState(() {
+                           isConfirmed = value == novelTitle;
+                         });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('取消'),
+                ),
+                ElevatedButton(
+                  onPressed: isConfirmed ? () {
+                     Navigator.pop(context, true);
+                  } : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error,
+                    foregroundColor: Colors.white,
+                     disabledBackgroundColor: Colors.grey.shade300,
+                  ),
+                  child: const Text('确认删除'),
+                ),
+              ],
+            );
+          }
+        );
+      }
+    );
+    
+    confirmController.dispose();
+    if (confirmedResult == true) {
+      _deleteNovel(context);
+    }
+  }
+  
+  // 删除小说
+  Future<void> _deleteNovel(BuildContext context) async {
+    try {
+      final repository = context.read<EditorRepository>();
+      await repository.deleteNovel(novelId: novel.id);
+      
+      AppLogger.i('NovelCard', '删除小说成功: ${novel.id}');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('小说已永久删除。')),
+      );
+      
+      // 刷新小说列表
+      context.read<NovelListBloc>().add(LoadNovels());
+    } catch (e, stackTrace) {
+      AppLogger.e('NovelCard', '删除小说失败', e, stackTrace);
+      final errorMessage = e is Exception ? e.toString().replaceFirst('Exception: ', '') : e.toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('删除失败: $errorMessage'), 
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
   }
 }
 
@@ -512,25 +755,23 @@ class NovelActionsMenu extends StatelessWidget {
       ),
       tooltip: '更多操作',
       onSelected: (String result) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('列表项操作 "$result" 待实现')),
-        );
+        _handleMenuAction(context, result);
       },
       itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
         const PopupMenuItem<String>(
-          value: 'rename',
+          value: 'metadata',
           child: ListTile(
-            leading: Icon(Icons.edit, size: 18),
-            title: Text('重命名', style: TextStyle(fontSize: 14)),
+            leading: Icon(Icons.info_outline, size: 18),
+            title: Text('查看元数据', style: TextStyle(fontSize: 14)),
             contentPadding: EdgeInsets.symmetric(horizontal: 8),
             dense: true,
           ),
         ),
         const PopupMenuItem<String>(
-          value: 'move',
+          value: 'export',
           child: ListTile(
-            leading: Icon(Icons.drive_file_move_outline, size: 18),
-            title: Text('移动到系列', style: TextStyle(fontSize: 14)),
+            leading: Icon(Icons.file_download_outlined, size: 18),
+            title: Text('导出小说', style: TextStyle(fontSize: 14)),
             contentPadding: EdgeInsets.symmetric(horizontal: 8),
             dense: true,
           ),
@@ -545,7 +786,7 @@ class NovelActionsMenu extends StatelessWidget {
               color: Colors.red.shade700,
             ),
             title: Text(
-              '删除',
+              '删除小说',
               style: TextStyle(fontSize: 14, color: Colors.red.shade700),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
@@ -555,6 +796,179 @@ class NovelActionsMenu extends StatelessWidget {
       ],
       splashRadius: 18,
     );
+  }
+  
+  // 处理菜单选项点击
+  void _handleMenuAction(BuildContext context, String action) async {
+    final theme = Theme.of(context);
+    
+    switch (action) {
+      case 'metadata':
+        _navigateToMetadataSettings(context);
+        break;
+      case 'export':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('导出功能将在下一个版本中实现')),
+        );
+        break;
+      case 'delete':
+        _showDeleteConfirmDialog(context);
+        break;
+    }
+  }
+  
+  // 跳转到元数据设置页面
+  void _navigateToMetadataSettings(BuildContext context) {
+    // 获取必要的repository实例
+    final editorRepository = context.read<EditorRepository>();
+    final storageRepository = context.read<StorageRepository>();
+    
+    // 跳转到编辑器界面并打开设置页面
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MultiRepositoryProvider(
+          providers: [
+            RepositoryProvider<EditorRepository>.value(value: editorRepository),
+            RepositoryProvider<StorageRepository>.value(value: storageRepository),
+          ],
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text(novel.title),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+            body: NovelSettingsView(
+              novel: novel,
+              onSettingsClose: () => Navigator.pop(context),
+            ),
+          ),
+        ),
+      ),
+    ).then((value) {
+      // 返回后刷新列表
+      context.read<NovelListBloc>().add(LoadNovels());
+    });
+  }
+  
+  // 显示删除确认对话框
+  void _showDeleteConfirmDialog(BuildContext context) async {
+    final theme = Theme.of(context);
+    final novelTitle = novel.title;
+    final TextEditingController confirmController = TextEditingController();
+    bool isConfirmed = false;
+    
+    final confirmedResult = await showDialog<bool?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+         return StatefulBuilder(
+          builder: (context, setDialogState) {
+             return AlertDialog(
+               title: Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error),
+                  const SizedBox(width: 8),
+                  const Text('永久删除'), 
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: ListBody(
+                  children: <Widget>[
+                     const Text(
+                      '警告：此操作无法撤销!',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      '删除这本小说将永久移除其所有内容、章节和设置。这些数据将无法恢复。',
+                    ),
+                    const SizedBox(height: 16),
+                    RichText(
+                       text: TextSpan(
+                         style: DefaultTextStyle.of(context).style,
+                         children: <TextSpan>[
+                           const TextSpan(text: '请输入小说标题 '),
+                           TextSpan(text: '"$novelTitle"', style: const TextStyle(fontWeight: FontWeight.bold)),
+                           const TextSpan(text: ' 以确认删除:'),
+                         ],
+                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: confirmController,
+                      decoration: InputDecoration(
+                        border: const OutlineInputBorder(),
+                        hintText: '输入 "$novelTitle"',
+                        errorText: !isConfirmed && confirmController.text.isNotEmpty && confirmController.text != novelTitle 
+                          ? '标题不匹配'
+                          : null,
+                      ),
+                      autofocus: true,
+                       onChanged: (value) {
+                         setDialogState(() {
+                           isConfirmed = value == novelTitle;
+                         });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('取消'),
+                ),
+                ElevatedButton(
+                  onPressed: isConfirmed ? () {
+                     Navigator.pop(context, true);
+                  } : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error,
+                    foregroundColor: Colors.white,
+                     disabledBackgroundColor: Colors.grey.shade300,
+                  ),
+                  child: const Text('确认删除'),
+                ),
+              ],
+            );
+          }
+        );
+      }
+    );
+    
+    confirmController.dispose();
+    if (confirmedResult == true) {
+      _deleteNovel(context);
+    }
+  }
+  
+  // 删除小说
+  Future<void> _deleteNovel(BuildContext context) async {
+    try {
+      final repository = context.read<EditorRepository>();
+      await repository.deleteNovel(novelId: novel.id);
+      
+      AppLogger.i('NovelCard', '删除小说成功: ${novel.id}');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('小说已永久删除。')),
+      );
+      
+      // 刷新小说列表
+      context.read<NovelListBloc>().add(LoadNovels());
+    } catch (e, stackTrace) {
+      AppLogger.e('NovelCard', '删除小说失败', e, stackTrace);
+      final errorMessage = e is Exception ? e.toString().replaceFirst('Exception: ', '') : e.toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('删除失败: $errorMessage'), 
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
   }
 }
 

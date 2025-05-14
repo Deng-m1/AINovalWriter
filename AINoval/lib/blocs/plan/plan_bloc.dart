@@ -5,6 +5,8 @@ import 'package:ainoval/services/api_service/repositories/impl/editor_repository
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../utils/logger.dart';
+
 part 'plan_event.dart';
 part 'plan_state.dart';
 
@@ -33,6 +35,7 @@ class PlanBloc extends Bloc<PlanEvent, PlanState> {
     emit(PlanLoading());
 
     try {
+      AppLogger.i('PlanBloc/_onLoadContent', '开始加载小说大纲数据');
       // 获取小说数据（带场景摘要）
       final novel = await repository.getNovelWithSceneSummaries(novelId);
 
@@ -349,20 +352,39 @@ class PlanBloc extends Bloc<PlanEvent, PlanState> {
         emit(currentState.copyWith(isSaving: true));
         
         // 调用API删除场景
-        final updatedNovel = await repository.deleteScene(
+        final success = await repository.deleteScene(
           novelId,
           event.actId,
           event.chapterId,
           event.sceneId,
         );
         
-        if (updatedNovel == null) {
+        if (!success) {
           emit(currentState.copyWith(
             isSaving: false,
             errorMessage: '删除场景失败',
           ));
           return;
         }
+        
+        // 从小说结构中删除场景
+        final updatedActs = currentState.novel.acts.map((act) {
+          if (act.id == event.actId) {
+            final updatedChapters = act.chapters.map((chapter) {
+              if (chapter.id == event.chapterId) {
+                final updatedScenes = chapter.scenes
+                    .where((scene) => scene.id != event.sceneId)
+                    .toList();
+                return chapter.copyWith(scenes: updatedScenes);
+              }
+              return chapter;
+            }).toList();
+            return act.copyWith(chapters: updatedChapters);
+          }
+          return act;
+        }).toList();
+        
+        final updatedNovel = currentState.novel.copyWith(acts: updatedActs);
         
         emit(currentState.copyWith(
           novel: updatedNovel,

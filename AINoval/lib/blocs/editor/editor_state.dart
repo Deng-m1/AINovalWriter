@@ -34,9 +34,12 @@ class EditorLoaded extends EditorState {
     this.activeActId,
     this.activeChapterId,
     this.activeSceneId,
+    this.focusChapterId,
     this.isDirty = false,
     this.isSaving = false,
     this.isLoading = false,
+    this.hasReachedEnd = false,
+    this.hasReachedStart = false,
     this.lastSaveTime,
     this.errorMessage,
     this.aiSummaryGenerationStatus = AIGenerationStatus.initial,
@@ -46,17 +49,26 @@ class EditorLoaded extends EditorState {
     this.aiGenerationError,
     this.isStreamingGeneration = false,
     this.pendingSummary,
+    this.visibleRange,
+    this.virtualListEnabled = true,
   });
   final novel_models.Novel novel;
   final Map<String, dynamic> settings;
   final String? activeActId;
   final String? activeChapterId;
   final String? activeSceneId;
+  final String? focusChapterId;
   final bool isDirty;
   final bool isSaving;
   final bool isLoading;
+  final bool hasReachedEnd;
+  final bool hasReachedStart;
   final DateTime? lastSaveTime;
   final String? errorMessage;
+  final bool isStreamingGeneration;
+  final String? pendingSummary;
+  final List<int>? visibleRange;
+  final bool virtualListEnabled;
   
   /// AI生成状态
   final AIGenerationStatus aiSummaryGenerationStatus;
@@ -73,12 +85,6 @@ class EditorLoaded extends EditorState {
   /// AI生成过程中的错误消息
   final String? aiGenerationError;
   
-  /// 是否正在使用流式生成
-  final bool isStreamingGeneration;
-  
-  /// 待处理的摘要内容，用于在打开AI生成面板时预填充
-  final String? pendingSummary;
-  
   @override
   List<Object?> get props => [
     novel,
@@ -86,9 +92,12 @@ class EditorLoaded extends EditorState {
     activeActId,
     activeChapterId,
     activeSceneId,
+    focusChapterId,
     isDirty,
     isSaving,
     isLoading,
+    hasReachedEnd,
+    hasReachedStart,
     lastSaveTime,
     errorMessage,
     aiSummaryGenerationStatus,
@@ -98,6 +107,8 @@ class EditorLoaded extends EditorState {
     aiGenerationError,
     isStreamingGeneration,
     pendingSummary,
+    visibleRange,
+    virtualListEnabled,
   ];
   
   EditorLoaded copyWith({
@@ -106,9 +117,12 @@ class EditorLoaded extends EditorState {
     String? activeActId,
     String? activeChapterId,
     String? activeSceneId,
+    String? focusChapterId,
     bool? isDirty,
     bool? isSaving,
     bool? isLoading,
+    bool? hasReachedEnd,
+    bool? hasReachedStart,
     DateTime? lastSaveTime,
     String? errorMessage,
     AIGenerationStatus? aiSummaryGenerationStatus,
@@ -118,6 +132,8 @@ class EditorLoaded extends EditorState {
     String? aiGenerationError,
     bool? isStreamingGeneration,
     String? pendingSummary,
+    List<int>? visibleRange,
+    bool? virtualListEnabled,
   }) {
     return EditorLoaded(
       novel: novel ?? this.novel,
@@ -125,11 +141,14 @@ class EditorLoaded extends EditorState {
       activeActId: activeActId ?? this.activeActId,
       activeChapterId: activeChapterId ?? this.activeChapterId,
       activeSceneId: activeSceneId ?? this.activeSceneId,
+      focusChapterId: focusChapterId ?? this.focusChapterId,
       isDirty: isDirty ?? this.isDirty,
       isSaving: isSaving ?? this.isSaving,
       isLoading: isLoading ?? this.isLoading,
+      hasReachedEnd: hasReachedEnd ?? this.hasReachedEnd,
+      hasReachedStart: hasReachedStart ?? this.hasReachedStart,
       lastSaveTime: lastSaveTime ?? this.lastSaveTime,
-      errorMessage: errorMessage ?? this.errorMessage,
+      errorMessage: errorMessage,
       aiSummaryGenerationStatus: aiSummaryGenerationStatus ?? this.aiSummaryGenerationStatus,
       aiSceneGenerationStatus: aiSceneGenerationStatus ?? this.aiSceneGenerationStatus,
       generatedSummary: generatedSummary ?? this.generatedSummary,
@@ -137,6 +156,8 @@ class EditorLoaded extends EditorState {
       aiGenerationError: aiGenerationError,
       isStreamingGeneration: isStreamingGeneration ?? this.isStreamingGeneration,
       pendingSummary: pendingSummary,
+      visibleRange: visibleRange ?? this.visibleRange,
+      virtualListEnabled: virtualListEnabled ?? this.virtualListEnabled,
     );
   }
 }

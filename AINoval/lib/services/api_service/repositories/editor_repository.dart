@@ -1,4 +1,3 @@
-
 import 'package:ainoval/models/editor_content.dart';
 import 'package:ainoval/models/novel_structure.dart';
 
@@ -15,7 +14,7 @@ abstract class EditorRepository {
 
   /// 加载更多章节场景
   /// 根据方向（向上或向下）加载更多章节的场景内容
-  Future<Map<String, List<Scene>>> loadMoreScenes(String novelId, String fromChapterId, String direction, {int chaptersLimit = 5});
+  Future<Map<String, List<Scene>>> loadMoreScenes(String novelId, String? actId, String fromChapterId, String direction, {int chaptersLimit = 5});
 
   /// 保存小说数据
   Future<bool> saveNovel(Novel novel);
@@ -33,6 +32,7 @@ abstract class EditorRepository {
     String content,
     String wordCount,
     Summary summary,
+    {bool localOnly = false}
   );
 
   /// 保存摘要
@@ -114,4 +114,94 @@ abstract class EditorRepository {
     String summary, 
     {String? chapterId, String? styleInstructions}
   );
+
+  /// 获取小说详情，包含场景摘要（适用于Plan视图）
+  Future<Novel?> getNovelWithSceneSummaries(String novelId);
+
+  /// 提交自动续写任务
+  /// 
+  /// [novelId] 小说ID
+  /// [numberOfChapters] 续写章节数
+  /// [aiConfigIdSummary] 摘要模型配置ID
+  /// [aiConfigIdContent] 内容模型配置ID
+  /// [startContextMode] 上下文模式，可选值: AUTO, LAST_N_CHAPTERS, CUSTOM
+  /// [contextChapterCount] 上下文章节数，仅当startContextMode为LAST_N_CHAPTERS时有效
+  /// [customContext] 自定义上下文，仅当startContextMode为CUSTOM时有效
+  /// [writingStyle] 写作风格提示，可选
+  /// 
+  /// 返回提交的任务ID
+  Future<String> submitContinueWritingTask({
+    required String novelId,
+    required int numberOfChapters,
+    required String aiConfigIdSummary,
+    required String aiConfigIdContent,
+    required String startContextMode,
+    int? contextChapterCount,
+    String? customContext,
+    String? writingStyle,
+  });
+
+  /// 删除场景
+  Future<bool> deleteScene(
+    String novelId,
+    String actId,
+    String chapterId,
+    String sceneId,
+  );
+
+  /// 添加场景
+  Future<Scene?> addScene(
+    String novelId,
+    String actId,
+    String chapterId,
+    Scene scene,
+  );
+
+  /// 删除章节
+  Future<Novel?> deleteChapter(
+    String novelId,
+    String actId,
+    String chapterId,
+  );
+
+  /// 将后端返回的带场景摘要的小说数据转换为前端模型
+
+  /// 更新小说最后编辑的章节ID（细粒度更新）
+  Future<bool> updateLastEditedChapterId(String novelId, String chapterId);
+
+  /// 批量更新小说字数统计（细粒度更新）
+  Future<bool> updateNovelWordCounts(String novelId, Map<String, int> sceneWordCounts);
+
+  /// 智能同步小说（根据变更类型选择最优同步策略）
+  Future<bool> smartSyncNovel(Novel novel, {Set<String>? changedComponents});
+
+  /// 仅更新小说结构（不包含场景内容）
+  Future<bool> updateNovelStructure(Novel novel);
+
+  /// 批量保存场景内容（优化网络请求数量）
+  Future<bool> batchSaveSceneContents(
+    String novelId,
+    List<Map<String, dynamic>> sceneUpdates
+  );
+  
+  /// 细粒度添加卷 - 只提供必要信息
+  Future<Act> addActFine(String novelId, String title, {String? description});
+  
+  /// 细粒度添加章节 - 只提供必要信息
+  Future<Chapter> addChapterFine(String novelId, String actId, String title, {String? description});
+  
+  /// 细粒度添加场景 - 只提供必要信息
+  Future<Scene> addSceneFine(String novelId, String chapterId, String title, {String? summary, int? position});
+  
+  /// 细粒度批量添加场景 - 一次添加多个场景到同一章节
+  Future<List<Scene>> addScenesBatchFine(String novelId, String chapterId, List<Map<String, dynamic>> scenes);
+  
+  /// 细粒度删除卷 - 只提供ID
+  Future<bool> deleteActFine(String novelId, String actId);
+  
+  /// 细粒度删除章节 - 只提供ID
+  Future<bool> deleteChapterFine(String novelId, String actId, String chapterId);
+  
+  /// 细粒度删除场景 - 只提供ID
+  Future<bool> deleteSceneFine(String sceneId);
 }

@@ -1,160 +1,207 @@
 package com.ainovel.server.task;
 
 import com.ainovel.server.task.event.internal.TaskProgressEvent;
-import com.ainovel.server.task.producer.TaskMessageProducer;
 import com.ainovel.server.task.service.TaskStateService;
+import com.ainovel.server.task.service.TaskSubmissionService;
+import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import reactor.core.publisher.Mono;
 
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 任务上下文实现类
+ * TaskContext接口的实现类，提供任务执行的上下文环境
  * @param <P> 任务参数类型
  */
 public class TaskContextImpl<P> implements TaskContext<P> {
     
     private static final Logger logger = LoggerFactory.getLogger(TaskContextImpl.class);
     
+    @Getter
     private final String taskId;
-    private final String userId;
+    
+    @Getter
     private final String taskType;
-    private final String parentTaskId;
+    
+    @Getter
+    private final String userId;
+    
+    @Getter
     private final P parameters;
+    
+    @Getter
     private final String executionNodeId;
-    private final ApplicationEventPublisher eventPublisher;
+    
+    @Getter
+    private final String parentTaskId;
+    
     private final TaskStateService taskStateService;
-    private final TaskMessageProducer taskMessageProducer;
+    private final TaskSubmissionService taskSubmissionService;
+    private final ApplicationEventPublisher eventPublisher;
     
     /**
      * 构造函数
+     * 
+     * @param taskId 任务ID
+     * @param taskType 任务类型
+     * @param userId 用户ID
+     * @param parameters 任务参数
+     * @param executionNodeId 执行节点ID
+     * @param parentTaskId 父任务ID
+     * @param taskStateService 任务状态服务
+     * @param taskSubmissionService 任务提交服务
+     * @param eventPublisher 事件发布器
      */
-    public TaskContextImpl(String taskId, String userId, String taskType, String parentTaskId, 
-                          P parameters, String executionNodeId,
-                          ApplicationEventPublisher eventPublisher,
-                          TaskStateService taskStateService,
-                          TaskMessageProducer taskMessageProducer) {
-        this.taskId = Objects.requireNonNull(taskId, "任务ID不能为空");
-        this.userId = Objects.requireNonNull(userId, "用户ID不能为空");
-        this.taskType = Objects.requireNonNull(taskType, "任务类型不能为空");
-        this.parentTaskId = parentTaskId;
-        this.parameters = Objects.requireNonNull(parameters, "参数不能为空");
+    public TaskContextImpl(
+            String taskId,
+            String taskType,
+            String userId,
+            P parameters,
+            String executionNodeId,
+            String parentTaskId,
+            TaskStateService taskStateService,
+            TaskSubmissionService taskSubmissionService,
+            ApplicationEventPublisher eventPublisher) {
+        this.taskId = taskId;
+        this.taskType = taskType;
+        this.userId = userId;
+        this.parameters = parameters;
         this.executionNodeId = executionNodeId;
-        this.eventPublisher = Objects.requireNonNull(eventPublisher, "事件发布器不能为空");
-        this.taskStateService = Objects.requireNonNull(taskStateService, "任务状态服务不能为空");
-        this.taskMessageProducer = Objects.requireNonNull(taskMessageProducer, "任务消息生产者不能为空");
+        this.parentTaskId = parentTaskId;
+        this.taskStateService = taskStateService;
+        this.taskSubmissionService = taskSubmissionService;
+        this.eventPublisher = eventPublisher;
     }
     
     @Override
-    public String getTaskId() {
-        return taskId;
-    }
-    
-    @Override
-    public String getUserId() {
-        return userId;
-    }
-    
-    @Override
-    public String getTaskType() {
-        return taskType;
-    }
-    
-    @Override
-    public String getParentTaskId() {
-        return parentTaskId;
-    }
-    
-    @Override
-    public P getParameters() {
-        return parameters;
-    }
-    
-    @Override
-    public void updateProgress(Object progress) {
-        if (progress == null) {
-            return;
+    public Mono<Void> updateProgress(Object progressData) {
+        if (progressData == null) {
+            return Mono.empty();
         }
         
-        try {
-            // 更新数据库中的进度
-            taskStateService.recordProgress(taskId, progress);
-            
-            // 发布进度事件
-            TaskProgressEvent event = new TaskProgressEvent(
-                    this, taskId, taskType, userId, progress);
-            eventPublisher.publishEvent(event);
-            
-            // 记录日志
-            logger.debug("任务进度已更新: {}", taskId);
-        } catch (Exception e) {
-            logger.error("更新任务进度失败: {} - {}", taskId, e.getMessage(), e);
-        }
-    }
-    
-    @Override
-    public void logInfo(String message, Object... args) {
-        logger.info("[Task:{}] " + message, appendToArgs(taskId, args));
-    }
-    
-    @Override
-    public void logError(String message, Object... args) {
-        logger.error("[Task:{}] " + message, appendToArgs(taskId, args));
-    }
-    
-    @Override
-    public void logError(String message, Throwable throwable, Object... args) {
-        logger.error("[Task:{}] " + message, appendToArgs(taskId, args), throwable);
-    }
-    
-    @Override
-    public String submitSubTask(String subTaskType, Object subTaskParameters) {
-        Objects.requireNonNull(subTaskType, "子任务类型不能为空");
-        Objects.requireNonNull(subTaskParameters, "子任务参数不能为空");
+        // 发布进度更新事件
+        eventPublisher.publishEvent(new TaskProgressEvent(this, taskId, progressData));
         
-        String subTaskId = UUID.randomUUID().toString();
-        
-        try {
-            // 创建子任务记录
-            taskStateService.createTask(subTaskId, userId, subTaskType, subTaskParameters, taskId);
-            
-            // 发送子任务消息到RabbitMQ
-            boolean sent = taskMessageProducer.sendTask(subTaskId, userId, subTaskType, subTaskParameters);
-            
-            if (!sent) {
-                // 如果发送失败，记录错误日志
-                Map<String, Object> errorInfo = new HashMap<>();
-                errorInfo.put("message", "子任务消息发送失败");
-                errorInfo.put("timestamp", Instant.now().toString());
-                taskStateService.recordFailure(subTaskId, errorInfo, true);
-                
-                logger.error("子任务消息发送失败: {}", subTaskId);
-                return null;
-            }
-            
-            // 更新父任务的子任务状态摘要
-            taskStateService.updateSubTaskStatusSummary(taskId, "total", 1);
-            
-            logger.info("已提交子任务: {} -> {}", taskId, subTaskId);
-            return subTaskId;
-        } catch (Exception e) {
-            logger.error("提交子任务失败: {} -> {} - {}", taskId, subTaskType, e.getMessage(), e);
-            return null;
+        // 更新数据库中的进度
+        return taskStateService.recordProgress(taskId, progressData);
+    }
+    
+    @Override
+    public Mono<Void> logInfo(String message) {
+        logger.info("[任务:{}] {}", taskId, message);
+        return Mono.empty();
+    }
+    
+    @Override
+    public Mono<Void> logError(String message, Throwable error) {
+        if (error != null) {
+            logger.error("[任务:{}] {}", taskId, message, error);
+        } else {
+            logger.error("[任务:{}] {}", taskId, message);
         }
+        return Mono.empty();
+    }
+    
+    @Override
+    public Mono<String> submitSubTask(String taskType, Object parameters) {
+        return taskSubmissionService.submitTask(userId, taskType, parameters, taskId);
     }
     
     /**
-     * 将任务ID添加到日志参数数组开头
+     * 创建TaskContext的构建器
+     * 
+     * @param <P> 任务参数类型
+     * @return TaskContext构建器
      */
-    private Object[] appendToArgs(String firstArg, Object[] args) {
-        Object[] newArgs = new Object[args.length + 1];
-        newArgs[0] = firstArg;
-        System.arraycopy(args, 0, newArgs, 1, args.length);
-        return newArgs;
+    public static <P> Builder<P> builder() {
+        return new Builder<>();
+    }
+    
+    /**
+     * TaskContext构建器
+     * @param <P> 任务参数类型
+     */
+    public static class Builder<P> {
+        private String taskId;
+        private String taskType;
+        private String userId;
+        private P parameters;
+        private String executionNodeId;
+        private String parentTaskId;
+        private TaskStateService taskStateService;
+        private TaskSubmissionService taskSubmissionService;
+        private ApplicationEventPublisher eventPublisher;
+        
+        private Builder() {
+            // 默认生成一个UUID作为任务ID
+            this.taskId = UUID.randomUUID().toString();
+        }
+        
+        public Builder<P> taskId(String taskId) {
+            this.taskId = taskId;
+            return this;
+        }
+        
+        public Builder<P> taskType(String taskType) {
+            this.taskType = taskType;
+            return this;
+        }
+        
+        public Builder<P> userId(String userId) {
+            this.userId = userId;
+            return this;
+        }
+        
+        public Builder<P> parameters(P parameters) {
+            this.parameters = parameters;
+            return this;
+        }
+        
+        public Builder<P> executionNodeId(String executionNodeId) {
+            this.executionNodeId = executionNodeId;
+            return this;
+        }
+        
+        public Builder<P> parentTaskId(String parentTaskId) {
+            this.parentTaskId = parentTaskId;
+            return this;
+        }
+        
+        public Builder<P> taskStateService(TaskStateService taskStateService) {
+            this.taskStateService = taskStateService;
+            return this;
+        }
+        
+        public Builder<P> taskSubmissionService(TaskSubmissionService taskSubmissionService) {
+            this.taskSubmissionService = taskSubmissionService;
+            return this;
+        }
+        
+        public Builder<P> eventPublisher(ApplicationEventPublisher eventPublisher) {
+            this.eventPublisher = eventPublisher;
+            return this;
+        }
+        
+        /**
+         * 构建TaskContext实例
+         * 
+         * @return TaskContext实例
+         */
+        public TaskContext<P> build() {
+            if (taskId == null) {
+                taskId = UUID.randomUUID().toString();
+            }
+            
+            if (taskType == null || userId == null || parameters == null || 
+                taskStateService == null || taskSubmissionService == null || eventPublisher == null) {
+                throw new IllegalStateException("缺少必要的TaskContext参数");
+            }
+            
+            return new TaskContextImpl<>(
+                    taskId, taskType, userId, parameters, executionNodeId, parentTaskId,
+                    taskStateService, taskSubmissionService, eventPublisher);
+        }
     }
 } 

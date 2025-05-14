@@ -43,4 +43,14 @@ public class GenerateSingleSummaryParameters {
      * 上一章的摘要（如果有）
      */
     private String previousSummary;
+    
+    /**
+     * 总章节数（用于判断是否继续生成下一章）
+     */
+    private Integer totalChapters;
+    
+    /**
+     * 父任务ID（用于更新父任务进度）
+     */
+    private String parentTaskId;
 } 

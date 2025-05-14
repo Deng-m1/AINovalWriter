@@ -7,9 +7,6 @@ abstract class EditorEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-class LoadEditorContent extends EditorEvent {
-  const LoadEditorContent();
-}
 
 /// 使用分页加载编辑器内容事件
 class LoadEditorContentPaginated extends EditorEvent {
@@ -35,8 +32,8 @@ class LoadMoreScenes extends EditorEvent {
   const LoadMoreScenes({
     required this.fromChapterId,
     required this.direction,
+    required this.actId,
     this.chaptersLimit = 3,
-    this.targetActId,
     this.targetChapterId,
     this.targetSceneId,
     this.preventFocusChange = false,
@@ -46,8 +43,8 @@ class LoadMoreScenes extends EditorEvent {
   });
   final String fromChapterId;
   final String direction; // "up" 或 "down" 或 "center"
+  final String actId; // 现在将actId作为必需参数
   final int chaptersLimit;
-  final String? targetActId;
   final String? targetChapterId;
   final String? targetSceneId;
   final bool preventFocusChange;
@@ -60,7 +57,7 @@ class LoadMoreScenes extends EditorEvent {
     fromChapterId,
     direction,
     chaptersLimit,
-    targetActId,
+    actId,
     targetChapterId,
     targetSceneId,
     preventFocusChange,
@@ -91,6 +88,7 @@ class UpdateSceneContent extends EditorEvent {
     required this.content,
     this.wordCount,
     this.shouldRebuild = true,
+    this.isMinorChange,
   });
   final String novelId;
   final String actId;
@@ -99,10 +97,11 @@ class UpdateSceneContent extends EditorEvent {
   final String content;
   final String? wordCount;
   final bool shouldRebuild;
+  final bool? isMinorChange; // 是否为微小改动，微小改动可以不刷新保存状态UI
 
   @override
   List<Object?> get props =>
-      [novelId, actId, chapterId, sceneId, content, wordCount, shouldRebuild];
+      [novelId, actId, chapterId, sceneId, content, wordCount, shouldRebuild, isMinorChange];
 }
 
 class UpdateSummary extends EditorEvent {
@@ -253,6 +252,21 @@ class DeleteScene extends EditorEvent {
   List<Object?> get props => [novelId, actId, chapterId, sceneId];
 }
 
+// 删除章节事件
+class DeleteChapter extends EditorEvent {
+  const DeleteChapter({
+    required this.novelId,
+    required this.actId,
+    required this.chapterId,
+  });
+  final String novelId;
+  final String actId;
+  final String chapterId;
+
+  @override
+  List<Object?> get props => [novelId, actId, chapterId];
+}
+
 // 生成场景摘要事件
 class GenerateSceneSummaryRequested extends EditorEvent {
   final String sceneId;
@@ -363,4 +377,67 @@ class SetPendingSummary extends EditorEvent {
 
   @override
   List<Object?> get props => [summary];
+}
+
+/// 保存场景内容事件
+class SaveSceneContent extends EditorEvent {
+  final String novelId;
+  final String actId;
+  final String chapterId;
+  final String sceneId;
+  final String content;
+  final String wordCount;
+  final bool localOnly; // 添加参数：是否只保存到本地
+
+  const SaveSceneContent({
+    required this.novelId,
+    required this.actId,
+    required this.chapterId,
+    required this.sceneId,
+    required this.content,
+    required this.wordCount,
+    this.localOnly = false, // 默认为false，表示同时同步到服务器
+  });
+
+  @override
+  List<Object> get props => [novelId, actId, chapterId, sceneId, content, wordCount, localOnly];
+}
+
+class UpdateVisibleRange extends EditorEvent {
+  const UpdateVisibleRange({
+    required this.startIndex,
+    required this.endIndex,
+  });
+  final int startIndex;
+  final int endIndex;
+  
+  @override
+  List<Object?> get props => [startIndex, endIndex];
+}
+
+/// 重置章节加载标记
+class ResetActLoadingFlags extends EditorEvent {
+  const ResetActLoadingFlags();
+}
+
+/// 设置章节加载边界标记
+class SetActLoadingFlags extends EditorEvent {
+  final bool? hasReachedEnd;
+  final bool? hasReachedStart;
+
+  const SetActLoadingFlags({
+    this.hasReachedEnd,
+    this.hasReachedStart,
+  });
+}
+
+// 设置焦点章节事件
+class SetFocusChapter extends EditorEvent {
+  const SetFocusChapter({
+    required this.chapterId,
+  });
+  final String chapterId;
+
+  @override
+  List<Object?> get props => [chapterId];
 }

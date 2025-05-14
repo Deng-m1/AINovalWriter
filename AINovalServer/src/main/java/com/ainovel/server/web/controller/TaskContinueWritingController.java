@@ -6,6 +6,7 @@ import com.ainovel.server.task.service.TaskSubmissionService;
 import com.ainovel.server.web.dto.TaskSubmissionResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,13 +15,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.validation.Valid;
+import reactor.core.publisher.Mono;
 
 /**
  * 自动续写小说章节内容任务控制器
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/tasks")
+@RequestMapping("/api/v1/api/tasks")
 @RequiredArgsConstructor
 public class TaskContinueWritingController {
 
@@ -31,10 +33,10 @@ public class TaskContinueWritingController {
      * 
      * @param currentUser 当前用户
      * @param request 请求参数
-     * @return 任务提交响应
+     * @return 任务提交响应的Mono
      */
     @PostMapping("/continue-writing")
-    public ResponseEntity<TaskSubmissionResponse> submitContinueWritingTask(
+    public Mono<ResponseEntity<TaskSubmissionResponse>> submitContinueWritingTask(
             @AuthenticationPrincipal CurrentUser currentUser,
             @Valid @RequestBody ContinueWritingContentParameters request) {
         
@@ -44,13 +46,17 @@ public class TaskContinueWritingController {
                 request.getStartContextMode());
         
         // 提交任务
-        String taskId = taskSubmissionService.submitTask(
+        return taskSubmissionService.submitTask(
                 currentUser.getId(),
                 "CONTINUE_WRITING_CONTENT",
-                request);
-        
-        // 返回响应
-        TaskSubmissionResponse response = new TaskSubmissionResponse(taskId);
-        return ResponseEntity.ok(response);
+                request,
+                null // 父任务ID为null
+            )
+            .map(taskId -> ResponseEntity.accepted().body(new TaskSubmissionResponse(taskId)))
+            .onErrorResume(e -> {
+                log.error("提交自动续写小说章节内容任务失败", e);
+                TaskSubmissionResponse errorResponse = new TaskSubmissionResponse(null); 
+                return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse));
+            });
     }
 } 

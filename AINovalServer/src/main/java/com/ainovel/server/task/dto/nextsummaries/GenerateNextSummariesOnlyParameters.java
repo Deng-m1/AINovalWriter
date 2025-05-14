@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 自动续写小说章节摘要任务参数
+ * 生成后续章节摘要任务参数
  */
 @Data
 @Builder
@@ -31,9 +31,24 @@ public class GenerateNextSummariesOnlyParameters {
     
     /**
      * 上下文获取模式
-     * LAST_CHAPTER: 仅使用最后一章作为上下文
-     * LAST_THREE_CHAPTERS: 使用最后三章作为上下文
-     * ALL_CHAPTERS: 使用所有章节作为上下文
+     * 可选值: AUTO - 自动选择合适的上下文
+     *       LAST_N_CHAPTERS - 使用最近N章作为上下文 
+     *       CUSTOM - 使用自定义上下文
      */
     private String startContextMode;
+    
+    /**
+     * 上下文包含的章节数量 (当startContextMode为LAST_N_CHAPTERS时使用)
+     */
+    private Integer contextChapterCount;
+    
+    /**
+     * 自定义上下文内容 (当startContextMode为CUSTOM时使用)
+     */
+    private String customContext;
+    
+    /**
+     * 写作风格指示
+     */
+    private String writingStyle;
 } 

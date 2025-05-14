@@ -1,88 +1,73 @@
 package com.ainovel.server.repository;
 
-import com.ainovel.server.task.model.BackgroundTask;
-import com.ainovel.server.task.model.TaskStatus;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-import java.util.Optional;
+import com.ainovel.server.task.model.BackgroundTask;
+import com.ainovel.server.task.model.TaskStatus;
+
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
- * 后台任务存储库接口
+ * 后台任务的响应式MongoDB存储库
  */
 @Repository
-public interface BackgroundTaskRepository extends MongoRepository<BackgroundTask, String> {
+public interface BackgroundTaskRepository extends ReactiveMongoRepository<BackgroundTask, String> {
     
     /**
-     * 根据用户ID查找任务
-     * @param userId 用户ID
-     * @return 任务列表
-     */
-    List<BackgroundTask> findByUserId(String userId);
-    
-    /**
-     * 根据用户ID分页查找任务
+     * 根据用户ID查找任务，支持分页
      * @param userId 用户ID
      * @param pageable 分页参数
-     * @return 任务分页结果
+     * @return 该用户的任务流
      */
-    Page<BackgroundTask> findByUserId(String userId, Pageable pageable);
+    Flux<BackgroundTask> findByUserId(String userId, Pageable pageable);
     
     /**
-     * 根据用户ID和任务类型查找任务
+     * 根据ID和用户ID查找任务（用于权限验证）
+     * @param id 任务ID
      * @param userId 用户ID
-     * @param taskType 任务类型
-     * @return 任务列表
+     * @return 任务的Mono
      */
-    List<BackgroundTask> findByUserIdAndTaskType(String userId, String taskType);
+    Mono<BackgroundTask> findByIdAndUserId(String id, String userId);
     
     /**
      * 根据父任务ID查找子任务
      * @param parentTaskId 父任务ID
-     * @return 子任务列表
+     * @return 子任务流
      */
-    List<BackgroundTask> findByParentTaskId(String parentTaskId);
+    Flux<BackgroundTask> findByParentTaskId(String parentTaskId);
     
     /**
-     * 根据父任务ID和状态查找子任务
-     * @param parentTaskId 父任务ID
-     * @param status 任务状态
-     * @return 子任务列表
-     */
-    List<BackgroundTask> findByParentTaskIdAndStatus(String parentTaskId, TaskStatus status);
-    
-    /**
-     * 计算父任务下指定状态的子任务数量
-     * @param parentTaskId 父任务ID
-     * @param status 任务状态
-     * @return 子任务数量
-     */
-    long countByParentTaskIdAndStatus(String parentTaskId, TaskStatus status);
-    
-    /**
-     * 根据任务类型和状态查找任务
-     * @param taskType 任务类型
-     * @param status 任务状态
-     * @return 任务列表
-     */
-    List<BackgroundTask> findByTaskTypeAndStatus(String taskType, TaskStatus status);
-    
-    /**
-     * 根据用户ID、任务类型和状态查找任务
+     * 查找指定用户的指定状态的任务，支持分页
      * @param userId 用户ID
-     * @param taskType 任务类型
      * @param status 任务状态
-     * @return 任务列表
+     * @param pageable 分页参数
+     * @return 符合条件的任务流
      */
-    List<BackgroundTask> findByUserIdAndTaskTypeAndStatus(String userId, String taskType, TaskStatus status);
+    Flux<BackgroundTask> findByUserIdAndStatus(String userId, TaskStatus status, Pageable pageable);
     
     /**
-     * 查找指定状态的任务
-     * @param status 任务状态
-     * @return 任务列表
+     * 查找指定类型的任务，支持分页
+     * @param taskType 任务类型
+     * @param pageable 分页参数
+     * @return 符合条件的任务流
      */
-    List<BackgroundTask> findByStatus(TaskStatus status);
+    Flux<BackgroundTask> findByTaskType(String taskType, Pageable pageable);
+    
+    /**
+     * 计算指定用户的待处理任务数量
+     * @param userId 用户ID
+     * @return 待处理任务数量的Mono
+     */
+    Mono<Long> countByUserIdAndStatusIn(String userId, TaskStatus... statuses);
+    
+    /**
+     * 根据状态和执行节点查找任务
+     * @param status 任务状态
+     * @param executionNodeId 执行节点ID
+     * @return 符合条件的任务流
+     */
+    Flux<BackgroundTask> findByStatusAndExecutionNodeId(TaskStatus status, String executionNodeId);
 } 

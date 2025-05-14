@@ -21,6 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import com.ainovel.server.common.util.PromptUtil;
+
 /**
  * RAG服务实现类 提供基于检索增强生成的上下文获取服务
  */
@@ -135,9 +137,10 @@ public class RagServiceImpl implements RagService {
 
                 log.info("向量搜索找到 {} 个相关内容", relevantContents.size());
 
-                // 格式化检索到的内容
+                // 格式化检索到的内容 - 在这里转换为纯文本
                 return relevantContents.stream()
-                        .map(content -> content.textSegment().text())
+                        .map(content -> PromptUtil.extractPlainTextFromRichText(content.textSegment().text())) // 转换为纯文本
+                        .filter(plainText -> plainText != null && !plainText.isBlank()) // 过滤空结果
                         .collect(Collectors.joining("\n\n"));
             } catch (Exception e) {
                 log.error("执行向量搜索时出错", e);
@@ -148,7 +151,8 @@ public class RagServiceImpl implements RagService {
         .switchIfEmpty(Mono.defer(() -> 
             // 如果向量搜索失败，回退到传统检索
             knowledgeService.semanticSearch(queryText, novelId, retrievalK)
-            .map(KnowledgeChunk::getContent)
+            .map(chunk -> PromptUtil.extractPlainTextFromRichText(chunk.getContent())) // 转换为纯文本
+            .filter(plainText -> plainText != null && !plainText.isBlank()) // 过滤空结果
             .collectList()
             .map(contents -> {
                 if (contents.isEmpty()) {

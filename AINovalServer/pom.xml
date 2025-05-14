@@ -100,6 +100,12 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
+
+        <!-- Micrometer Context Propagation (for Reactor MDC) -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>context-propagation</artifactId>
+        </dependency>
         
         <!-- AspectJ support for @Timed annotation -->
         <dependency>

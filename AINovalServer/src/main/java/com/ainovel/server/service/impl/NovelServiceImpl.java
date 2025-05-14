@@ -2,13 +2,22 @@ package com.ainovel.server.service.impl;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.ainovel.server.common.util.PromptUtil;
 import org.springframework.stereotype.Service;
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 
 import com.ainovel.server.common.exception.ResourceNotFoundException;
 import com.ainovel.server.domain.model.Character;
@@ -23,15 +32,19 @@ import com.ainovel.server.repository.SceneRepository;
 import com.ainovel.server.service.NovelService;
 import com.ainovel.server.service.StorageService;
 import com.ainovel.server.service.SceneService;
+import com.ainovel.server.web.dto.CreatedChapterInfo;
 import com.ainovel.server.web.dto.NovelWithScenesDto;
 import com.ainovel.server.web.dto.NovelWithSummariesDto;
 import com.ainovel.server.web.dto.SceneSummaryDto;
+
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.function.Tuple2;
+import org.springframework.util.StringUtils;
 
 /**
  * 小说服务实现类
@@ -46,6 +59,7 @@ public class NovelServiceImpl implements NovelService {
     private final SceneRepository sceneRepository;
     private final StorageService storageService;
     private final SceneService sceneService;
+    private final ReactiveMongoTemplate reactiveMongoTemplate;
 
     @Override
     public Mono<Novel> createNovel(Novel novel) {
@@ -62,42 +76,52 @@ public class NovelServiceImpl implements NovelService {
     }
 
     @Override
-    public Mono<Novel> updateNovel(String id, Novel novel) {
+    public Mono<Novel> updateNovel(String id, Novel updatedNovel) {
         return novelRepository.findById(id)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", id)))
                 .flatMap(existingNovel -> {
-                    // Update fields from the input novel
-                    if (novel.getTitle() != null) {
-                        existingNovel.setTitle(novel.getTitle());
+                    // 使用智能合并逻辑处理结构更新
+                    if (updatedNovel.getStructure() != null) {
+                        smartMergeNovelStructure(existingNovel, updatedNovel);
                     }
-                    if (novel.getDescription() != null) {
-                        existingNovel.setDescription(novel.getDescription());
+                    
+                    // 更新其他非结构字段
+                    if (updatedNovel.getTitle() != null) {
+                        existingNovel.setTitle(updatedNovel.getTitle());
                     }
-                    if (novel.getGenre() != null) {
-                        existingNovel.setGenre(novel.getGenre());
+                    if (updatedNovel.getDescription() != null) {
+                        existingNovel.setDescription(updatedNovel.getDescription());
                     }
-                    if (novel.getCoverImage() != null) {
-                        existingNovel.setCoverImage(novel.getCoverImage());
+                    if (updatedNovel.getGenre() != null) {
+                        existingNovel.setGenre(updatedNovel.getGenre());
                     }
-                    if (novel.getStatus() != null) {
-                        existingNovel.setStatus(novel.getStatus());
+                    if (updatedNovel.getCoverImage() != null) {
+                        existingNovel.setCoverImage(updatedNovel.getCoverImage());
                     }
-                    if (novel.getTags() != null) {
-                        existingNovel.setTags(novel.getTags());
+                    if (updatedNovel.getStatus() != null) {
+                        existingNovel.setStatus(updatedNovel.getStatus());
                     }
-                    if (novel.getStructure() != null) {
-                        existingNovel.setStructure(novel.getStructure());
+                    if (updatedNovel.getTags() != null) {
+                        existingNovel.setTags(updatedNovel.getTags());
                     }
-                    if (novel.getLastEditedChapterId() != null) {
-                        existingNovel.setLastEditedChapterId(novel.getLastEditedChapterId());
+                    if (updatedNovel.getMetadata() != null) {
+                        existingNovel.setMetadata(updatedNovel.getMetadata());
+                    }
+                    if (updatedNovel.getLastEditedChapterId() != null) {
+                        existingNovel.setLastEditedChapterId(updatedNovel.getLastEditedChapterId());
                     }
 
-                    // Always update the timestamp
+                    // 更新时间戳
                     existingNovel.setUpdatedAt(LocalDateTime.now());
 
                     return novelRepository.save(existingNovel);
                 })
-                .doOnSuccess(updated -> log.info("更新小说成功: {}", updated.getId()));
+                .doOnSuccess(savedNovel -> {
+                    log.info("智能合并更新小说成功: {}", savedNovel.getId());
+                })
+                .doOnError(error -> {
+                    log.error("智能合并更新小说失败: {}", error.getMessage(), error);
+                });
     }
 
     @Override
@@ -535,82 +559,136 @@ public class NovelServiceImpl implements NovelService {
     }
 
     @Override
-    public Mono<Map<String, List<Scene>>> loadMoreScenes(String novelId, String fromChapterId, String direction, int chaptersLimit) {
-        log.info("加载更多场景，novelId={}, fromChapterId={}, direction={}, chaptersLimit={}",
-                novelId, fromChapterId, direction, chaptersLimit);
-
+    public Mono<Map<String, List<Scene>>> loadMoreScenes(String novelId, String actIdConstraint, String fromChapterId, String direction, int chaptersLimit) {
+        log.info("加载更多场景: novelId={}, actId={}, fromChapterId={}, direction={}, chaptersLimit={}", 
+                novelId, actIdConstraint, fromChapterId, direction, chaptersLimit);
+        
         return novelRepository.findById(novelId)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
                 .flatMap(novel -> {
-                    // 获取所有章节ID，并保持它们的顺序
+                    // 准备一个章节的ID列表，以便确定加载范围
                     List<String> allChapterIds = new ArrayList<>();
-
-                    for (Novel.Act act : novel.getStructure().getActs()) {
-                        for (Novel.Chapter chapter : act.getChapters()) {
+                    
+                    // 如果指定了actId，只加载该卷内的章节
+                    if (StringUtils.hasText(actIdConstraint)) {
+                        // 查找指定的卷
+                        Act targetAct = null;
+                        for (Act act : novel.getStructure().getActs()) {
+                            if (act.getId().equals(actIdConstraint)) {
+                                targetAct = act;
+                                break;
+                            }
+                        }
+                        
+                        if (targetAct == null) {
+                            log.warn("找不到指定的卷: {}", actIdConstraint);
+                            return Mono.just(new HashMap<>());
+                        }
+                        
+                        // 从指定卷中收集章节ID
+                        for (Chapter chapter : targetAct.getChapters()) {
                             allChapterIds.add(chapter.getId());
                         }
+                        
+                        log.info("根据卷ID {}，找到 {} 个章节", actIdConstraint, allChapterIds.size());
+                    } else {
+                        // 没有指定actId，按照原有逻辑加载所有卷的章节
+                        for (Act act : novel.getStructure().getActs()) {
+                            for (Chapter chapter : act.getChapters()) {
+                                allChapterIds.add(chapter.getId());
+                            }
+                        }
+                        log.info("未指定卷ID，小说 {} 共有 {} 个章节", novelId, allChapterIds.size());
                     }
-
-                    // 如果没有章节，或者fromChapterId不在章节列表中，返回空结果
-                    if (allChapterIds.isEmpty() || !allChapterIds.contains(fromChapterId)) {
-                        log.warn("加载更多场景失败：章节列表为空或fromChapterId不存在, novelId={}, fromChapterId={}",
-                                novelId, fromChapterId);
-                        Map<String, List<Scene>> emptyResult = new HashMap<>();
-                        return Mono.just(emptyResult);
+                    
+                    if (allChapterIds.isEmpty()) {
+                        log.info("没有可加载的章节，返回空结果");
+                        return Mono.just(new HashMap<>());
                     }
-
-                    int fromIndex = allChapterIds.indexOf(fromChapterId);
+                    
+                    int fromIndex = -1;
+                    if (fromChapterId != null) {
+                        fromIndex = allChapterIds.indexOf(fromChapterId); // 当前章节在所有章节列表中的索引
+                        if (fromIndex == -1) {
+                            log.error("找不到指定的章节: {}", fromChapterId);
+                            return Mono.just(new HashMap<>());
+                        }
+                    }
+                    
                     List<String> chapterIdsToLoad;
 
                     if ("up".equalsIgnoreCase(direction)) {
-                        // 向上加载（加载fromChapterId之前的章节）
+                        // 向上加载
+                        if (fromIndex <= 0) {
+                            // 已经是第一章，没有更多内容可加载
+                            log.info("已经是第一章，没有更多内容可向上加载");
+                            return Mono.just(new HashMap<>());
+                        }
                         int startIndex = Math.max(0, fromIndex - chaptersLimit);
-                        chapterIdsToLoad = allChapterIds.subList(startIndex, fromIndex); // Exclude fromIndex itself
+                        chapterIdsToLoad = allChapterIds.subList(startIndex, fromIndex); // 不包括 fromIndex 章节本身
                         log.info("向上加载章节，从索引{}到{}，共{}个章节", startIndex, fromIndex, chapterIdsToLoad.size());
                     } else if ("center".equalsIgnoreCase(direction)) {
-                        // 中心加载 (加载 fromChapterId 及其前后)
-                        int startIndex = Math.max(0, fromIndex - chaptersLimit);
-                        int endIndex = Math.min(allChapterIds.size(), fromIndex + chaptersLimit + 1); // +1 because subList end index is exclusive
-                        chapterIdsToLoad = allChapterIds.subList(startIndex, endIndex); // Include fromIndex itself
-                        log.info("中心加载章节，从索引{}到{}，共{}个章节", startIndex, endIndex, chapterIdsToLoad.size());
-                    } else {
-                        // 向下加载（加载fromChapterId之后的章节）
-                        int endIndex = Math.min(allChapterIds.size(), fromIndex + chaptersLimit + 1); // +1 because subList end index is exclusive
-                        if (fromIndex + 1 < endIndex) { // Only load if there are chapters *after* fromIndex
-                            chapterIdsToLoad = allChapterIds.subList(fromIndex + 1, endIndex); // Exclude fromIndex itself
+                        // 中心加载 - 如果是初始加载（fromChapterId为null），加载前几章
+                        if (fromIndex == -1) {
+                            int endIndex = Math.min(allChapterIds.size(), chaptersLimit);
+                            chapterIdsToLoad = allChapterIds.subList(0, endIndex);
+                            log.info("初始加载章节，加载前{}章，实际加载{}章", chaptersLimit, chapterIdsToLoad.size());
                         } else {
-                            chapterIdsToLoad = new ArrayList<>();
+                            // 加载当前章节和它周围的章节
+                            int beforeCount = chaptersLimit / 2;
+                            int afterCount = chaptersLimit - beforeCount;
+                            int startIndex = Math.max(0, fromIndex - beforeCount);
+                            int endIndex = Math.min(allChapterIds.size(), fromIndex + afterCount + 1); // +1 因为要包含当前章节
+                            chapterIdsToLoad = allChapterIds.subList(startIndex, endIndex);
+                            log.info("中心加载章节，从索引{}到{}，共{}个章节", startIndex, endIndex, chapterIdsToLoad.size());
                         }
-                        log.info("向下加载章节，从索引{}到{}，共{}个章节", fromIndex + 1, endIndex, chapterIdsToLoad.size());
+                    } else { // "down"
+                        // 向下加载
+                        if (fromIndex == -1) {
+                            // 初始加载
+                            int endIndex = Math.min(allChapterIds.size(), chaptersLimit);
+                            chapterIdsToLoad = allChapterIds.subList(0, endIndex);
+                            log.info("初始向下加载，加载前{}章，实际加载{}章", chaptersLimit, chapterIdsToLoad.size());
+                        } else if (fromIndex >= allChapterIds.size() - 1) {
+                            // 已经是最后一章，没有更多内容可加载
+                            log.info("已经是最后一章，没有更多内容可向下加载");
+                            return Mono.just(new HashMap<>());
+                        } else {
+                            int startIndex = fromIndex + 1; // 从fromChapterId的下一个开始
+                            int endIndex = Math.min(allChapterIds.size(), startIndex + chaptersLimit);
+                            chapterIdsToLoad = allChapterIds.subList(startIndex, endIndex);
+                            log.info("向下加载章节，从索引{}到{}，共{}个章节", startIndex, endIndex, chapterIdsToLoad.size());
+                        }
                     }
 
                     // 如果没有章节可加载，返回空结果
                     if (chapterIdsToLoad.isEmpty()) {
-                        log.info("根据方向 '{}' 计算后，没有更多章节可加载", direction);
                         Map<String, List<Scene>> emptyResult = new HashMap<>();
+                        log.info("没有章节可加载，返回空结果");
                         return Mono.just(emptyResult);
                     }
 
-                    // 获取这些章节的场景
+                    // 加载每个章节的场景
                     return Flux.fromIterable(chapterIdsToLoad)
-                            .flatMap(chapterId -> sceneRepository.findByChapterId(chapterId))
+                            .flatMap(chapterId -> 
+                                // 为每个章节加载场景
+                                sceneRepository.findByChapterId(chapterId)
+                                    .collectList()
+                                    .doOnNext(scenes -> log.info("章节 {} 的场景数量: {}", chapterId, scenes.size()))
+                            )
                             .collectList()
-                            .map(scenes -> {
-                                // 明确指定返回类型为Map而非HashMap
-                                Map<String, List<Scene>> result = new HashMap<>();
-
-                                // 按章节ID分组
-                                Map<String, List<Scene>> groupedScenes = scenes.stream()
-                                        .collect(Collectors.groupingBy(Scene::getChapterId));
-
-                                // 将分组结果复制到结果Map中
-                                result.putAll(groupedScenes);
-
-                                return result;
-                            });
-                })
-                .doOnSuccess(result -> log.info("加载更多场景成功，加载章节数: {}", result.size()))
-                .doOnError(e -> log.error("加载更多场景失败", e));
+                            .map(sceneLists -> {
+                                Map<String, List<Scene>> groupedScenes = new HashMap<>();
+                                // 将场景按章节ID分组
+                                for (int i = 0; i < chapterIdsToLoad.size() && i < sceneLists.size(); i++) {
+                                    String chapterId = chapterIdsToLoad.get(i);
+                                    List<Scene> scenes = sceneLists.get(i);
+                                    groupedScenes.put(chapterId, scenes);
+                                }
+                                return groupedScenes;
+                            })
+                            .doOnSuccess(result -> log.info("加载更多场景成功，加载章节数: {}", result.size()));
+                });
     }
 
     @Override
@@ -1059,4 +1137,738 @@ public class NovelServiceImpl implements NovelService {
                 return Mono.just("获取章节摘要时发生错误。");
             });
     }
+
+    @Override
+    public Mono<CreatedChapterInfo> addChapterWithInitialScene(
+            String novelId, String chapterTitle, String initialSceneSummary, String initialSceneTitle) {
+        // 调用带元数据版本，提供空的元数据Map
+        return addChapterWithInitialScene(novelId, chapterTitle, initialSceneSummary, initialSceneTitle, new HashMap<>());
+    }
+
+    @Override
+    public Mono<CreatedChapterInfo> addChapterWithInitialScene(
+        String novelId, String chapterTitle, String initialSceneSummary, 
+        String initialSceneTitle, Map<String, Object> metadata) {
+        
+        // 添加元数据参数支持
+        return novelRepository.findById(novelId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+            .flatMap(novel -> {
+                Structure structure = novel.getStructure();
+                Act targetAct;
+
+                // 确保 Structure 和 Acts 列表存在
+                if (structure == null) {
+                    structure = new Structure();
+                    novel.setStructure(structure);
+                }
+                if (structure.getActs() == null) {
+                    structure.setActs(new ArrayList<>());
+                }
+
+                // 查找最后一卷，如果不存在则创建
+                if (structure.getActs().isEmpty()) {
+                    log.info("小说 {} 没有卷，创建第一卷", novelId);
+                    Act newAct = Act.builder()
+                        .id(UUID.randomUUID().toString())
+                        .title("第一卷")
+                        .chapters(new ArrayList<>())
+                        .build();
+                    structure.getActs().add(newAct);
+                    targetAct = newAct;
+                } else {
+                    targetAct = structure.getActs().get(structure.getActs().size() - 1);
+                }
+
+                // 确保目标 Act 的 Chapters 列表存在
+                if (targetAct.getChapters() == null) {
+                    targetAct.setChapters(new ArrayList<>());
+                }
+
+                // 创建新场景
+                Scene newScene = Scene.builder()
+                    .id(UUID.randomUUID().toString())
+                    .novelId(novelId)
+                    // chapterId 将在下面设置
+                    .title(initialSceneTitle != null ? initialSceneTitle : "场景 1") // 使用传入标题或默认值
+                    .summary(initialSceneSummary)
+                    .content("") // 初始内容为空
+                    .sequence(0) // 第一个场景
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+
+                // 创建新章节
+                Chapter newChapter = Chapter.builder()
+                    .id(UUID.randomUUID().toString())
+                    .title(chapterTitle)
+                    .sceneIds(Collections.singletonList(newScene.getId()))
+                    .metadata(metadata) // 设置传入的元数据
+                    .build();
+
+                // 设置场景的 chapterId
+                newScene.setChapterId(newChapter.getId());
+
+                // 添加新章节到目标 Act
+                targetAct.getChapters().add(newChapter);
+
+                // 更新小说更新时间
+                novel.setUpdatedAt(LocalDateTime.now());
+
+                // 首先保存场景 (因为 Novel 不直接内嵌 Scene)
+                return sceneRepository.save(newScene)
+                    .flatMap(savedScene -> {
+                        // 然后保存更新后的小说结构
+                        return novelRepository.save(novel)
+                            .then(Mono.just(new CreatedChapterInfo(newChapter.getId(), savedScene.getId(), initialSceneSummary)));
+                    });
+            })
+            .doOnSuccess(info -> log.info("添加新章节和初始场景成功: 小说 {}, 章节 {}, 场景 {}", novelId, info.getChapterId(), info.getSceneId()))
+            .doOnError(e -> log.error("添加新章节和初始场景失败: 小说 {}, 错误: {}", novelId, e.getMessage()));
+    }
+
+    @Override
+    public Mono<Scene> updateSceneContent(String novelId, String chapterId, String sceneId, String content) {
+        return sceneRepository.findById(sceneId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("场景", sceneId)))
+            .flatMap(scene -> {
+                // 可选：验证 novelId 和 chapterId 是否匹配
+                if (!scene.getNovelId().equals(novelId)) {
+                     log.warn("场景 {} 的 novelId ({}) 与请求 novelId ({}) 不匹配", sceneId, scene.getNovelId(), novelId);
+                    // return Mono.error(new IllegalArgumentException("Scene novelId mismatch")); // 可以选择报错或仅警告
+                }
+                 if (!scene.getChapterId().equals(chapterId)) {
+                     log.warn("场景 {} 的 chapterId ({}) 与请求 chapterId ({}) 不匹配", sceneId, scene.getChapterId(), chapterId);
+                    // return Mono.error(new IllegalArgumentException("Scene chapterId mismatch")); // 可以选择报错或仅警告
+                }
+
+                scene.setContent(PromptUtil.convertPlainTextToQuillDelta(content));
+                scene.setUpdatedAt(LocalDateTime.now());
+                // 可以考虑调用 calculateWordCount 并设置 scene.wordCount
+                // scene.setWordCount(calculateWordCount(content));
+
+                return sceneRepository.save(scene);
+            })
+            .doOnSuccess(savedScene -> log.info("更新场景内容成功: 场景 {}", savedScene.getId()))
+            .doOnError(e -> log.error("更新场景内容失败: 场景 {}, 错误: {}", sceneId, e.getMessage()));
+    }
+
+    @Override
+    public Mono<Novel> deleteChapter(String novelId, String actId, String chapterId) {
+        log.info("开始删除章节: 小说={}, 卷={}, 章节={}", novelId, actId, chapterId);
+        
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取小说结构
+                    Structure structure = novel.getStructure();
+                    if (structure == null || structure.getActs() == null) {
+                        return Mono.error(new ResourceNotFoundException("小说结构不存在", novelId));
+                    }
+
+                    // 查找指定的卷和章节
+                    boolean chapterFound = false;
+                    Act targetAct = null;
+                    
+                    for (Act act : structure.getActs()) {
+                        if (act.getId().equals(actId)) {
+                            targetAct = act;
+                            if (act.getChapters() != null) {
+                                Iterator<Chapter> chapterIterator = act.getChapters().iterator();
+                                while (chapterIterator.hasNext()) {
+                                    Chapter chapter = chapterIterator.next();
+                                    if (chapter.getId().equals(chapterId)) {
+                                        chapterIterator.remove();
+                                        chapterFound = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+
+                    if (targetAct == null) {
+                        return Mono.error(new ResourceNotFoundException("卷", actId));
+                    }
+
+                    if (!chapterFound) {
+                        return Mono.error(new ResourceNotFoundException("章节", chapterId));
+                    }
+
+                    // 更新小说
+                    novel.setUpdatedAt(LocalDateTime.now());
+                    
+                    // 更新最后编辑的章节ID（如果被删除的章节是最后编辑的章节）
+                    if (chapterId.equals(novel.getLastEditedChapterId())) {
+                        // 查找其他可用章节
+                        String newLastEditedChapterId = null;
+                        if (targetAct.getChapters() != null && !targetAct.getChapters().isEmpty()) {
+                            // 优先使用同一卷中的章节
+                            newLastEditedChapterId = targetAct.getChapters().get(0).getId();
+                        } else {
+                            // 查找其他卷中的章节
+                            for (Act act : structure.getActs()) {
+                                if (act.getChapters() != null && !act.getChapters().isEmpty()) {
+                                    newLastEditedChapterId = act.getChapters().get(0).getId();
+                                    break;
+                                }
+                            }
+                        }
+                        novel.setLastEditedChapterId(newLastEditedChapterId);
+                    }
+                    
+                    // 先保存小说，删除章节结构
+                    return novelRepository.save(novel)
+                            .flatMap(savedNovel -> {
+                                // 然后删除章节的所有场景数据
+                                return sceneService.deleteScenesByChapterId(chapterId)
+                                        .thenReturn(savedNovel);
+                            });
+                })
+                .doOnSuccess(novel -> log.info("章节删除成功: 小说={}, 卷={}, 章节={}", novelId, actId, chapterId))
+                .doOnError(e -> log.error("章节删除失败: 小说={}, 卷={}, 章节={}, 原因={}", 
+                        novelId, actId, chapterId, e.getMessage()));
+    }
+    
+    @Override
+    public Mono<Act> addActFine(String novelId, String title, String description) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取小说结构，如果不存在则创建
+                    Structure structure = novel.getStructure();
+                    if (structure == null) {
+                        structure = new Structure();
+                        novel.setStructure(structure);
+                    }
+                    
+                    if (structure.getActs() == null) {
+                        structure.setActs(new ArrayList<>());
+                    }
+                    
+                    // 创建新卷，设置唯一ID
+                    String actId = UUID.randomUUID().toString();
+                    Act newAct = Act.builder()
+                            .id(actId)
+                            .title(title)
+                            .description(description)
+                            .chapters(new ArrayList<>())
+                            .build();
+                    
+                    // 添加到卷列表末尾
+                    structure.getActs().add(newAct);
+                    
+                    // 更新时间戳
+                    novel.setUpdatedAt(LocalDateTime.now());
+                    
+                    // 保存小说
+                    return novelRepository.save(novel)
+                            .thenReturn(newAct);
+                })
+                .doOnSuccess(act -> log.info("成功添加新卷: novelId={}, actId={}, title={}", 
+                        novelId, act.getId(), title))
+                .doOnError(e -> log.error("添加新卷失败: novelId={}, title={}, error={}", 
+                        novelId, title, e.getMessage()));
+    }
+    
+    @Override
+    public Mono<Chapter> addChapterFine(String novelId, String actId, String title, String description) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取小说结构
+                    Structure structure = novel.getStructure();
+                    if (structure == null || structure.getActs() == null) {
+                        return Mono.error(new ResourceNotFoundException("小说结构不存在", novelId));
+                    }
+                    
+                    // 查找指定的卷
+                    Act targetAct = null;
+                    for (Act act : structure.getActs()) {
+                        if (act.getId().equals(actId)) {
+                            targetAct = act;
+                            break;
+                        }
+                    }
+                    
+                    if (targetAct == null) {
+                        return Mono.error(new ResourceNotFoundException("卷", actId));
+                    }
+                    
+                    // 确保章节列表已初始化
+                    if (targetAct.getChapters() == null) {
+                        targetAct.setChapters(new ArrayList<>());
+                    }
+                    
+                    // 创建新章节，设置唯一ID
+                    String chapterId = UUID.randomUUID().toString();
+                    Chapter newChapter = Chapter.builder()
+                            .id(chapterId)
+                            .title(title)
+                            .description(description)
+                            .sceneIds(new ArrayList<>())
+                            .build();
+                    
+                    // 添加到章节列表末尾
+                    targetAct.getChapters().add(newChapter);
+                    
+                    // 更新时间戳
+                    novel.setUpdatedAt(LocalDateTime.now());
+                    
+                    // 保存小说
+                    return novelRepository.save(novel)
+                            .thenReturn(newChapter);
+                })
+                .doOnSuccess(chapter -> log.info("成功添加新章节: novelId={}, actId={}, chapterId={}, title={}", 
+                        novelId, actId, chapter.getId(), title))
+                .doOnError(e -> log.error("添加新章节失败: novelId={}, actId={}, title={}, error={}", 
+                        novelId, actId, title, e.getMessage()));
+    }
+    
+    @Override
+    public Mono<Boolean> deleteActFine(String novelId, String actId) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取小说结构
+                    Structure structure = novel.getStructure();
+                    if (structure == null || structure.getActs() == null) {
+                        return Mono.just(false); // 结构不存在，无需删除
+                    }
+                    
+                    // 查找并移除指定的卷
+                    Act removedAct = null;
+                    Iterator<Act> actIterator = structure.getActs().iterator();
+                    while (actIterator.hasNext()) {
+                        Act act = actIterator.next();
+                        if (act.getId().equals(actId)) {
+                            removedAct = act;
+                            actIterator.remove();
+                            break;
+                        }
+                    }
+                    
+                    if (removedAct == null) {
+                        return Mono.just(false); // 卷不存在，无需删除
+                    }
+                    
+                    // 收集被删除卷中的所有章节ID
+                    List<String> removedChapterIds = new ArrayList<>();
+                    if (removedAct.getChapters() != null) {
+                        for (Chapter chapter : removedAct.getChapters()) {
+                            removedChapterIds.add(chapter.getId());
+                        }
+                    }
+                    
+                    // 检查最后编辑的章节ID是否需要更新
+                    if (novel.getLastEditedChapterId() != null && 
+                            removedChapterIds.contains(novel.getLastEditedChapterId())) {
+                        // 最后编辑的章节被删除，需要更新
+                        String newLastEditedChapterId = null;
+                        
+                        // 寻找其他卷中的章节作为新的最后编辑章节
+                        for (Act act : structure.getActs()) {
+                            if (act.getChapters() != null && !act.getChapters().isEmpty()) {
+                                newLastEditedChapterId = act.getChapters().get(0).getId();
+                                break;
+                            }
+                        }
+                        
+                        novel.setLastEditedChapterId(newLastEditedChapterId);
+                    }
+                    
+                    // 更新时间戳
+                    novel.setUpdatedAt(LocalDateTime.now());
+                    
+                    // 保存更新后的小说结构
+                    return novelRepository.save(novel)
+                            .flatMap(savedNovel -> {
+                                // 删除所有相关章节的场景
+                                List<Mono<Void>> deleteOperations = new ArrayList<>();
+                                for (String chapterId : removedChapterIds) {
+                                    deleteOperations.add(sceneService.deleteScenesByChapterId(chapterId));
+                                }
+                                
+                                if (deleteOperations.isEmpty()) {
+                                    return Mono.just(true);
+                                }
+                                
+                                return Mono.when(deleteOperations)
+                                        .thenReturn(true);
+                            });
+                })
+                .doOnSuccess(success -> {
+                    if (success) {
+                        log.info("成功删除卷: novelId={}, actId={}", novelId, actId);
+                    } else {
+                        log.warn("删除卷失败: 卷不存在, novelId={}, actId={}", novelId, actId);
+                    }
+                })
+                .doOnError(e -> log.error("删除卷出错: novelId={}, actId={}, error={}", 
+                        novelId, actId, e.getMessage()))
+                .onErrorResume(e -> {
+                    log.error("删除卷发生异常: ", e);
+                    return Mono.just(false);
+                });
+    }
+    
+    @Override
+    public Mono<Boolean> deleteChapterFine(String novelId, String actId, String chapterId) {
+        return novelRepository.findById(novelId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("小说", novelId)))
+                .flatMap(novel -> {
+                    // 获取小说结构
+                    Structure structure = novel.getStructure();
+                    if (structure == null || structure.getActs() == null) {
+                        return Mono.just(false); // 结构不存在，无需删除
+                    }
+                    
+                    // 查找指定的卷
+                    Act targetAct = null;
+                    for (Act act : structure.getActs()) {
+                        if (act.getId().equals(actId)) {
+                            targetAct = act;
+                            break;
+                        }
+                    }
+                    
+                    if (targetAct == null || targetAct.getChapters() == null) {
+                        return Mono.just(false); // 卷不存在或没有章节，无需删除
+                    }
+                    
+                    // 查找并移除指定的章节
+                    boolean chapterRemoved = false;
+                    Iterator<Chapter> chapterIterator = targetAct.getChapters().iterator();
+                    while (chapterIterator.hasNext()) {
+                        Chapter chapter = chapterIterator.next();
+                        if (chapter.getId().equals(chapterId)) {
+                            chapterIterator.remove();
+                            chapterRemoved = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!chapterRemoved) {
+                        return Mono.just(false); // 章节不存在，无需删除
+                    }
+                    
+                    // 检查最后编辑的章节ID是否需要更新
+                    if (chapterId.equals(novel.getLastEditedChapterId())) {
+                        // 最后编辑的章节被删除，需要更新
+                        String newLastEditedChapterId = null;
+                        
+                        // 优先在同一卷中查找章节
+                        if (targetAct.getChapters() != null && !targetAct.getChapters().isEmpty()) {
+                            newLastEditedChapterId = targetAct.getChapters().get(0).getId();
+                        } else {
+                            // 在其他卷中查找章节
+                            for (Act act : structure.getActs()) {
+                                if (act.getChapters() != null && !act.getChapters().isEmpty()) {
+                                    newLastEditedChapterId = act.getChapters().get(0).getId();
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        novel.setLastEditedChapterId(newLastEditedChapterId);
+                    }
+                    
+                    // 更新时间戳
+                    novel.setUpdatedAt(LocalDateTime.now());
+                    
+                    // 保存更新后的小说结构
+                    return novelRepository.save(novel)
+                            .then(sceneService.deleteScenesByChapterId(chapterId))
+                            .thenReturn(true);
+                })
+                .doOnSuccess(success -> {
+                    if (success) {
+                        log.info("成功删除章节: novelId={}, actId={}, chapterId={}", novelId, actId, chapterId);
+                    } else {
+                        log.warn("删除章节失败: 章节不存在, novelId={}, actId={}, chapterId={}", novelId, actId, chapterId);
+                    }
+                })
+                .doOnError(e -> log.error("删除章节出错: novelId={}, actId={}, chapterId={}, error={}", 
+                        novelId, actId, chapterId, e.getMessage()))
+                .onErrorResume(e -> {
+                    log.error("删除章节发生异常: ", e);
+                    return Mono.just(false);
+                });
+    }
+
+    /**
+     * 智能合并小说结构
+     * 策略：保留前端对标题、顺序等的修改，同时避免前端更新覆盖后台生成的内容
+     */
+    private void smartMergeNovelStructure(Novel existingNovel, Novel updatedNovel) {
+        if (existingNovel.getStructure() == null) {
+            // 数据库中没有结构，直接使用前端的结构
+            existingNovel.setStructure(updatedNovel.getStructure());
+            return;
+        }
+        
+        if (updatedNovel.getStructure() == null) {
+            // 前端没有提供结构，保留现有结构
+            return;
+        }
+        
+        // 构建现有章节和场景的映射，以便快速查找
+        Map<String, Chapter> existingChaptersMap = new HashMap<>();
+        Map<String, Set<String>> existingChapterScenesMap = new HashMap<>();
+        buildChapterAndSceneMap(existingNovel, existingChaptersMap, existingChapterScenesMap);
+        
+        // 合并卷结构
+        List<Act> mergedActs = new ArrayList<>();
+        
+        if (updatedNovel.getStructure().getActs() != null) {
+            for (Act updatedAct : updatedNovel.getStructure().getActs()) {
+                // 在现有结构中查找对应的卷
+                Act existingAct = findActById(existingNovel, updatedAct.getId());
+                
+                Act mergedAct;
+                if (existingAct == null) {
+                    // 全新的卷，直接添加
+                    mergedAct = updatedAct;
+                    log.info("智能合并: 添加全新卷 {}", updatedAct.getId());
+                } else {
+                    // 合并章节内容
+                    List<Chapter> mergedChapters = smartMergeChapters(
+                        existingAct.getChapters(), 
+                        updatedAct.getChapters(),
+                        existingChaptersMap,
+                        existingChapterScenesMap
+                    );
+                    
+                    // 使用更新后的卷信息，但保留合并后的章节
+                    mergedAct = new Act();
+                    mergedAct.setId(updatedAct.getId());
+                    mergedAct.setTitle(updatedAct.getTitle());
+                    mergedAct.setDescription(updatedAct.getDescription());
+                    mergedAct.setOrder(updatedAct.getOrder());
+                    mergedAct.setMetadata(updatedAct.getMetadata());
+                    mergedAct.setChapters(mergedChapters);
+                    
+                    log.info("智能合并: 更新卷 {}, 标题: {}, 合并后章节数: {}", 
+                        mergedAct.getId(), mergedAct.getTitle(), mergedChapters.size());
+                }
+                
+                mergedActs.add(mergedAct);
+            }
+        }
+        
+        // 检查是否有需要保留的现有卷（前端可能删除了一些卷）
+        if (existingNovel.getStructure().getActs() != null) {
+            for (Act existingAct : existingNovel.getStructure().getActs()) {
+                boolean actExists = false;
+                if (updatedNovel.getStructure().getActs() != null) {
+                    for (Act updatedAct : updatedNovel.getStructure().getActs()) {
+                        if (updatedAct.getId().equals(existingAct.getId())) {
+                            actExists = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!actExists) {
+                    // 检查该卷中是否有近期生成的章节（例如过去24小时内）
+                    boolean hasRecentGeneratedChapters = checkForRecentGeneratedChapters(existingAct);
+                    if (hasRecentGeneratedChapters) {
+                        // 保留含有最近生成章节的卷
+                        mergedActs.add(existingAct);
+                        log.warn("智能合并: 保留前端已删除但含有最近生成章节的卷 {}", existingAct.getId());
+                    }
+                }
+            }
+        }
+        
+        // 设置合并后的结构
+        existingNovel.getStructure().setActs(mergedActs);
+        log.info("智能合并完成: 合并后卷数量 {}", mergedActs.size());
+    }
+
+    /**
+     * 构建章节和场景映射
+     */
+    private void buildChapterAndSceneMap(Novel novel, 
+                                        Map<String, Chapter> chaptersMap, 
+                                        Map<String, Set<String>> chapterScenesMap) {
+        if (novel.getStructure() != null && novel.getStructure().getActs() != null) {
+            for (Act act : novel.getStructure().getActs()) {
+                if (act.getChapters() != null) {
+                    for (Chapter chapter : act.getChapters()) {
+                        chaptersMap.put(chapter.getId(), chapter);
+                        
+                        if (chapter.getSceneIds() != null) {
+                            chapterScenesMap.put(chapter.getId(), new HashSet<>(chapter.getSceneIds()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 根据ID查找卷
+     */
+    private Act findActById(Novel novel, String actId) {
+        if (novel.getStructure() != null && novel.getStructure().getActs() != null) {
+            for (Act act : novel.getStructure().getActs()) {
+                if (act.getId().equals(actId)) {
+                    return act;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 智能合并章节列表
+     */
+    private List<Chapter> smartMergeChapters(
+        List<Chapter> existingChapters, 
+        List<Chapter> updatedChapters,
+        Map<String, Chapter> existingChaptersMap,
+        Map<String, Set<String>> existingChapterScenesMap
+    ) {
+        // 无需合并的情况
+        if (existingChapters == null || existingChapters.isEmpty()) {
+            return updatedChapters;
+        }
+        if (updatedChapters == null || updatedChapters.isEmpty()) {
+            return existingChapters;
+        }
+        
+        List<Chapter> mergedChapters = new ArrayList<>();
+        
+        // 对前端提交的章节列表进行处理
+        for (Chapter updatedChapter : updatedChapters) {
+            // 先判断是否是现有章节
+            Chapter existingChapter = existingChaptersMap.get(updatedChapter.getId());
+            
+            if (existingChapter == null) {
+                // 全新的章节，直接添加
+                mergedChapters.add(updatedChapter);
+                log.info("智能合并章节: 添加新章节 {}", updatedChapter.getId());
+                continue;
+            }
+            
+            // 章节已存在，需要合并场景信息
+            Chapter mergedChapter = new Chapter();
+            // 基本属性使用前端提交的版本
+            mergedChapter.setId(updatedChapter.getId());
+            mergedChapter.setTitle(updatedChapter.getTitle());
+            mergedChapter.setOrder(updatedChapter.getOrder());
+            mergedChapter.setMetadata(updatedChapter.getMetadata());
+            
+            // 智能合并场景ID列表
+            List<String> mergedSceneIds = smartMergeSceneIds(
+                existingChapter.getSceneIds(),
+                updatedChapter.getSceneIds(),
+                existingChapterScenesMap.get(updatedChapter.getId()),
+                isRecentGenerated(existingChapter)
+            );
+            
+            mergedChapter.setSceneIds(mergedSceneIds);
+            mergedChapters.add(mergedChapter);
+        }
+        
+        // 检查是否有需要保留的章节（前端删除但后台刚生成的）
+        for (Chapter existingChapter : existingChapters) {
+            boolean chapterExists = false;
+            for (Chapter updatedChapter : updatedChapters) {
+                if (updatedChapter.getId().equals(existingChapter.getId())) {
+                    chapterExists = true;
+                    break;
+                }
+            }
+            
+            if (!chapterExists && isRecentGenerated(existingChapter)) {
+                // 前端删除了一个最近生成的章节，需要保留
+                mergedChapters.add(existingChapter);
+                log.warn("智能合并章节: 保留前端已删除但最近生成的章节 {}", existingChapter.getId());
+            }
+        }
+        
+        return mergedChapters;
+    }
+
+    /**
+     * 判断章节是否是最近生成的
+     * 可以基于时间戳或特定的元数据标记
+     */
+    private boolean isRecentGenerated(Chapter chapter) {
+        if (chapter.getMetadata() != null) {
+            // 检查是否有自动生成的标记
+            Object isGenerated = chapter.getMetadata().get("isAutoGenerated");
+            if (isGenerated instanceof Boolean && (Boolean) isGenerated) {
+                // 检查生成时间
+                Object generatedTime = chapter.getMetadata().get("generatedTimestamp");
+                if (generatedTime instanceof Long) {
+                    long timestamp = (Long) generatedTime;
+                    // 检查是否在过去24小时内生成
+                    return System.currentTimeMillis() - timestamp < 24 * 60 * 60 * 1000;
+                }
+                return true; // 如果有生成标记但没有时间戳，默认保留
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 检查卷中是否有最近生成的章节
+     */
+    private boolean checkForRecentGeneratedChapters(Act act) {
+        if (act.getChapters() != null) {
+            for (Chapter chapter : act.getChapters()) {
+                if (isRecentGenerated(chapter)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 智能合并场景ID列表
+     */
+    private List<String> smartMergeSceneIds(
+        List<String> existingSceneIds, 
+        List<String> updatedSceneIds,
+        Set<String> originalSceneIdsSet,
+        boolean isRecentGenerated
+    ) {
+        // 无需合并的情况
+        if (existingSceneIds == null || existingSceneIds.isEmpty()) {
+            return updatedSceneIds;
+        }
+        if (updatedSceneIds == null || updatedSceneIds.isEmpty()) {
+            return existingSceneIds;
+        }
+        
+        // 如果是最近生成的章节，且场景列表有变化，需要保留原有场景
+        if (isRecentGenerated) {
+            Set<String> updatedSceneIdsSet = new HashSet<>(updatedSceneIds);
+            
+            // 检查是否有场景被删除
+            boolean hasSceneRemoved = false;
+            if (originalSceneIdsSet != null) {
+                for (String originalSceneId : originalSceneIdsSet) {
+                    if (!updatedSceneIdsSet.contains(originalSceneId)) {
+                        hasSceneRemoved = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (hasSceneRemoved) {
+                log.warn("智能合并场景: 前端尝试删除最近生成章节的场景，保留原有场景列表");
+                return existingSceneIds;
+            }
+        }
+        
+        // 默认使用前端提交的场景列表
+        return updatedSceneIds;
+    }
+
 }

@@ -3,6 +3,15 @@ import 'package:flutter/foundation.dart';
 
 import '../../models/novel_structure.dart';
 import '../../models/user_ai_model_config_model.dart';
+import '../../models/next_outline/next_outline_dto.dart';
+
+/// 大纲状态枚举
+enum NextOutlineStatus {
+  initial,
+  loading,
+  success,
+  failure,
+}
 
 /// 剧情推演状态
 class NextOutlineState extends Equatable {
@@ -38,6 +47,15 @@ class NextOutlineState extends Equatable {
   
   /// 作者引导
   final String? authorGuidance;
+  
+  /// 大纲状态
+  final NextOutlineStatus status;
+  
+  /// 是否正在保存
+  final bool isSaving;
+  
+  /// 输出的大纲生成结果
+  final NextOutlineOutput? outputGeneration;
 
   const NextOutlineState({
     required this.novelId,
@@ -51,6 +69,9 @@ class NextOutlineState extends Equatable {
     this.errorMessage,
     this.numOptions = 3,
     this.authorGuidance,
+    this.status = NextOutlineStatus.initial,
+    this.isSaving = false,
+    this.outputGeneration,
   });
 
   /// 初始状态
@@ -73,6 +94,9 @@ class NextOutlineState extends Equatable {
     String? errorMessage,
     int? numOptions,
     String? authorGuidance,
+    NextOutlineStatus? status,
+    bool? isSaving,
+    NextOutlineOutput? outputGeneration,
     bool clearError = false,
     bool clearSelectedOption = false,
   }) {
@@ -88,6 +112,9 @@ class NextOutlineState extends Equatable {
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       numOptions: numOptions ?? this.numOptions,
       authorGuidance: authorGuidance ?? this.authorGuidance,
+      status: status ?? this.status,
+      isSaving: isSaving ?? this.isSaving,
+      outputGeneration: outputGeneration ?? this.outputGeneration,
     );
   }
 
@@ -104,6 +131,9 @@ class NextOutlineState extends Equatable {
     errorMessage,
     numOptions,
     authorGuidance,
+    status,
+    isSaving,
+    outputGeneration,
   ];
 }
 

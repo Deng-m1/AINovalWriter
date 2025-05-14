@@ -204,4 +204,49 @@ public interface SceneService {
      * @return 创建的场景
      */
     Mono<Scene> addScene(String novelId, String chapterId, String title, String summary, Integer position);
+
+    /**
+     * 根据ID获取场景，简化版findSceneById
+     *
+     * @param id 场景ID
+     * @return 场景信息
+     */
+    Mono<Scene> getSceneById(String id);
+    
+    /**
+     * 更新场景内容
+     *
+     * @param id 场景ID
+     * @param content 新内容
+     * @param userId 用户ID
+     * @return 更新后的场景
+     */
+    Mono<Scene> updateSceneContent(String id, String content, String userId);
+    
+    /**
+     * 更新场景摘要内容，支持任务执行器
+     *
+     * @param id 场景ID
+     * @param summary 新摘要内容
+     * @param userId 用户ID
+     * @return 更新后的场景
+     */
+    Mono<Scene> updateSceneSummary(String id, String summary, String userId);
+    
+    /**
+     * 更新场景字数统计
+     *
+     * @param id 场景ID
+     * @param wordCount 字数
+     * @return 更新后的场景
+     */
+    Mono<Scene> updateSceneWordCount(String id, Integer wordCount);
+    
+    /**
+     * 批量更新场景列表
+     *
+     * @param scenes 要更新的场景列表
+     * @return 更新后的场景列表
+     */
+    Mono<List<Scene>> updateScenesBatch(List<Scene> scenes);
 }

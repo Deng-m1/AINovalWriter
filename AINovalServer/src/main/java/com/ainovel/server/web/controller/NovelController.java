@@ -1,5 +1,6 @@
 package com.ainovel.server.web.controller;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -48,6 +49,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import org.springframework.util.StringUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 小说控制器
@@ -117,20 +120,21 @@ public class NovelController extends ReactiveBaseController {
     /**
      * 加载更多场景内容 根据方向（向上或向下）加载更多章节的场景内容
      *
-     * @param loadMoreScenesRequestDto 包含小说ID、方向和章节数量的DTO
+     * @param loadMoreScenesRequestDto 包含小说ID、卷ID、方向和章节数量的DTO
      * @return 加载的更多场景数据，按章节组织
      */
     @PostMapping("/load-more-scenes")
     public Mono<Map<String, List<Scene>>> loadMoreScenes(@RequestBody LoadMoreScenesRequestDto loadMoreScenesRequestDto) {
         String novelId = loadMoreScenesRequestDto.getNovelId();
+        String actId = loadMoreScenesRequestDto.getActId();
         String fromChapterId = loadMoreScenesRequestDto.getFromChapterId();
         String direction = loadMoreScenesRequestDto.getDirection();
         int chaptersLimit = loadMoreScenesRequestDto.getChaptersLimit();
 
-        log.info("加载更多场景: novelId={}, fromChapterId={}, direction={}, chaptersLimit={}",
-                novelId, fromChapterId, direction, chaptersLimit);
+        log.info("加载更多场景: novelId={}, actId={}, fromChapterId={}, direction={}, chaptersLimit={}",
+                novelId, actId, fromChapterId, direction, chaptersLimit);
 
-        return novelService.loadMoreScenes(novelId, fromChapterId, direction, chaptersLimit);
+        return novelService.loadMoreScenes(novelId, actId, fromChapterId, direction, chaptersLimit);
     }
 
     /**
@@ -194,6 +198,31 @@ public class NovelController extends ReactiveBaseController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> deleteNovel(@RequestBody IdDto idDto) {
         return novelService.deleteNovel(idDto.getId());
+    }
+
+    /**
+     * 删除章节及其场景
+     *
+     * @param request 包含novelId, actId, chapterId的请求
+     * @return 更新后的小说数据，包含场景
+     */
+    @PostMapping("/delete-chapter")
+    public Mono<NovelWithScenesDto> deleteChapter(@RequestBody Map<String, String> request) {
+        String novelId = request.get("novelId");
+        String actId = request.get("actId");
+        String chapterId = request.get("chapterId");
+        
+        log.info("收到删除章节请求: novelId={}, actId={}, chapterId={}", novelId, actId, chapterId);
+        
+        if (novelId == null || actId == null || chapterId == null) {
+            return Mono.error(new IllegalArgumentException("novelId, actId 和 chapterId 不能为空"));
+        }
+        
+        return novelService.deleteChapter(novelId, actId, chapterId)
+                .flatMap(novel -> novelService.getNovelWithAllScenes(novelId))
+                .doOnSuccess(dto -> log.info("章节删除成功并返回更新后的小说数据: novelId={}", novelId))
+                .doOnError(e -> log.error("章节删除失败: novelId={}, actId={}, chapterId={}, 错误={}", 
+                        novelId, actId, chapterId, e.getMessage()));
     }
 
     /**
@@ -685,7 +714,7 @@ public class NovelController extends ReactiveBaseController {
      * @return 小说及其场景摘要数据
      */
     @PostMapping("/get-with-scene-summaries")
-    public Mono<NovelWithSummariesDto> getNovelWithSceneSummaries(@RequestBody IdDto idDto) {
+    public Mono<NovelWithSummariesDto>  getNovelWithSceneSummaries(@RequestBody IdDto idDto) {
         String novelId = idDto.getId();
         log.info("获取小说及其场景摘要: novelId={}", novelId);
 
@@ -836,5 +865,192 @@ public class NovelController extends ReactiveBaseController {
     @PostMapping("/update-word-count")
     public Mono<Novel> updateNovelWordCount(@RequestBody IdDto idDto) {
         return novelService.updateNovelWordCount(idDto.getId());
+    }
+
+    @PostMapping("/update-last-edited-chapter")
+    public Mono<Void> updateLastEditedChapter(@RequestBody Map<String, String> requestData) {
+        String novelId = requestData.get("novelId");
+        String chapterId = requestData.get("chapterId");
+        
+        if (StringUtils.isEmpty(novelId) || StringUtils.isEmpty(chapterId)) {
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "小说ID和章节ID不能为空"));
+        }
+        
+        log.info("更新小说最后编辑章节ID: novelId={}, chapterId={}", novelId, chapterId);
+        return novelService.updateLastEditedChapter(novelId, chapterId)
+                .then();
+    }
+    
+    @PostMapping("/update-word-counts")
+    public Mono<Novel> updateNovelWordCounts(@RequestBody Map<String, Object> requestData) {
+        String novelId = (String) requestData.get("novelId");
+        
+        if (StringUtils.isEmpty(novelId)) {
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "小说ID不能为空"));
+        }
+        
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Integer> sceneWordCounts = (Map<String, Integer>) requestData.get("sceneWordCounts");
+            
+            if (sceneWordCounts == null || sceneWordCounts.isEmpty()) {
+                return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "场景字数数据不能为空"));
+            }
+            
+            log.info("批量更新小说字数统计: novelId={}, 场景数量={}", novelId, sceneWordCounts.size());
+            
+            // 批量更新场景字数
+            return Flux.fromIterable(sceneWordCounts.entrySet())
+                    .flatMap(entry -> sceneService.updateSceneWordCount(entry.getKey(), entry.getValue()))
+                    .then(novelService.updateNovelWordCount(novelId));
+        } catch (Exception e) {
+            log.error("更新小说字数统计失败", e);
+            return Mono.error(new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新小说字数统计失败: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 更新小说结构（只更新结构，不包含场景内容）
+     *
+     * @param novel 小说结构信息
+     * @return 更新后的小说
+     */
+    @PostMapping("/update-structure")
+    public Mono<Novel> updateNovelStructure(@RequestBody Novel novel) {
+        if (novel == null || novel.getId() == null) {
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "小说ID不能为空"));
+        }
+        
+        log.info("更新小说结构: novelId={}", novel.getId());
+        
+        return novelService.findNovelById(novel.getId())
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "小说不存在")))
+                .flatMap(existingNovel -> {
+                    // 只更新结构字段，保留其他元数据
+                    if (novel.getStructure() != null) {
+                        existingNovel.setStructure(novel.getStructure());
+                    }
+                    
+                    // 如果需要更新lastEditedChapterId
+                    if (novel.getLastEditedChapterId() != null) {
+                        existingNovel.setLastEditedChapterId(novel.getLastEditedChapterId());
+                    }
+                    
+                    // 更新时间戳
+                    existingNovel.setUpdatedAt(LocalDateTime.now());
+                    
+                    return novelService.updateNovel(existingNovel.getId(), existingNovel);
+                })
+                .doOnSuccess(updatedNovel -> log.info("小说结构更新成功: novelId={}", updatedNovel.getId()))
+                .doOnError(e -> log.error("小说结构更新失败: {}", e.getMessage()));
+    }
+
+    /**
+     * 添加新卷 - 细粒度操作：只接收卷信息，不需要整个小说结构
+     *
+     * @param requestData 包含小说ID和新卷信息的请求数据
+     * @return 新创建的卷信息
+     */
+    @PostMapping("/add-act-fine")
+    public Mono<Novel.Act> addActFine(@RequestBody Map<String, Object> requestData) {
+        String novelId = (String) requestData.get("novelId");
+        String title = (String) requestData.get("title");
+        String description = (String) requestData.get("description");
+        
+        if (StringUtils.isEmpty(novelId)) {
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "小说ID不能为空"));
+        }
+        
+        if (StringUtils.isEmpty(title)) {
+            title = "新卷";
+        }
+        
+        log.info("细粒度添加新卷: novelId={}, title={}", novelId, title);
+        
+        return novelService.addActFine(novelId, title, description)
+                .doOnSuccess(act -> log.info("细粒度添加新卷成功: novelId={}, actId={}", novelId, act.getId()));
+    }
+    
+    /**
+     * 添加新章节 - 细粒度操作：只接收章节信息，不需要整个小说结构
+     *
+     * @param requestData 包含小说ID、卷ID和新章节信息的请求数据
+     * @return 新创建的章节信息
+     */
+    @PostMapping("/add-chapter-fine")
+    public Mono<Novel.Chapter> addChapterFine(@RequestBody Map<String, Object> requestData) {
+        String novelId = (String) requestData.get("novelId");
+        String actId = (String) requestData.get("actId");
+        String title = (String) requestData.get("title");
+        String description = (String) requestData.get("description");
+        
+        if (StringUtils.isEmpty(novelId) || StringUtils.isEmpty(actId)) {
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "小说ID和卷ID不能为空"));
+        }
+        
+        if (StringUtils.isEmpty(title)) {
+            title = "新章节";
+        }
+        
+        log.info("细粒度添加新章节: novelId={}, actId={}, title={}", novelId, actId, title);
+        
+        return novelService.addChapterFine(novelId, actId, title, description)
+                .doOnSuccess(chapter -> log.info("细粒度添加新章节成功: novelId={}, actId={}, chapterId={}", 
+                        novelId, actId, chapter.getId()));
+    }
+    
+    /**
+     * 删除卷 - 细粒度操作：只接收小说ID和卷ID
+     *
+     * @param requestData 包含小说ID和卷ID的请求数据
+     * @return 操作结果
+     */
+    @PostMapping("/delete-act-fine")
+    public Mono<Boolean> deleteActFine(@RequestBody Map<String, String> requestData) {
+        String novelId = requestData.get("novelId");
+        String actId = requestData.get("actId");
+        
+        if (StringUtils.isEmpty(novelId) || StringUtils.isEmpty(actId)) {
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "小说ID和卷ID不能为空"));
+        }
+        
+        log.info("细粒度删除卷: novelId={}, actId={}", novelId, actId);
+        
+        return novelService.deleteActFine(novelId, actId)
+                .doOnSuccess(success -> {
+                    if (success) {
+                        log.info("细粒度删除卷成功: novelId={}, actId={}", novelId, actId);
+                    } else {
+                        log.warn("细粒度删除卷失败: novelId={}, actId={}", novelId, actId);
+                    }
+                });
+    }
+    
+    /**
+     * 删除章节 - 细粒度操作：只接收小说ID、卷ID和章节ID
+     *
+     * @param requestData 包含小说ID、卷ID和章节ID的请求数据
+     * @return 操作结果
+     */
+    @PostMapping("/delete-chapter-fine")
+    public Mono<Boolean> deleteChapterFine(@RequestBody Map<String, String> requestData) {
+        String novelId = requestData.get("novelId");
+        String actId = requestData.get("actId");
+        String chapterId = requestData.get("chapterId");
+        
+        if (StringUtils.isEmpty(novelId) || StringUtils.isEmpty(actId) || StringUtils.isEmpty(chapterId)) {
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "小说ID、卷ID和章节ID不能为空"));
+        }
+        
+        log.info("细粒度删除章节: novelId={}, actId={}, chapterId={}", novelId, actId, chapterId);
+        
+        return novelService.deleteChapterFine(novelId, actId, chapterId)
+                .doOnSuccess(success -> {
+                    if (success) {
+                        log.info("细粒度删除章节成功: novelId={}, actId={}, chapterId={}", novelId, actId, chapterId);
+                    } else {
+                        log.warn("细粒度删除章节失败: novelId={}, actId={}, chapterId={}", novelId, actId, chapterId);
+                    }
+                });
     }
 }

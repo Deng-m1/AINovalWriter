@@ -5,8 +5,12 @@ import java.util.Map;
 
 import com.ainovel.server.domain.model.Character;
 import com.ainovel.server.domain.model.Novel;
+import com.ainovel.server.domain.model.Novel.Act;
+import com.ainovel.server.domain.model.Novel.Chapter;
+import com.ainovel.server.domain.model.NovelSceneContent;
 import com.ainovel.server.domain.model.Scene;
 import com.ainovel.server.domain.model.Setting;
+import com.ainovel.server.web.dto.CreatedChapterInfo;
 import com.ainovel.server.web.dto.NovelWithScenesDto;
 import com.ainovel.server.web.dto.NovelWithSummariesDto;
 
@@ -137,6 +141,7 @@ public interface NovelService {
      */
     Flux<Scene> getNovelScenes(String novelId);
 
+
     /**
      * 获取小说的所有角色
      *
@@ -193,12 +198,13 @@ public interface NovelService {
      * 加载更多场景内容 根据方向（向上或向下）加载更多章节的场景内容
      *
      * @param novelId 小说ID
+     * @param actId 卷ID，用于限制在指定卷内分页加载
      * @param fromChapterId 从哪个章节开始加载
      * @param direction 加载方向，"up"表示向上加载，"down"表示向下加载
      * @param chaptersLimit 要加载的章节数量
      * @return 加载的更多场景数据，按章节组织
      */
-    Mono<Map<String, List<Scene>>> loadMoreScenes(String novelId, String fromChapterId, String direction, int chaptersLimit);
+    Mono<Map<String, List<Scene>>> loadMoreScenes(String novelId, String actId, String fromChapterId, String direction, int chaptersLimit);
 
     /**
      * 更新卷标题
@@ -277,4 +283,88 @@ public interface NovelService {
      * @return 拼接后的摘要字符串
      */
     Mono<String> getChapterRangeSummaries(String novelId, String startChapterId, String endChapterId);
+
+    /**
+     * 添加一个新章节到最后一卷的末尾，并创建一个包含初始摘要的空场景。
+     *
+     * @param novelId           小说ID
+     * @param chapterTitle      新章节标题
+     * @param initialSceneSummary 新场景的初始摘要 (会被放入第一个 Scene 的 summary 字段)
+     * @param initialSceneTitle 新场景的标题
+     * @return 包含新章节ID和新场景ID的 Mono<CreatedChapterInfo>
+     */
+    Mono<CreatedChapterInfo> addChapterWithInitialScene(String novelId, String chapterTitle, String initialSceneSummary, String initialSceneTitle);
+
+    /**
+     * 添加一个新章节到最后一卷的末尾，并创建一个包含初始摘要的空场景。
+     *
+     * @param novelId           小说ID
+     * @param chapterTitle      新章节标题
+     * @param initialSceneSummary 新场景的初始摘要 (会被放入第一个 Scene 的 summary 字段)
+     * @param initialSceneTitle 新场景的标题
+     * @param metadata         章节元数据，用于标记自动生成的内容等信息
+     * @return 包含新章节ID和新场景ID的 Mono<CreatedChapterInfo>
+     */
+    Mono<CreatedChapterInfo> addChapterWithInitialScene(String novelId, String chapterTitle, String initialSceneSummary, String initialSceneTitle, Map<String, Object> metadata);
+
+    /**
+     * 更新指定场景的内容。
+     *
+     * @param novelId   小说ID (用于验证或日志记录)
+     * @param chapterId 章节ID (用于验证或日志记录)
+     * @param sceneId   要更新的场景ID
+     * @param content   新的场景内容
+     * @return 更新后的场景 Mono<Scene>
+     */
+    Mono<Scene> updateSceneContent(String novelId, String chapterId, String sceneId, String content);
+
+    /**
+     * 删除章节及其所有场景
+     *
+     * @param novelId   小说ID
+     * @param actId     卷ID
+     * @param chapterId 章节ID
+     * @return 更新后的小说 Mono<Novel>
+     */
+    Mono<Novel> deleteChapter(String novelId, String actId, String chapterId);
+
+    /**
+     * 细粒度添加卷 - 只提供必要信息，不传整个结构
+     *
+     * @param novelId    小说ID
+     * @param title      卷标题
+     * @param description 卷描述 (可为null)
+     * @return 新创建的卷信息
+     */
+    Mono<Act> addActFine(String novelId, String title, String description);
+
+    /**
+     * 细粒度添加章节 - 只提供必要信息，不传整个结构
+     *
+     * @param novelId    小说ID
+     * @param actId      卷ID
+     * @param title      章节标题
+     * @param description 章节描述 (可为null)
+     * @return 新创建的章节信息
+     */
+    Mono<Chapter> addChapterFine(String novelId, String actId, String title, String description);
+
+    /**
+     * 细粒度删除卷 - 只提供ID，不传整个结构
+     *
+     * @param novelId    小说ID
+     * @param actId      卷ID
+     * @return 操作是否成功
+     */
+    Mono<Boolean> deleteActFine(String novelId, String actId);
+
+    /**
+     * 细粒度删除章节 - 只提供ID，不传整个结构
+     *
+     * @param novelId    小说ID
+     * @param actId      卷ID
+     * @param chapterId  章节ID
+     * @return 操作是否成功
+     */
+    Mono<Boolean> deleteChapterFine(String novelId, String actId, String chapterId);
 }

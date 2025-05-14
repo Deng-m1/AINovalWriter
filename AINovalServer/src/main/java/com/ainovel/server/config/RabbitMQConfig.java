@@ -20,6 +20,7 @@ import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -46,6 +47,7 @@ public class RabbitMQConfig {
     // 队列名称
     public static final String TASKS_QUEUE = "tasks.queue";
     public static final String TASKS_DLQ_QUEUE = "tasks.dlq.queue";
+    public static final String TASKS_EVENTS_QUEUE = "tasks.events.queue";
     
     // 等待队列（用于延迟重试）
     public static final String TASKS_WAIT_15S_QUEUE = "tasks.wait_15s.queue";
@@ -71,7 +73,17 @@ public class RabbitMQConfig {
     @Value("${spring.rabbitmq.virtual-host:/}")
     private String virtualHost;
     
+    @Value("${spring.rabbitmq.listener.simple.prefetch:1}")
+    private int prefetchCount;
+    
+    @Value("${spring.rabbitmq.listener.simple.concurrency:5}")
+    private int concurrentConsumers;
+    
+    @Value("${spring.rabbitmq.listener.simple.max-concurrency:10}")
+    private int maxConcurrentConsumers;
+    
     @Autowired
+    @Qualifier("taskObjectMapper")
     private ObjectMapper objectMapper;
     
     /**
@@ -111,7 +123,7 @@ public class RabbitMQConfig {
         RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
         
         // 设置消息转换器
-        rabbitTemplate.setMessageConverter(jsonMessageConverter());
+        rabbitTemplate.setMessageConverter(jackson2JsonMessageConverter());
         
         // 启用强制消息
         rabbitTemplate.setMandatory(true);
@@ -134,10 +146,10 @@ public class RabbitMQConfig {
     }
     
     /**
-     * 配置Jackson2消息转换器
+     * 配置消息转换器
      */
     @Bean
-    public Jackson2JsonMessageConverter jsonMessageConverter() {
+    public Jackson2JsonMessageConverter jackson2JsonMessageConverter() {
         return new Jackson2JsonMessageConverter(objectMapper);
     }
     
@@ -149,17 +161,17 @@ public class RabbitMQConfig {
             ConnectionFactory connectionFactory) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
-        factory.setMessageConverter(jsonMessageConverter());
+        factory.setMessageConverter(jackson2JsonMessageConverter());
         
         // 配置手动确认模式
         factory.setAcknowledgeMode(AcknowledgeMode.MANUAL);
         
         // 配置并发消费者数
-        factory.setConcurrentConsumers(4);
-        factory.setMaxConcurrentConsumers(8);
+        factory.setConcurrentConsumers(concurrentConsumers);
+        factory.setMaxConcurrentConsumers(maxConcurrentConsumers);
         
         // 配置预取数量
-        factory.setPrefetchCount(1);
+        factory.setPrefetchCount(prefetchCount);
         
         // 使用虚拟线程
         factory.setTaskExecutor(Executors.newVirtualThreadPerTaskExecutor());
@@ -168,9 +180,10 @@ public class RabbitMQConfig {
     }
     
     // 交换机定义
-    
+
     /**
-     * 任务主交换机（直连）
+     * 任务主交换机（主题交换机）
+     * 注意：改回TopicExchange以支持通配符，简化任务路由配置
      */
     @Bean
     public DirectExchange tasksExchange() {
@@ -227,6 +240,15 @@ public class RabbitMQConfig {
     @Bean
     public Queue tasksDlqQueue() {
         return QueueBuilder.durable(TASKS_DLQ_QUEUE)
+                .build();
+    }
+    
+    /**
+     * 任务事件队列
+     */
+    @Bean
+    public Queue tasksEventsQueue() {
+        return QueueBuilder.durable(TASKS_EVENTS_QUEUE)
                 .build();
     }
     
@@ -327,42 +349,109 @@ public class RabbitMQConfig {
     }
     
     /**
-     * 创建任务生成摘要类型的绑定（这是初始示例，每种任务类型都需要一个绑定）
+     * 任务事件交换机 -> 事件队列绑定
+     */
+    @Bean
+    public Binding tasksEventsToQueueBinding() {
+        return BindingBuilder.bind(tasksEventsQueue())
+                .to(tasksEventsExchange())
+                .with("task.event.#"); // 使用通配符匹配所有task.event开头的路由键
+    }
+    
+    // /**
+    //  * 通用任务绑定 - 捕获所有任务类型
+    //  * 使用通配符将所有task.前缀的消息路由到任务队列
+    //  * 这是推荐的绑定方式，可以自动处理新的任务类型。
+    //  */
+    // @Bean
+    // public Binding allTasksBinding() {
+    //     return BindingBuilder.bind(tasksQueue())
+    //             .to(tasksExchange()) // 确保绑定到TopicExchange
+    //             .with(TASK_TYPE_PREFIX + "#"); // 匹配所有task.前缀的路由键
+    // }
+    
+    /**
+     * 创建任务生成摘要类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
      */
     @Bean
     public Binding generateSummaryBinding() {
         return BindingBuilder.bind(tasksQueue())
                 .to(tasksExchange())
-                .with(TASK_TYPE_PREFIX + "GenerateSummaryTask");
+                .with(TASK_TYPE_PREFIX + "GENERATE_SUMMARY");
     }
     
     /**
      * 创建任务生成场景类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
      */
     @Bean
     public Binding generateSceneBinding() {
         return BindingBuilder.bind(tasksQueue())
                 .to(tasksExchange())
-                .with(TASK_TYPE_PREFIX + "GenerateSceneTask");
+                .with(TASK_TYPE_PREFIX + "GENERATE_SCENE");
     }
     
     /**
      * 创建批量生成摘要任务类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
      */
     @Bean
     public Binding batchGenerateSummaryBinding() {
         return BindingBuilder.bind(tasksQueue())
                 .to(tasksExchange())
-                .with(TASK_TYPE_PREFIX + "BatchGenerateSummaryTask");
+                .with(TASK_TYPE_PREFIX + "BATCH_GENERATE_SUMMARY");
     }
     
     /**
      * 创建批量生成场景任务类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
      */
     @Bean
     public Binding batchGenerateSceneBinding() {
         return BindingBuilder.bind(tasksQueue())
                 .to(tasksExchange())
-                .with(TASK_TYPE_PREFIX + "BatchGenerateSceneTask");
+                .with(TASK_TYPE_PREFIX + "BATCH_GENERATE_SCENE");
+    }
+    
+    /**
+     * 创建续写内容任务类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
+     */
+    @Bean
+    public Binding continueWritingContentBinding() {
+        return BindingBuilder.bind(tasksQueue())
+                .to(tasksExchange())
+                .with(TASK_TYPE_PREFIX + "CONTINUE_WRITING_CONTENT");
+    }
+    
+    /**
+     * 创建生成下一章摘要任务类型的绑定
+     * (冗余，已被 allTasksBinding 覆盖)
+     */
+    @Bean
+    public Binding generateNextSummariesOnlyBinding() {
+        return BindingBuilder.bind(tasksQueue())
+                .to(tasksExchange())
+                .with(TASK_TYPE_PREFIX + "GENERATE_NEXT_SUMMARIES_ONLY");
+    }
+
+    @Bean
+    public Binding generateSingleChapterOnlyBinding() {
+        return BindingBuilder.bind(tasksQueue())
+                .to(tasksExchange())
+                .with(TASK_TYPE_PREFIX + "GENERATE_SINGLE_CHAPTER");
+    }
+
+    
+    /**
+     * 创建生成单个摘要任务类型的绑定 (子任务)
+     * (冗余，已被 allTasksBinding 覆盖)
+     */
+    @Bean
+    public Binding generateSingleSummaryBinding() {
+        return BindingBuilder.bind(tasksQueue())
+                .to(tasksExchange())
+                .with(TASK_TYPE_PREFIX + "GENERATE_SINGLE_SUMMARY"); // 添加这个子任务的绑定(虽然冗余)
     }
 } 

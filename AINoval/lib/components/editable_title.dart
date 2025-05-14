@@ -66,21 +66,24 @@ class _EditableTitleState extends State<EditableTitle> {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: _controller,
-      style: widget.style,
-      decoration: const InputDecoration(
-        border: InputBorder.none,
-        contentPadding: EdgeInsets.zero,
-        isDense: true,
+    return Material(
+      color: Colors.transparent,
+      child: TextField(
+        controller: _controller,
+        style: widget.style,
+        decoration: const InputDecoration(
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.zero,
+          isDense: true,
+        ),
+        textAlign: widget.textAlign,
+        autofocus: widget.autofocus,
+        onChanged: (value) {
+          _debouncer.run(() {
+            widget.onChanged(value);
+          });
+        },
       ),
-      textAlign: widget.textAlign,
-      autofocus: widget.autofocus,
-      onChanged: (value) {
-        _debouncer.run(() {
-          widget.onChanged(value);
-        });
-      },
     );
   }
 }

@@ -11,6 +11,7 @@ import com.ainovel.server.web.dto.GenerateSceneFromSummaryResponse;
 import com.ainovel.server.web.dto.SummarizeSceneRequest;
 import com.ainovel.server.web.dto.SummarizeSceneResponse;
 import com.ainovel.server.web.dto.OutlineGenerationChunk;
+import com.ainovel.server.domain.model.NextOutline;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -262,4 +263,24 @@ public interface NovelAIService {
      * @return 包含生成场景内容的响应
      */
     Mono<GenerateSceneFromSummaryResponse> generateSceneFromSummary(String userId, String novelId, GenerateSceneFromSummaryRequest request);
+
+    /**
+     * 根据当前上下文（包含之前的摘要形成的大纲）生成下一个章节的单一摘要。
+     *
+     * @param userId            用户ID
+     * @param novelId           小说ID
+     * @param currentContext    当前的上下文信息，应包含足够的信息（如先前章节的摘要）来生成下一个摘要。
+     * @param aiConfigIdSummary 用于生成摘要的AI配置ID (如果为null或空，则使用用户默认配置)。
+     * @param writingStyle      可选的写作风格或指示。
+     * @return 生成的下一个章节的摘要文本。
+     */
+    Mono<String> generateNextSingleSummary(String userId, String novelId, String currentContext, String aiConfigIdSummary, String writingStyle);
+
+    /**
+     * 根据配置ID获取AI模型提供商
+     * @param userId 用户ID
+     * @param configId 配置ID
+     * @return AI模型提供商
+     */
+    Mono<AIModelProvider> getAIModelProviderByConfigId(String userId, String configId);
 }

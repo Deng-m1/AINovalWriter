@@ -8,8 +8,26 @@ import lombok.NoArgsConstructor;
  * 摘要生成请求DTO
  */
 @Data
-//@NoArgsConstructor
+@NoArgsConstructor
 @AllArgsConstructor
 public class SummarizeSceneRequest {
-    // 初期可为空，未来可扩展参数如摘要风格、长度限制等
+    /**
+     * 场景内容
+     */
+    private String content;
+    
+    /**
+     * 摘要最大长度（字符数）
+     */
+    private Integer maxLength;
+    
+    /**
+     * 摘要语调
+     */
+    private String tone;
+    
+    /**
+     * 摘要应专注于内容的哪些方面
+     */
+    private String focusOn;
 } 

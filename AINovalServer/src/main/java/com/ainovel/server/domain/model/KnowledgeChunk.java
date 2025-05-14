@@ -1,6 +1,8 @@
 package com.ainovel.server.domain.model;
 
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -52,6 +54,9 @@ public class KnowledgeChunk {
      * 更新时间
      */
     private Instant updatedAt = Instant.now();
+
+
+    private Map<String, Object> metadata = new HashMap<>();
     
     /**
      * 向量嵌入类

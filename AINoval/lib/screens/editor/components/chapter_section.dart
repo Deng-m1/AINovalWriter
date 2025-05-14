@@ -19,12 +19,14 @@ class ChapterSection extends StatefulWidget {
     required this.actId,
     required this.chapterId,
     required this.editorBloc,
+    this.chapterIndex, // 添加章节序号参数
   });
   final String title;
   final List<Widget> scenes;
   final String actId;
   final String chapterId;
   final EditorBloc editorBloc;
+  final int? chapterIndex; // 章节在卷中的序号，从1开始
 
   @override
   State<ChapterSection> createState() => _ChapterSectionState();
@@ -61,18 +63,36 @@ class _ChapterSectionState extends State<ChapterSection> {
     super.dispose();
   }
 
+  // 获取章节序号文本
+  String _getChapterIndexText() {
+    if (widget.chapterIndex == null) return '';
+    
+    // 使用中文数字表示章节序号
+    final List<String> chineseNumbers = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+    
+    if (widget.chapterIndex! <= 10) {
+      return '第${chineseNumbers[widget.chapterIndex!]}章 · ';
+    } else if (widget.chapterIndex! < 20) {
+      return '第十${chineseNumbers[widget.chapterIndex! - 10]}章 · ';
+    } else {
+      // 对于更大的数字，直接使用阿拉伯数字
+      return '第${widget.chapterIndex}章 · ';
+    }
+  }
+
   // 手动触发加载场景的方法
   void _loadScenes() {
     AppLogger.i('ChapterSection', '手动触发加载章节场景: ${widget.actId} - ${widget.chapterId}');
     
     try {
       final controller = Provider.of<EditorScreenController>(context, listen: false);
-      controller.loadScenesForChapter(widget.chapterId);
+      controller.loadScenesForChapter(widget.actId, widget.chapterId);
     } catch (e) {
       // 如果无法获取控制器，直接使用EditorBloc
       widget.editorBloc.add(LoadMoreScenes(
         fromChapterId: widget.chapterId,
         direction: 'center',
+        actId: widget.actId,
         chaptersLimit: 2,
         preventFocusChange: true,
       ));
@@ -93,6 +113,15 @@ class _ChapterSectionState extends State<ChapterSection> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center, // 垂直居中对齐
             children: [
+              // 添加章节序号前缀
+              if (widget.chapterIndex != null)
+                Text(
+                  _getChapterIndexText(),
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black,
+                  ),
+                ),
               // 可编辑的文本字段
               Expanded(
                 child: EditableTitle(
