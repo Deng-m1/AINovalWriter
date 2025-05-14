@@ -17,8 +17,10 @@ import 'package:ainoval/screens/next_outline/next_outline_view.dart';
 import 'package:ainoval/screens/settings/settings_panel.dart';
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/api_service/repositories/impl/aliyun_oss_storage_repository.dart';
+import 'package:ainoval/services/api_service/repositories/impl/user_ai_model_config_repository_impl.dart';
 import 'package:ainoval/services/api_service/repositories/prompt_repository.dart';
 import 'package:ainoval/services/api_service/repositories/storage_repository.dart';
+import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -96,9 +98,8 @@ class EditorLayout extends StatelessWidget {
   // 构建主布局
   Widget _buildMainLayout(BuildContext context, editor_bloc.EditorLoaded editorBlocState, EditorScreenController editorController) {
     // No longer need Consumer2 here if editorController is passed directly
-    // final layoutState = Provider.of<EditorLayoutManager>(context); // Can get this if needed
+    final layoutState = Provider.of<EditorLayoutManager>(context); // Can get this if needed
 
-    final layoutState = layoutManager; // Assuming layoutManager is available via the constructor
     final hasVisibleAIPanels = layoutState.visiblePanels.isNotEmpty;
     
     // isLoadingMore is true if the bloc state is loading or the controller's isLoadingMore is true
@@ -156,8 +157,8 @@ class EditorLayout extends StatelessWidget {
                     onNextOutlinePressed: editorController.toggleNextOutlineView,
                     onAIGenerationPressed: layoutState.toggleAISceneGenerationPanel,
                     onAISummaryPressed: layoutState.toggleAISummaryPanel,
-                    onAutoContinueWritingPressed: onAutoContinueWritingPressed,
-                    isAIGenerationActive: layoutState.isAISceneGenerationPanelVisible || layoutState.isAISummaryPanelVisible,
+                    onAutoContinueWritingPressed: layoutState.toggleAIContinueWritingPanel,
+                    isAIGenerationActive: layoutState.isAISceneGenerationPanelVisible || layoutState.isAISummaryPanelVisible || layoutState.isAIContinueWritingPanelVisible,
                     isNextOutlineActive: editorController.isNextOutlineViewActive,
                   ),
                   // 主编辑区域与聊天侧边栏
@@ -231,6 +232,17 @@ class EditorLayout extends StatelessWidget {
                                   novelId: editorController.novel.id,
                                   chapterId: editorBlocState.activeChapterId,
                                   layoutManager: layoutState,
+                                  userId: editorController.currentUserId,
+                                  userAiModelConfigRepository: UserAIModelConfigRepositoryImpl(apiClient: editorController.apiClient),
+                                  onContinueWritingSubmit: (parameters) {
+                                    AppLogger.i('EditorLayout', 'Continue Writing Submitted: $parameters');
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('自动续写任务已提交: $parameters'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  },
                                 ),
                               ),
                             ],

@@ -16,12 +16,14 @@ class EditorLayoutManager extends ChangeNotifier {
   bool isNovelSettingsVisible = false;
   bool isAISummaryPanelVisible = false;
   bool isAISceneGenerationPanelVisible = false;
+  bool isAIContinueWritingPanelVisible = false;
   
   // 多面板显示时的顺序和位置
   final List<String> visiblePanels = [];
   static const String aiChatPanel = 'aiChat';
   static const String aiSummaryPanel = 'aiSummary';
   static const String aiScenePanel = 'aiScene';
+  static const String aiContinueWritingPanel = 'aiContinueWriting';
 
   // 侧边栏宽度
   double editorSidebarWidth = 280;
@@ -32,6 +34,7 @@ class EditorLayoutManager extends ChangeNotifier {
     aiChatPanel: 350,
     aiSummaryPanel: 350,
     aiScenePanel: 350,
+    aiContinueWritingPanel: 350,
   };
 
   // 侧边栏宽度限制
@@ -105,10 +108,13 @@ class EditorLayoutManager extends ChangeNotifier {
       final savedWidthsString = prefs.getString(panelWidthsPrefKey);
       if (savedWidthsString != null) {
         final savedWidthsList = savedWidthsString.split(',');
-        if (savedWidthsList.length >= 3) {
-          panelWidths[aiChatPanel] = double.parse(savedWidthsList[0]).clamp(minPanelWidth, maxPanelWidth);
-          panelWidths[aiSummaryPanel] = double.parse(savedWidthsList[1]).clamp(minPanelWidth, maxPanelWidth);
-          panelWidths[aiScenePanel] = double.parse(savedWidthsList[2]).clamp(minPanelWidth, maxPanelWidth);
+        if (savedWidthsList.isNotEmpty) {
+          panelWidths[aiChatPanel] = double.tryParse(savedWidthsList.elementAtOrNull(0) ?? panelWidths[aiChatPanel].toString())!.clamp(minPanelWidth, maxPanelWidth);
+          panelWidths[aiSummaryPanel] = double.tryParse(savedWidthsList.elementAtOrNull(1) ?? panelWidths[aiSummaryPanel].toString())!.clamp(minPanelWidth, maxPanelWidth);
+          panelWidths[aiScenePanel] = double.tryParse(savedWidthsList.elementAtOrNull(2) ?? panelWidths[aiScenePanel].toString())!.clamp(minPanelWidth, maxPanelWidth);
+          if (savedWidthsList.length > 3) {
+            panelWidths[aiContinueWritingPanel] = double.tryParse(savedWidthsList.elementAtOrNull(3) ?? panelWidths[aiContinueWritingPanel].toString())!.clamp(minPanelWidth, maxPanelWidth);
+          }
         }
       }
     } catch (e) {
@@ -129,6 +135,7 @@ class EditorLayoutManager extends ChangeNotifier {
         isAIChatSidebarVisible = visiblePanels.contains(aiChatPanel);
         isAISummaryPanelVisible = visiblePanels.contains(aiSummaryPanel);
         isAISceneGenerationPanelVisible = visiblePanels.contains(aiScenePanel);
+        isAIContinueWritingPanelVisible = visiblePanels.contains(aiContinueWritingPanel);
       }
     } catch (e) {
       AppLogger.e('EditorLayoutManager', '加载可见面板失败', e);
@@ -149,7 +156,12 @@ class EditorLayoutManager extends ChangeNotifier {
   Future<void> savePanelWidths() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final widthsString = '${panelWidths[aiChatPanel]},${panelWidths[aiSummaryPanel]},${panelWidths[aiScenePanel]}';
+      final widthsString = [
+        panelWidths[aiChatPanel],
+        panelWidths[aiSummaryPanel],
+        panelWidths[aiScenePanel],
+        panelWidths[aiContinueWritingPanel]
+      ].join(',');
       await prefs.setString(panelWidthsPrefKey, widthsString);
     } catch (e) {
       AppLogger.e('EditorLayoutManager', '保存面板宽度失败', e);
@@ -242,6 +254,19 @@ class EditorLayoutManager extends ChangeNotifier {
       // 如果不可见，则添加
       visiblePanels.add(aiSummaryPanel);
       isAISummaryPanelVisible = true;
+    }
+    saveVisiblePanels();
+    notifyListeners();
+  }
+
+  // 新增：切换AI自动续写面板可见性
+  void toggleAIContinueWritingPanel() {
+    if (visiblePanels.contains(aiContinueWritingPanel)) {
+      visiblePanels.remove(aiContinueWritingPanel);
+      isAIContinueWritingPanelVisible = false;
+    } else {
+      visiblePanels.add(aiContinueWritingPanel);
+      isAIContinueWritingPanelVisible = true;
     }
     saveVisiblePanels();
     notifyListeners();

@@ -4,7 +4,9 @@ import 'package:ainoval/screens/editor/components/draggable_divider.dart';
 import 'package:ainoval/screens/editor/managers/editor_layout_manager.dart';
 import 'package:ainoval/screens/editor/widgets/ai_generation_panel.dart';
 import 'package:ainoval/screens/editor/widgets/ai_summary_panel.dart';
+import 'package:ainoval/screens/editor/widgets/continue_writing_form.dart';
 import 'package:ainoval/services/api_service/repositories/prompt_repository.dart';
+import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -17,11 +19,17 @@ class MultiAIPanelView extends StatefulWidget {
     required this.novelId,
     required this.chapterId,
     required this.layoutManager,
+    required this.userId,
+    required this.userAiModelConfigRepository,
+    required this.onContinueWritingSubmit,
   }) : super(key: key);
 
   final String novelId;
   final String? chapterId;
   final EditorLayoutManager layoutManager;
+  final String? userId;
+  final UserAIModelConfigRepository userAiModelConfigRepository;
+  final Function(Map<String, dynamic> parameters) onContinueWritingSubmit;
 
   @override
   State<MultiAIPanelView> createState() => _MultiAIPanelViewState();
@@ -107,6 +115,7 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
       EditorLayoutManager.aiChatPanel: 'AI聊天',
       EditorLayoutManager.aiSummaryPanel: 'AI摘要',
       EditorLayoutManager.aiScenePanel: 'AI生成',
+      EditorLayoutManager.aiContinueWritingPanel: '自动续写',
     };
     
     final panelTitle = panelTitles[panelId] ?? '未知面板';
@@ -201,6 +210,8 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
         return Icons.summarize_outlined;
       case EditorLayoutManager.aiScenePanel:
         return Icons.auto_awesome_outlined;
+      case EditorLayoutManager.aiContinueWritingPanel:
+        return Icons.auto_stories_outlined;
       default:
         return Icons.dashboard_outlined;
     }
@@ -218,6 +229,9 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
       case EditorLayoutManager.aiScenePanel:
         widget.layoutManager.toggleAISceneGenerationPanel();
         break;
+      case EditorLayoutManager.aiContinueWritingPanel:
+        widget.layoutManager.toggleAIContinueWritingPanel();
+        break;
     }
   }
   
@@ -229,6 +243,8 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
         return _buildAISummaryPanel();
       case EditorLayoutManager.aiScenePanel:
         return _buildAISceneGenerationPanel();
+      case EditorLayoutManager.aiContinueWritingPanel:
+        return _buildAIContinueWritingPanel();
       default:
         return const Center(child: Text('未知面板类型'));
     }
@@ -280,6 +296,30 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
           onClose: widget.layoutManager.toggleAISceneGenerationPanel,
           isCardMode: true,
         ),
+      ),
+    );
+  }
+
+  Widget _buildAIContinueWritingPanel() {
+    if (widget.userId == null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text(
+            '请先登录以使用自动续写功能。',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 24), // For drag handle
+      child: ContinueWritingForm(
+        novelId: widget.novelId,
+        userId: widget.userId!,
+        userAiModelConfigRepository: widget.userAiModelConfigRepository,
+        onCancel: widget.layoutManager.toggleAIContinueWritingPanel,
+        onSubmit: widget.onContinueWritingSubmit,
       ),
     );
   }

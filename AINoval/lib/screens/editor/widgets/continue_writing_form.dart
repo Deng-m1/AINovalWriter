@@ -156,7 +156,6 @@ class _ContinueWritingFormState extends State<ContinueWritingForm> {
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
           children: [
             // 标题
             Row(
