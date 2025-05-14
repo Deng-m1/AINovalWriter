@@ -101,31 +101,34 @@ class _ActSectionState extends State<ActSection> {
                             ),
                           ),
                         Expanded(
-                          child: TextField(
-                            controller: _actTitleController,
-                            style: theme.textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
+                          child: Material( // 添加Material组件作为TextField的直接父组件
+                            color: Colors.transparent, // 使用透明背景，不改变视觉效果
+                            child: TextField(
+                              controller: _actTitleController,
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                              ),
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                                isDense: true,
+                              ),
+                              textAlign: TextAlign.center,
+                              onChanged: (value) {
+                                // 使用防抖动机制，避免频繁更新
+                                _actTitleDebounceTimer?.cancel();
+                                _actTitleDebounceTimer =
+                                    Timer(const Duration(milliseconds: 500), () {
+                                  if (mounted) {
+                                    widget.editorBloc.add(UpdateActTitle(
+                                      actId: widget.actId,
+                                      title: value,
+                                    ));
+                                  }
+                                });
+                              },
                             ),
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 8),
-                              isDense: true,
-                            ),
-                            textAlign: TextAlign.center,
-                            onChanged: (value) {
-                              // 使用防抖动机制，避免频繁更新
-                              _actTitleDebounceTimer?.cancel();
-                              _actTitleDebounceTimer =
-                                  Timer(const Duration(milliseconds: 500), () {
-                                if (mounted) {
-                                  widget.editorBloc.add(UpdateActTitle(
-                                    actId: widget.actId,
-                                    title: value,
-                                  ));
-                                }
-                              });
-                            },
                           ),
                         ),
                       ],

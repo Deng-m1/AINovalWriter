@@ -12,11 +12,15 @@ import 'package:ainoval/screens/editor/managers/editor_state_manager.dart';
 import 'package:ainoval/screens/editor/widgets/continue_writing_form.dart';
 import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
+import 'package:ainoval/services/api_service/base/api_client.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
+import 'package:ainoval/blocs/setting/setting_bloc.dart';
+import 'package:ainoval/services/api_service/repositories/novel_setting_repository.dart';
+import 'package:ainoval/services/api_service/repositories/impl/novel_setting_repository_impl.dart';
 
 /// 编辑器屏幕
 /// 使用设计模式重构后的编辑器屏幕，将功能拆分为多个组件
@@ -175,61 +179,32 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
       _buildStopwatch.start();
     }
     
-    final editorWidget = MultiProvider(
+    return MultiRepositoryProvider(
       providers: [
-        BlocProvider.value(value: _controller.editorBloc),
-        BlocProvider.value(value: _sidebarBloc),
-        ChangeNotifierProvider.value(value: _controller),
-        ChangeNotifierProvider.value(value: _layoutManager),
+        RepositoryProvider<NovelSettingRepository>(
+          create: (context) => NovelSettingRepositoryImpl(
+            apiClient: ApiClient(),
+          ),
+        ),
       ],
-      child: EditorLayout(
-        controller: _controller,
-        layoutManager: _layoutManager,
-        stateManager: _stateManager,
-        onAutoContinueWritingPressed: _showAutoContinueWritingDialog,
-      ),
-    );
-    
-    // 统计构建时间
-    if (kDebugMode && _buildStopwatch.isRunning) {
-      _buildStopwatch.stop();
-      final buildTimeMs = _buildStopwatch.elapsedMilliseconds;
-      _buildCount++;
-      _totalBuildTimeMs += buildTimeMs;
-      
-      // 如果构建时间超过16ms（低于60FPS），记录警告
-      if (buildTimeMs > 16) {
-        AppLogger.w('EditorScreen', '构建时间过长: ${buildTimeMs}ms');
-      }
-    }
-    
-    // 最终的布局，包含编辑器和可能的自动续写对话框
-    return Scaffold(
-      body: Stack(
-        children: [
-          // 编辑器主体
-          editorWidget,
-          
-          // 自动续写表单对话框
-          if (_showContinueWritingForm)
-            Center(
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 600),
-                padding: const EdgeInsets.all(16),
-                child: Material(
-                  elevation: 24,
-                  borderRadius: BorderRadius.circular(16),
-                  child: ContinueWritingForm(
-                    novelId: widget.novel.id,
-                    userId: AppConfig.userId ?? '',
-                    onCancel: _hideAutoContinueWritingDialog,
-                    onSubmit: _handleContinueWritingSubmit,
-                    userAiModelConfigRepository: context.read<UserAIModelConfigRepository>(),
-                  ),
-                ),
-              ),
-            ),
+      child: MultiBlocProvider(
+        providers: [
+          BlocProvider.value(value: _controller.editorBloc),
+          BlocProvider.value(value: _sidebarBloc),
+          ChangeNotifierProvider.value(value: _controller),
+          ChangeNotifierProvider.value(value: _layoutManager),
+          BlocProvider<SettingBloc>(
+            create: (context) => SettingBloc(
+              settingRepository: context.read<NovelSettingRepository>(),
+            )..add(LoadSettingGroups(widget.novel.id)),
+          ),
         ],
+        child: EditorLayout(
+          controller: _controller,
+          layoutManager: _layoutManager,
+          stateManager: _stateManager,
+          onAutoContinueWritingPressed: _showAutoContinueWritingDialog,
+        ),
       ),
     );
   }

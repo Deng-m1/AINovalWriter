@@ -1,8 +1,9 @@
 package com.ainovel.server.repository;
 
+import com.ainovel.server.domain.model.SettingGroup;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 
-import com.ainovel.server.domain.model.SettingGroup;
+
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -40,5 +41,5 @@ public interface SettingGroupRepository extends ReactiveMongoRepository<SettingG
     /**
      * 检查设定组是否包含特定设定条目
      */
-    Mono<Boolean> existsByIdAndNovelSettingItemIdsContaining(String groupId, String settingItemId);
+    Mono<Boolean> existsByIdAndItemIdsContaining(String groupId, String settingItemId);
 } 

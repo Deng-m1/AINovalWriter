@@ -175,7 +175,7 @@ public class NovelSettingServiceImpl implements NovelSettingService {
     @Override
     public Flux<NovelSettingItem> getSceneSettingItems(String novelId, String sceneId) {
         log.info("获取场景相关设定条目: novelId={}, sceneId={}", novelId, sceneId);
-        return settingItemRepository.findByNovelIdAndSceneId(novelId, sceneId);
+        return settingItemRepository.findByNovelIdAndSceneIdIn(novelId, sceneId);
     }
     
     @Override

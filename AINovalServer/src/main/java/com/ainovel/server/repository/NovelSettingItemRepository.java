@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 
 import com.ainovel.server.domain.model.NovelSettingItem;
 
@@ -32,8 +33,10 @@ public interface NovelSettingItemRepository extends ReactiveMongoRepository<Nove
     
     /**
      * 根据小说ID和场景ID查找设定条目
+     * 使用@Query注解查询sceneIds数组中包含指定sceneId的文档
      */
-    Flux<NovelSettingItem> findByNovelIdAndSceneId(String novelId, String sceneId);
+    @Query("{ 'novelId': ?0, 'sceneIds': ?1 }")
+    Flux<NovelSettingItem> findByNovelIdAndSceneIdIn(String novelId, String sceneId);
     
     /**
      * 根据小说ID、类型和优先级查找设定条目，支持分页
@@ -67,5 +70,6 @@ public interface NovelSettingItemRepository extends ReactiveMongoRepository<Nove
     /**
      * 批量删除特定场景的设定条目
      */
-    Mono<Void> deleteByNovelIdAndSceneId(String novelId, String sceneId);
+    @Query("{ 'novelId': ?0, 'sceneIds': ?1 }")
+    Mono<Void> deleteByNovelIdAndSceneIdIn(String novelId, String sceneId);
 } 

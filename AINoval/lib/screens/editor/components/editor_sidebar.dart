@@ -2,6 +2,7 @@ import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/models/novel_summary.dart';
 import 'package:ainoval/screens/editor/widgets/ai_generation_panel.dart';
+import 'package:ainoval/screens/editor/widgets/novel_setting_sidebar.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -45,66 +46,69 @@ class _EditorSidebarState extends State<EditorSidebar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          right: BorderSide(
-            color: Colors.grey.shade200,
-            width: 1.0,
-          ),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 5,
-            offset: const Offset(0, 0),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // 顶部应用栏
-          _buildAppBar(theme),
-
-          // 标签页导航
-          _buildTabBar(theme),
-
-          // 标签页内容
-          Expanded(
-            child: TabBarView(
-              controller: widget.tabController,
-              children: [
-                // Codex 标签页
-                _buildCodexTab(theme),
-
-                // Snippets 标签页
-                _buildPlaceholderTab(
-                    icon: Icons.bookmark_border_outlined,
-                    text: 'Snippets 功能开发中'),
-
-                // 章节目录标签页 - 替换原来的Chats标签页
-                ChapterDirectoryTab(novel: widget.novel),
-
-                // 添加AI生成选项
-                ListTile(
-                  leading: const Icon(Icons.auto_awesome),
-                  title: const Text('AI生成'),
-                  subtitle: const Text('AI辅助内容生成'),
-                  onTap: () {
-                    setState(() {
-                      _selectedMode = 'ai_generation';
-                    });
-                  },
-                  selected: _selectedMode == 'ai_generation',
-                ),
-              ],
+    return Material( // 添加Material组件作为整个侧边栏的父组件
+      color: Colors.white,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(
+            right: BorderSide(
+              color: Colors.grey.shade200,
+              width: 1.0,
             ),
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 5,
+              offset: const Offset(0, 0),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            // 顶部应用栏
+            _buildAppBar(theme),
 
-          // 底部导航栏
-          _buildBottomBar(theme),
-        ],
+            // 标签页导航
+            _buildTabBar(theme),
+
+            // 标签页内容
+            Expanded(
+              child: TabBarView(
+                controller: widget.tabController,
+                children: [
+                  // 设定库标签页（替换原来的Codex标签页）
+                  NovelSettingSidebar(novelId: widget.novel.id),
+
+                  // Snippets 标签页
+                  _buildPlaceholderTab(
+                      icon: Icons.bookmark_border_outlined,
+                      text: 'Snippets 功能开发中'),
+
+                  // 章节目录标签页
+                  ChapterDirectoryTab(novel: widget.novel),
+
+                  // 添加AI生成选项
+                  ListTile(
+                    leading: const Icon(Icons.auto_awesome),
+                    title: const Text('AI生成'),
+                    subtitle: const Text('AI辅助内容生成'),
+                    onTap: () {
+                      setState(() {
+                        _selectedMode = 'ai_generation';
+                      });
+                    },
+                    selected: _selectedMode == 'ai_generation',
+                  ),
+                ],
+              ),
+            ),
+
+            // 底部导航栏
+            _buildBottomBar(theme),
+          ],
+        ),
       ),
     );
   }
@@ -233,8 +237,8 @@ class _EditorSidebarState extends State<EditorSidebar> {
         padding: const EdgeInsets.symmetric(horizontal: 2.0), // 减小整体内边距
         tabs: const [
           Tab(
-            icon: Icon(Icons.menu_book_outlined, size: 18), // 减小图标大小
-            text: 'Codex',
+            icon: Icon(Icons.inventory_2_outlined, size: 18), // 修改图标来反映设定功能
+            text: '设定库', // 改为"设定库"
             height: 48, // 减小高度
           ),
           Tab(
@@ -243,154 +247,14 @@ class _EditorSidebarState extends State<EditorSidebar> {
             height: 48, // 减小高度
           ),
           Tab(
-            icon: Icon(Icons.menu_outlined, size: 18), // 更改为目录图标
-            text: '章节目录', // 更改为"章节目录"
+            icon: Icon(Icons.menu_outlined, size: 18), // 目录图标
+            text: '章节目录', // "章节目录"
             height: 48, // 减小高度
           ),
           Tab(
             icon: Icon(Icons.auto_awesome, size: 18), // AI生成图标
             text: 'AI生成',
             height: 48, // 减小高度
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCodexTab(ThemeData theme) {
-    return Container(
-      color: Colors.grey.shade50,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 搜索和操作栏
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                bottom: BorderSide(
-                  color: Colors.grey.shade200,
-                  width: 1.0,
-                ),
-              ),
-            ),
-            child: Row(
-              children: [
-                // 搜索框
-                Expanded(
-                  child: Container(
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: Colors.grey.shade300,
-                        width: 1.0,
-                      ),
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade800,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'Search...',
-                        hintStyle: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade500,
-                        ),
-                        prefixIcon: Icon(
-                          Icons.search,
-                          size: 16,
-                          color: Colors.grey.shade600,
-                        ),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            Icons.filter_list,
-                            size: 16,
-                            color: Colors.grey.shade600,
-                          ),
-                          onPressed: () {
-                            // TODO: 实现筛选功能
-                          },
-                          splashRadius: 16,
-                          tooltip: '筛选',
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 6,
-                          horizontal: 8,
-                        ),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                // 新建条目按钮
-                SizedBox(
-                  height: 34,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      // TODO: 实现创建新条目逻辑
-                    },
-                    icon: const Icon(Icons.add, size: 14),
-                    label: const Text('New'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: theme.colorScheme.primary,
-                      backgroundColor: Colors.white,
-                      side: BorderSide(
-                        color: theme.colorScheme.primary,
-                        width: 1.0,
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 0,
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 2),
-                // Codex 设置按钮
-                IconButton(
-                  onPressed: () {
-                    // TODO: 实现 Codex 设置逻辑
-                  },
-                  icon: Icon(
-                    Icons.settings_outlined,
-                    size: 16,
-                    color: Colors.grey.shade700,
-                  ),
-                  tooltip: 'Codex 设置',
-                  splashRadius: 16,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 28,
-                    minHeight: 28,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Codex 空状态
-          Expanded(
-            child: _CodexEmptyState(),
           ),
         ],
       ),
