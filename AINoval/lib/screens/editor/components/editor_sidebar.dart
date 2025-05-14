@@ -9,6 +9,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 import 'package:ainoval/screens/editor/controllers/editor_screen_controller.dart';
 import 'package:ainoval/blocs/sidebar/sidebar_bloc.dart';
+import 'package:ainoval/blocs/setting/setting_bloc.dart';
+import 'package:ainoval/services/api_service/repositories/novel_setting_repository.dart';
 
 import 'chapter_directory_tab.dart';
 
@@ -46,7 +48,30 @@ class _EditorSidebarState extends State<EditorSidebar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Material( // 添加Material组件作为整个侧边栏的父组件
+    
+    // 尝试获取现有的SettingBloc实例
+    SettingBloc? existingSettingBloc;
+    try {
+      existingSettingBloc = BlocProvider.of<SettingBloc>(context, listen: false);
+      AppLogger.i('EditorSidebar', '找到现有的SettingBloc实例');
+    } catch (e) {
+      AppLogger.i('EditorSidebar', '没有找到现有的SettingBloc实例，将创建新实例');
+    }
+    
+    // 如果已有SettingBloc，使用BlocProvider.value包装，否则创建新的
+    final settingSidebarWidget = existingSettingBloc != null
+        ? BlocProvider.value(
+            value: existingSettingBloc,
+            child: NovelSettingSidebar(novelId: widget.novel.id),
+          )
+        : BlocProvider(
+            create: (context) => SettingBloc(
+              settingRepository: context.read<NovelSettingRepository>(),
+            )..add(LoadSettingGroups(widget.novel.id)),
+            child: NovelSettingSidebar(novelId: widget.novel.id),
+          );
+          
+    return Material(
       color: Colors.white,
       child: Container(
         decoration: BoxDecoration(
@@ -79,7 +104,7 @@ class _EditorSidebarState extends State<EditorSidebar> {
                 controller: widget.tabController,
                 children: [
                   // 设定库标签页（替换原来的Codex标签页）
-                  NovelSettingSidebar(novelId: widget.novel.id),
+                  settingSidebarWidget,
 
                   // Snippets 标签页
                   _buildPlaceholderTab(
@@ -90,17 +115,9 @@ class _EditorSidebarState extends State<EditorSidebar> {
                   ChapterDirectoryTab(novel: widget.novel),
 
                   // 添加AI生成选项
-                  ListTile(
-                    leading: const Icon(Icons.auto_awesome),
-                    title: const Text('AI生成'),
-                    subtitle: const Text('AI辅助内容生成'),
-                    onTap: () {
-                      setState(() {
-                        _selectedMode = 'ai_generation';
-                      });
-                    },
-                    selected: _selectedMode == 'ai_generation',
-                  ),
+                  _buildPlaceholderTab(
+                      icon: Icons.auto_awesome,
+                      text: 'AI生成功能开发中'),
                 ],
               ),
             ),

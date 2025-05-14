@@ -109,14 +109,16 @@ class SetGroupActiveContext extends SettingEvent {
 class CreateSettingItem extends SettingEvent {
   final String novelId;
   final NovelSettingItem item;
+  final String? groupId;
   
   const CreateSettingItem({
     required this.novelId,
     required this.item,
+    this.groupId,
   });
   
   @override
-  List<Object?> get props => [novelId, item];
+  List<Object?> get props => [novelId, item, groupId];
 }
 
 // 更新设定条目事件
@@ -472,13 +474,47 @@ class SettingBloc extends Bloc<SettingEvent, SettingState> {
         settingItem: event.item,
       );
       
-      // 更新列表，添加新条目
-      final updatedItems = List<NovelSettingItem>.from(state.items)..add(createdItem);
-      
-      emit(state.copyWith(
-        itemsStatus: SettingStatus.success,
-        items: updatedItems,
-      ));
+      // 确保createdItem有有效ID
+      if (createdItem.id != null && createdItem.id!.isNotEmpty) {
+        // 更新列表，添加新条目
+        final updatedItems = List<NovelSettingItem>.from(state.items)..add(createdItem);
+        
+        // 按名称排序确保UI一致性
+        updatedItems.sort((a, b) => a.name.compareTo(b.name));
+        
+        emit(state.copyWith(
+          itemsStatus: SettingStatus.success,
+          items: updatedItems,
+        ));
+        
+        // 记录日志
+        AppLogger.i('SettingBloc', '成功添加设定条目到本地状态: id=${createdItem.id}, name=${createdItem.name}');
+        
+        // 如果指定了组ID，立即将创建的条目添加到该组
+        if (event.groupId != null) {
+          AppLogger.i('SettingBloc', '将新创建的条目添加到组: ${event.groupId}');
+          add(AddItemToGroup(
+            novelId: event.novelId,
+            groupId: event.groupId!,
+            itemId: createdItem.id!,
+          ));
+        }
+      } else {
+        // 如果没有有效ID，重新加载整个列表
+        AppLogger.w('SettingBloc', '创建的设定条目没有有效ID，将重新加载列表');
+        final items = await settingRepository.getNovelSettingItems(
+          novelId: event.novelId,
+          page: 0,
+          size: 20,
+          sortBy: 'name',
+          sortDirection: 'asc',
+        );
+        
+        emit(state.copyWith(
+          itemsStatus: SettingStatus.success,
+          items: items,
+        ));
+      }
     } catch (e) {
       AppLogger.e('SettingBloc', '创建设定条目失败', e);
       emit(state.copyWith(

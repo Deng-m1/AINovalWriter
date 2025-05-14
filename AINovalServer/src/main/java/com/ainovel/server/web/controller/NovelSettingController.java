@@ -284,9 +284,18 @@ public class NovelSettingController {
             @RequestBody GroupItemRequest request,
             Principal principal) {
 
+        log.info("接收到添加设定条目到设定组请求: novelId={}, groupId={}, itemId={}, user={}", 
+                novelId, request.getGroupId(), request.getItemId(), principal.getName());
+                
         return novelSettingService.addItemToGroup(request.getGroupId(), request.getItemId())
-                .doOnSuccess(group -> log.info("用户 {} 将设定项 {} 添加到设定组 {}", 
-                        principal.getName(), request.getItemId(), request.getGroupId()));
+                .doOnSuccess(group -> {
+                    log.info("成功将设定项 {} 添加到设定组 {}，组现有条目: {}", 
+                            request.getItemId(), request.getGroupId(), group.getItemIds());
+                })
+                .doOnError(error -> {
+                    log.error("添加设定条目到设定组失败: novelId={}, groupId={}, itemId={}, error={}", 
+                            novelId, request.getGroupId(), request.getItemId(), error.getMessage());
+                });
     }
 
     /**

@@ -40,23 +40,40 @@ class NovelSettingItem {
           .toList();
     }
 
+    // 处理日期字段，支持字符串或列表格式
+    dynamic createdAtJson = json['createdAt'];
+    String? createdAtString;
+    if (createdAtJson is String) {
+      createdAtString = createdAtJson;
+    } else if (createdAtJson is List && createdAtJson.isNotEmpty && createdAtJson.first is String) {
+      createdAtString = createdAtJson.first;
+    }
+
+    dynamic updatedAtJson = json['updatedAt'];
+    String? updatedAtString;
+    if (updatedAtJson is String) {
+      updatedAtString = updatedAtJson;
+    } else if (updatedAtJson is List && updatedAtJson.isNotEmpty && updatedAtJson.first is String) {
+      updatedAtString = updatedAtJson.first;
+    }
+
     return NovelSettingItem(
       id: json['id'],
       novelId: json['novelId'],
       userId: json['userId'],
-      name: json['name'],
+      name: json['name'] ?? '未命名设定',
       type: json['type'],
-      content: json['content'],
+      content: json['content'] ?? '',
       description: json['description'],
       priority: json['priority'],
       status: json['status'],
       generatedBy: json['generatedBy'],
       relationships: relationships,
-      createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+      createdAt: createdAtString != null
+          ? DateTime.parse(createdAtString)
           : null,
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'])
+      updatedAt: updatedAtString != null
+          ? DateTime.parse(updatedAtString)
           : null,
     );
   }

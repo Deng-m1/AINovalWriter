@@ -297,14 +297,6 @@ public class NovelSettingServiceImpl implements NovelSettingService {
                 });
     }
     
-    /**
-     * 只保留兼容性的方法，内部调用新方法
-     */
-    private Mono<NovelSettingItem> deleteSettingRelationship(String settingItemId, String relatedSettingItemId) {
-        return removeSettingRelationship(settingItemId, relatedSettingItemId, null)
-                .then(getSettingItemById(settingItemId));
-    }
-    
 
     public Flux<NovelSettingItem> getRelatedSettingItems(String settingItemId) {
         return getSettingItemById(settingItemId)
@@ -366,12 +358,6 @@ public class NovelSettingServiceImpl implements NovelSettingService {
         return mongoTemplate.find(query, SettingGroup.class);
     }
     
-    /**
-     * 只保留兼容性的方法，内部调用新方法
-     */
-    private Flux<SettingGroup> getNovelSettingGroups(String novelId) {
-        return getNovelSettingGroups(novelId, null, null);
-    }
     
     @Override
     public Mono<SettingGroup> getSettingGroupById(String groupId) {
@@ -405,26 +391,49 @@ public class NovelSettingServiceImpl implements NovelSettingService {
     
     @Override
     public Mono<SettingGroup> addItemToGroup(String groupId, String itemId) {
+        log.info("开始处理添加条目到设定组: groupId={}, itemId={}", groupId, itemId);
+        
+        if (groupId == null || groupId.trim().isEmpty()) {
+            log.error("设定组ID为空");
+            return Mono.error(new IllegalArgumentException("设定组ID不能为空"));
+        }
+        
+        if (itemId == null || itemId.trim().isEmpty()) {
+            log.error("设定条目ID为空");
+            return Mono.error(new IllegalArgumentException("设定条目ID不能为空"));
+        }
+        
         return Mono.zip(
                 getSettingGroupById(groupId),
                 getSettingItemById(itemId)
             )
+            .doOnSuccess(tuple -> {
+                SettingGroup group = tuple.getT1();
+                NovelSettingItem item = tuple.getT2();
+                log.info("找到设定组和设定条目: groupId={}, groupName={}, itemId={}, itemName={}", 
+                        group.getId(), group.getName(), item.getId(), item.getName());
+            })
+            .doOnError(e -> log.error("获取设定组或条目失败: {}", e.getMessage()))
             .flatMap(tuple -> {
                 SettingGroup group = tuple.getT1();
                 NovelSettingItem item = tuple.getT2();
                 
                 // 确保设定条目属于同一个小说
                 if (!item.getNovelId().equals(group.getNovelId())) {
+                    log.error("设定条目和设定组不属于同一小说: itemNovelId={}, groupNovelId={}", 
+                            item.getNovelId(), group.getNovelId());
                     return Mono.error(new IllegalArgumentException("只能添加同一小说的设定条目到设定组"));
                 }
                 
                 // 确保设定条目ID列表已初始化
                 if (group.getItemIds() == null) {
                     group.setItemIds(new ArrayList<>());
+                    log.info("初始化设定组的条目ID列表: groupId={}", groupId);
                 }
                 
                 // 检查是否已存在于组中
                 if (group.getItemIds().contains(itemId)) {
+                    log.info("设定条目已存在于设定组中: groupId={}, itemId={}", groupId, itemId);
                     return Mono.just(group); // 已存在，无需再添加
                 }
                 
@@ -432,22 +441,20 @@ public class NovelSettingServiceImpl implements NovelSettingService {
                 group.getItemIds().add(itemId);
                 group.setUpdatedAt(LocalDateTime.now());
                 
-                log.info("向设定组添加设定条目: groupId={}, settingItemId={}", groupId, itemId);
+                log.info("向设定组添加设定条目: groupId={}, groupName={}, settingItemId={}, itemName={}, 当前组内条目数量: {}", 
+                        groupId, group.getName(), itemId, item.getName(), group.getItemIds().size());
                 
                 return settingGroupRepository.save(group)
                         .doOnSuccess(saved -> {
+                            log.info("保存设定组成功，组内条目数量: {}, 条目列表: {}", 
+                                    saved.getItemIds().size(), saved.getItemIds());
                             // 更新设定条目的索引以包含组ID信息
                             indexSettingItem(item).subscribe();
-                        });
+                        })
+                        .doOnError(e -> log.error("保存设定组失败: {}", e.getMessage()));
             });
     }
     
-    /**
-     * 只保留兼容性的方法，内部调用新方法
-     */
-    private Mono<SettingGroup> addSettingItemToGroup(String groupId, String settingItemId) {
-        return addItemToGroup(groupId, settingItemId);
-    }
     
     @Override
     public Mono<Void> removeItemFromGroup(String groupId, String itemId) {
@@ -474,13 +481,6 @@ public class NovelSettingServiceImpl implements NovelSettingService {
                 });
     }
     
-    /**
-     * 只保留兼容性的方法，内部调用新方法
-     */
-    private Mono<SettingGroup> removeSettingItemFromGroup(String groupId, String settingItemId) {
-        return removeItemFromGroup(groupId, settingItemId)
-                .then(getSettingGroupById(groupId));
-    }
     
     @Override
     public Mono<SettingGroup> setGroupActiveContext(String groupId, boolean isActive) {
@@ -495,12 +495,6 @@ public class NovelSettingServiceImpl implements NovelSettingService {
                 });
     }
     
-    /**
-     * 只保留兼容性的方法，内部调用新方法
-     */
-    private Mono<SettingGroup> toggleSettingGroupActiveStatus(String groupId, Boolean isActive) {
-        return setGroupActiveContext(groupId, isActive);
-    }
 
     
     // ==================== 设定检索 ====================
@@ -538,8 +532,7 @@ public class NovelSettingServiceImpl implements NovelSettingService {
                     // 增加关键词过滤（如果有）
                     if (!keywords.isEmpty()) {
                         log.info("使用关键词进行过滤: {}", keywords);
-                        // filterMetadata.put("keywordsFilter", keywords);
-                        // 注意：具体如何根据关键词过滤需要与VectorStore实现对接
+                        filterMetadata.put("keywords", keywords);
                     }
                     
                     // 初步检索，获取比最终所需多一些的结果以便后处理
@@ -552,7 +545,15 @@ public class NovelSettingServiceImpl implements NovelSettingService {
                                     log.warn("检索结果缺少设定条目ID: {}", result.getMetadata());
                                     return Mono.empty();
                                 }
-                                return getSettingItemById(settingItemId);
+                                return getSettingItemById(settingItemId)
+                                       .map(item -> {
+                                           // 保存原始相似度分数，用于后续重排序
+                                           if (item.getMetadata() == null) {
+                                               item.setMetadata(new HashMap<>());
+                                           }
+                                           item.getMetadata().put("_score", result.getScore());
+                                           return item;
+                                       });
                             })
                             .collectList()
                             .flatMapMany(initialResults -> {
@@ -563,9 +564,35 @@ public class NovelSettingServiceImpl implements NovelSettingService {
                                 
                                 log.info("初步检索到 {} 个设定条目", initialResults.size());
                                 
+                                // 如果有关键词，进行关键词匹配过滤
+                                List<NovelSettingItem> filteredResults = initialResults;
+                                if (!keywords.isEmpty()) {
+                                    filteredResults = initialResults.stream()
+                                        .filter(item -> {
+                                            // 构建完整文本用于匹配
+                                            String fullText = item.getName() + " " + 
+                                                             item.getType() + " " + 
+                                                             (item.getDescription() != null ? item.getDescription() : "");
+                                            
+                                            // 检查是否至少匹配一个关键词
+                                            return keywords.stream()
+                                                    .anyMatch(keyword -> 
+                                                        fullText.toLowerCase().contains(keyword.toLowerCase()));
+                                        })
+                                        .collect(Collectors.toList());
+                                    
+                                    log.info("关键词过滤后剩余 {} 个设定条目", filteredResults.size());
+                                    
+                                    // 如果过滤后结果太少，回退到原始结果
+                                    if (filteredResults.size() < Math.max(3, topK / 2)) {
+                                        log.info("过滤后结果太少，回退到原始结果");
+                                        filteredResults = initialResults;
+                                    }
+                                }
+                                
                                 // 进行结果优化和重排序
                                 List<NovelSettingItem> rerankedResults = reorderResults(
-                                        initialResults, currentSceneId, activeGroupIds);
+                                        filteredResults, currentSceneId, activeGroupIds);
                                 
                                 // 选择前topK个结果
                                 int resultCount = Math.min(topK, rerankedResults.size());
@@ -626,64 +653,76 @@ public class NovelSettingServiceImpl implements NovelSettingService {
             
             String indexContent = contentBuilder.toString();
             
-            // 准备元数据
-            Map<String, Object> metadata = new HashMap<>();
-            metadata.put("novelId", settingItem.getNovelId());
-            metadata.put("novelSettingItemId", settingItem.getId());
-            
-            if (settingItem.getSceneIds() != null && !settingItem.getSceneIds().isEmpty()) {
-                metadata.put("sceneId", settingItem.getSceneIds().get(0)); // 使用第一个场景ID
-            }
-            
-            metadata.put("settingType", settingItem.getType());
-            metadata.put("settingName", settingItem.getName());
-            metadata.put("priority", settingItem.getPriority());
-            metadata.put("generatedBy", settingItem.getGeneratedBy());
-            
-            if (settingItem.getStatus() != null) {
-                metadata.put("status", settingItem.getStatus());
-            }
-            
-            // 添加关联的设定条目ID信息
-            if (settingItem.getRelationships() != null && !settingItem.getRelationships().isEmpty()) {
-                List<String> relatedIds = settingItem.getRelationships().stream()
-                        .map(SettingRelationship::getTargetItemId)
-                        .collect(Collectors.toList());
-                metadata.put("relatedNovelSettingItemIds", relatedIds);
-            }
-            
-            // 找出该设定条目所属的所有设定组
-            return settingGroupRepository.findByNovelId(settingItem.getNovelId())
-                    .filter(group -> group.getItemIds() != null && 
-                            group.getItemIds().contains(settingItem.getId()))
-                    .map(SettingGroup::getId)
-                    .collectList()
-                    .flatMap(groupIds -> {
-                        if (!groupIds.isEmpty()) {
-                            metadata.put("groupIds", groupIds);
-                        }
-                        
-                        // 生成向量嵌入
-                        return embeddingService.generateEmbedding(indexContent)
-                                .flatMap(vector -> {
-                                    // 创建并保存知识块
-                                    KnowledgeChunk chunk = new KnowledgeChunk();
-                                    chunk.setId(UUID.randomUUID().toString());
-                                    chunk.setNovelId(settingItem.getNovelId());
-                                    chunk.setSourceType("setting");
-                                    chunk.setSourceId(settingItem.getId());
-                                    chunk.setContent(indexContent);
-                                    chunk.setMetadata(metadata);
-                                    
-                                    KnowledgeChunk.VectorEmbedding embedding = new KnowledgeChunk.VectorEmbedding();
-                                    embedding.setVector(vector);
-                                    embedding.setDimension(vector.length);
-                                    embedding.setModel("text-embedding-3-small"); // 默认模型名称
-                                    chunk.setVectorEmbedding(embedding);
-                                    
-                                    return vectorStore.storeKnowledgeChunk(chunk);
-                                });
-                    });
+            // 提取关键词
+            return keywordExtractionService != null ? 
+                keywordExtractionService.extractKeywords(indexContent, 30) : 
+                Mono.just(Collections.emptyList())
+                .flatMap(keywords -> {
+                    // 准备元数据
+                    Map<String, Object> metadata = new HashMap<>();
+                    metadata.put("novelId", settingItem.getNovelId());
+                    metadata.put("novelSettingItemId", settingItem.getId());
+                    
+                    if (settingItem.getSceneIds() != null && !settingItem.getSceneIds().isEmpty()) {
+                        metadata.put("sceneId", settingItem.getSceneIds().get(0)); // 使用第一个场景ID
+                    }
+                    
+                    metadata.put("settingType", settingItem.getType());
+                    metadata.put("settingName", settingItem.getName());
+                    metadata.put("priority", settingItem.getPriority());
+                    metadata.put("generatedBy", settingItem.getGeneratedBy());
+                    
+                    // 添加关键词到元数据
+                    if (!keywords.isEmpty()) {
+                        metadata.put("keywords", keywords);
+                        log.info("为设定条目提取到的关键词: id={}, keywords={}", settingItem.getId(), keywords);
+                    }
+                    
+                    if (settingItem.getStatus() != null) {
+                        metadata.put("status", settingItem.getStatus());
+                    }
+                    
+                    // 添加关联的设定条目ID信息
+                    if (settingItem.getRelationships() != null && !settingItem.getRelationships().isEmpty()) {
+                        List<String> relatedIds = settingItem.getRelationships().stream()
+                                .map(SettingRelationship::getTargetItemId)
+                                .collect(Collectors.toList());
+                        metadata.put("relatedNovelSettingItemIds", relatedIds);
+                    }
+                    
+                    // 找出该设定条目所属的所有设定组
+                    return settingGroupRepository.findByNovelId(settingItem.getNovelId())
+                            .filter(group -> group.getItemIds() != null && 
+                                    group.getItemIds().contains(settingItem.getId()))
+                            .map(SettingGroup::getId)
+                            .collectList()
+                            .flatMap(groupIds -> {
+                                if (!groupIds.isEmpty()) {
+                                    metadata.put("groupIds", groupIds);
+                                }
+                                
+                                // 生成向量嵌入
+                                return embeddingService.generateEmbedding(indexContent)
+                                        .flatMap(vector -> {
+                                            // 创建并保存知识块
+                                            KnowledgeChunk chunk = new KnowledgeChunk();
+                                            chunk.setId(UUID.randomUUID().toString());
+                                            chunk.setNovelId(settingItem.getNovelId());
+                                            chunk.setSourceType("setting");
+                                            chunk.setSourceId(settingItem.getId());
+                                            chunk.setContent(indexContent);
+                                            chunk.setMetadata(metadata);
+                                            
+                                            KnowledgeChunk.VectorEmbedding embedding = new KnowledgeChunk.VectorEmbedding();
+                                            embedding.setVector(vector);
+                                            embedding.setDimension(vector.length);
+                                            embedding.setModel("text-embedding-3-small"); // 默认模型名称
+                                            chunk.setVectorEmbedding(embedding);
+                                            
+                                            return vectorStore.storeKnowledgeChunk(chunk);
+                                        });
+                            });
+                });
         })
         .flatMap(mono -> mono)
         .onErrorResume(e -> {
@@ -730,11 +769,24 @@ public class NovelSettingServiceImpl implements NovelSettingService {
     private double calculateItemScore(NovelSettingItem item, String currentSceneId, List<String> activeGroupIds) {
         double score = 0.0;
         
+        // 如果有向量搜索得分，添加到总分中 (0.0-1.0范围)
+        if (item.getMetadata() != null && item.getMetadata().containsKey("_score")) {
+            try {
+                double vectorScore = ((Number) item.getMetadata().get("_score")).doubleValue();
+                // 向量搜索得分通常是0-1范围内的值，可能需要根据实际情况调整权重
+                score += vectorScore * 0.5; // 赋予50%的权重
+                log.debug("添加向量相似度得分: itemId={}, vectorScore={}", item.getId(), vectorScore);
+            } catch (Exception e) {
+                log.warn("无法解析向量相似度得分: {}", e.getMessage());
+            }
+        }
+        
         // 基于优先级的得分（优先级越高，得分越高）
         // 优先级从1到5，1为最高
         if (item.getPriority() != null) {
             // 转换为0-1范围的得分，优先级1得1分，优先级5得0.2分
-            score += (6 - item.getPriority()) / 5.0;
+            double priorityScore = (6 - item.getPriority()) / 5.0;
+            score += priorityScore * 0.3; // 赋予30%的权重
         }
         
         // 当前场景相关性得分
@@ -763,13 +815,13 @@ public class NovelSettingServiceImpl implements NovelSettingService {
         
         // 生成源和状态得分
         if ("USER".equals(item.getGeneratedBy())) {
-            score += 0.3; // 用户创建的设定条目更可信
+            score += 0.2; // 用户创建的设定条目更可信
         } else if ("AI_SCENE_SUGGESTION".equals(item.getGeneratedBy()) || 
                 "AI_GENERAL_SUGGESTION".equals(item.getGeneratedBy())) {
             if ("ACCEPTED".equals(item.getStatus())) {
-                score += 0.2; // 已接受的AI建议
+                score += 0.15; // 已接受的AI建议
             } else if ("SUGGESTED".equals(item.getStatus())) {
-                score += 0.1; // 未审核的AI建议
+                score += 0.05; // 未审核的AI建议
             }
             // REJECTED的不加分
         }

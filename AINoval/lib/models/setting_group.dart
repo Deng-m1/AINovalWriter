@@ -30,6 +30,22 @@ class SettingGroup {
       itemIds = List<String>.from(json['itemIds']);
     }
 
+    dynamic createdAtJson = json['createdAt'];
+    String? createdAtString;
+    if (createdAtJson is String) {
+      createdAtString = createdAtJson;
+    } else if (createdAtJson is List && createdAtJson.isNotEmpty && createdAtJson.first is String) {
+      createdAtString = createdAtJson.first;
+    }
+
+    dynamic updatedAtJson = json['updatedAt'];
+    String? updatedAtString;
+    if (updatedAtJson is String) {
+      updatedAtString = updatedAtJson;
+    } else if (updatedAtJson is List && updatedAtJson.isNotEmpty && updatedAtJson.first is String) {
+      updatedAtString = updatedAtJson.first;
+    }
+
     return SettingGroup(
       id: json['id'],
       novelId: json['novelId'],
@@ -38,11 +54,11 @@ class SettingGroup {
       description: json['description'],
       isActiveContext: json['isActiveContext'],
       itemIds: itemIds,
-      createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+      createdAt: createdAtString != null
+          ? DateTime.parse(createdAtString)
           : null,
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'])
+      updatedAt: updatedAtString != null
+          ? DateTime.parse(updatedAtString)
           : null,
     );
   }

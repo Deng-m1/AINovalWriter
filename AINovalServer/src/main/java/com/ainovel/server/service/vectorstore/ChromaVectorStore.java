@@ -319,11 +319,37 @@ public class ChromaVectorStore implements VectorStore {
 
                 // 创建查询嵌入
                 Embedding queryEmbedding = Embedding.from(adjustedVector);
+                
+                // 提取关键词列表（如果有）
+                List<String> keywords = null;
+                if (filter != null && filter.containsKey("keywords")) {
+                    try {
+                        Object keywordsObj = filter.get("keywords");
+                        if (keywordsObj instanceof List) {
+                            keywords = (List<String>) keywordsObj;
+                            log.info("提取到关键词列表用于过滤: {}", keywords);
+                        }
+                    } catch (Exception e) {
+                        log.warn("无法解析关键词列表: {}", e.getMessage());
+                    }
+                }
+                
+                // 创建过滤条件的元数据（移除keywords字段，它不是标准元数据）
+                final Map<String, Object> metadataFilter;
+                if (filter != null) {
+                    metadataFilter = new HashMap<>(filter);
+                    metadataFilter.remove("keywords");
+                } else {
+                    metadataFilter = null;
+                }
+                
+                // TODO: 这里应该使用metadataFilter进行精确过滤，但当前ChromaEmbeddingStore不支持
+                // 目前我们先检索更多结果，然后在后处理中进行过滤
 
                 // 执行搜索 - 使用新的搜索API
                 EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
                         .queryEmbedding(queryEmbedding)
-                        .maxResults(limit)
+                        .maxResults(limit * 4) // 多检索一些结果以便后处理过滤
                         .build();
                 
                 EmbeddingSearchResult<TextSegment> searchResult = embeddingStore.search(searchRequest);
@@ -351,6 +377,82 @@ public class ChromaVectorStore implements VectorStore {
                             return result;
                         })
                         .collect(Collectors.toList());
+                
+                // 应用元数据过滤
+                if (metadataFilter != null && !metadataFilter.isEmpty()) {
+                    results = results.stream()
+                            .filter(result -> {
+                                if (result.getMetadata() == null) {
+                                    return false;
+                                }
+                                
+                                return metadataFilter.entrySet().stream()
+                                        .allMatch(entry -> {
+                                            Object value = result.getMetadata().get(entry.getKey());
+                                            return value != null && value.equals(entry.getValue());
+                                        });
+                            })
+                            .collect(Collectors.toList());
+                    
+                    log.info("元数据过滤后剩余结果数量: {}", results.size());
+                }
+                
+                // 应用关键词过滤（如果有）
+                if (keywords != null && !keywords.isEmpty()) {
+                    final List<String> finalKeywords = keywords;
+                    List<SearchResult> keywordFilteredResults = results.stream()
+                            .filter(result -> {
+                                // 从元数据中获取存储的关键词（如果有）
+                                List<String> storedKeywordsList = null;
+                                if (result.getMetadata() != null && result.getMetadata().containsKey("keywords")) {
+                                    try {
+                                        Object keywordsObj = result.getMetadata().get("keywords");
+                                        if (keywordsObj instanceof List) {
+                                            storedKeywordsList = (List<String>) keywordsObj;
+                                        }
+                                    } catch (Exception e) {
+                                        log.warn("无法解析存储的关键词: {}", e.getMessage());
+                                    }
+                                }
+                                
+                                // 检查是否有关键词匹配
+                                final List<String> storedKeywords = storedKeywordsList;
+                                if (storedKeywords != null && !storedKeywords.isEmpty()) {
+                                    return finalKeywords.stream()
+                                            .anyMatch(keyword -> 
+                                                storedKeywords.stream()
+                                                    .anyMatch(stored -> 
+                                                        stored.toLowerCase().contains(keyword.toLowerCase()) ||
+                                                        keyword.toLowerCase().contains(stored.toLowerCase())
+                                                    )
+                                            );
+                                }
+                                
+                                // 回退到内容匹配
+                                String content = result.getContent();
+                                if (content != null && !content.isEmpty()) {
+                                    return finalKeywords.stream()
+                                            .anyMatch(keyword -> 
+                                                content.toLowerCase().contains(keyword.toLowerCase()));
+                                }
+                                
+                                return false;
+                            })
+                            .collect(Collectors.toList());
+                    
+                    // 如果关键词过滤后结果太少，保留原始结果
+                    if (keywordFilteredResults.size() < Math.max(limit / 2, 5)) {
+                        log.info("关键词过滤后结果太少 ({}), 保留原始结果", keywordFilteredResults.size());
+                    } else {
+                        results = keywordFilteredResults;
+                        log.info("关键词过滤后剩余结果数量: {}", results.size());
+                    }
+                }
+                
+                // 限制返回结果数量
+                if (results.size() > limit) {
+                    results = results.subList(0, limit);
+                }
 
                 // 成功搜索后重置错误计数
                 resetErrorCount("search");

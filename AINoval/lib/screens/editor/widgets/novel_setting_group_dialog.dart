@@ -79,7 +79,7 @@ class _NovelSettingGroupDialogState extends State<NovelSettingGroupDialog> {
       );
       
       // 调用保存回调
-      widget.onSave(settingGroup);
+      await Future.microtask(() => widget.onSave(settingGroup));
       
       setState(() {
         _isSaving = false;
@@ -89,11 +89,27 @@ class _NovelSettingGroupDialogState extends State<NovelSettingGroupDialog> {
       if (context.mounted) {
         Navigator.of(context).pop();
       }
-    } catch (e) {
-      AppLogger.e('NovelSettingGroupDialog', '保存设定组失败', e);
+    } catch (e, stackTrace) {
+      AppLogger.e('NovelSettingGroupDialog', '保存设定组失败', e, stackTrace);
       setState(() {
         _isSaving = false;
       });
+      
+      // 显示错误提示
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('保存失败: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: '关闭',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
     }
   }
   
@@ -102,105 +118,176 @@ class _NovelSettingGroupDialogState extends State<NovelSettingGroupDialog> {
     final theme = Theme.of(context);
     final isCreating = widget.group == null;
     
-    return AlertDialog(
-      title: Text(isCreating ? '创建设定组' : '编辑设定组'),
-      content: Form(
-        key: _formKey,
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      elevation: 5,
+      child: Container(
+        width: 400,
+        padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 名称
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: '名称',
-                hintText: '输入设定组名称',
-                border: OutlineInputBorder(),
+            // 标题
+            Text(
+              isCreating ? '创建设定组' : '编辑设定组',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return '请输入设定组名称';
-                }
-                return null;
-              },
             ),
-            
             const SizedBox(height: 16),
             
-            // 描述
-            TextFormField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: '描述',
-                hintText: '输入设定组描述（可选）',
-                border: OutlineInputBorder(),
+            // 表单
+            Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 名称
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: InputDecoration(
+                      labelText: '名称',
+                      hintText: '输入设定组名称',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, 
+                        vertical: 12,
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return '请输入设定组名称';
+                      }
+                      return null;
+                    },
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // 描述
+                  TextFormField(
+                    controller: _descriptionController,
+                    decoration: InputDecoration(
+                      labelText: '描述',
+                      hintText: '输入设定组描述（可选）',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, 
+                        vertical: 12,
+                      ),
+                    ),
+                    maxLines: 3,
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // 激活状态
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12, 
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        Switch(
+                          value: _isActiveContext,
+                          onChanged: (value) {
+                            setState(() {
+                              _isActiveContext = value;
+                            });
+                          },
+                          activeColor: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                '设为活跃上下文',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              Text(
+                                '活跃上下文中的设定将用于AI生成和提示',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              maxLines: 2,
             ),
             
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             
-            // 激活状态
+            // 按钮区域
             Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Checkbox(
-                  value: _isActiveContext,
-                  onChanged: (value) {
-                    setState(() {
-                      _isActiveContext = value ?? false;
-                    });
-                  },
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16, 
+                      vertical: 10,
+                    ),
+                  ),
+                  child: const Text('取消'),
                 ),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '设为活跃上下文',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      Text(
-                        '活跃上下文中的设定将用于AI生成和提示',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
+                ElevatedButton(
+                  onPressed: _isSaving ? null : _saveSettingGroup,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16, 
+                      vertical: 10,
+                    ),
+                    elevation: 0,
                   ),
+                  child: _isSaving 
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(isCreating ? '创建中...' : '保存中...'),
+                          ],
+                        )
+                      : Text(isCreating ? '创建' : '保存'),
                 ),
               ],
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
-          child: const Text('取消'),
-        ),
-        ElevatedButton(
-          onPressed: _isSaving ? null : _saveSettingGroup,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: theme.colorScheme.primary,
-            foregroundColor: Colors.white,
-          ),
-          child: _isSaving 
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                )
-              : Text(isCreating ? '创建' : '保存'),
-        ),
-      ],
     );
   }
 } 

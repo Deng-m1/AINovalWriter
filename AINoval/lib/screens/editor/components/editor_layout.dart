@@ -45,290 +45,315 @@ class EditorLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     // 清除内存缓存，确保每次build周期都使用新的内存缓存
     stateManager.clearMemoryCache();
-    
-    // 监听内容更新通知器
-    return ValueListenableBuilder<String>(
-      valueListenable: stateManager.contentUpdateNotifier,
-      builder: (context, updateValue, child) {
-        // 使用BlocBuilder获取当前编辑器状态
-        return BlocBuilder<editor_bloc.EditorBloc, editor_bloc.EditorState>(
-          builder: (context, state) {
-            // 根据状态渲染UI
-            if (state is editor_bloc.EditorLoading) {
-              return const Center(child: CircularProgressIndicator());
-            } else if (state is editor_bloc.EditorLoaded) {
-              // 使用节流函数决定是否需要检查控制器
-              if (stateManager.shouldCheckControllers(state)) {
-                controller.ensureControllersForNovel(state.novel);
-              }
-              return _buildMainLayout(context, state);
-            } else if (state is editor_bloc.EditorError) {
-              return Center(child: Text('错误: ${state.message}'));
-            } else {
-              return const Center(child: Text('未知状态'));
+
+    // 监听 EditorScreenController 的状态变化，特别是 isFullscreenLoading
+    return ChangeNotifierProvider.value( // Ensure we are listening to the controller provided
+      value: controller,
+      child: Consumer<EditorScreenController>( // Use Consumer to get the latest controller state
+        builder: (context, editorController, _) {
+          // 优先显示全屏加载动画
+          if (editorController.isFullscreenLoading) {
+            return FullscreenLoadingOverlay(
+              loadingMessage: editorController.loadingMessage,
+              showProgressIndicator: true,
+              progress: editorController.loadingProgress >= 0 ? editorController.loadingProgress : -1,
+            );
+          }
+
+          // 如果全屏加载已结束，则构建主要布局
+          return ValueListenableBuilder<String>(
+            valueListenable: stateManager.contentUpdateNotifier,
+            builder: (context, updateValue, child) {
+              // 使用BlocBuilder获取当前编辑器状态
+              return BlocBuilder<editor_bloc.EditorBloc, editor_bloc.EditorState>(
+                bloc: editorController.editorBloc, // Explicitly use the bloc from the controller
+                builder: (context, state) {
+                  // 根据状态渲染UI
+                  if (state is editor_bloc.EditorLoading) {
+                    // 此时 isFullscreenLoading 应该是 false
+                    return const Center(child: CircularProgressIndicator());
+                  } else if (state is editor_bloc.EditorLoaded) {
+                    // 使用节流函数决定是否需要检查控制器
+                    if (stateManager.shouldCheckControllers(state)) {
+                      editorController.ensureControllersForNovel(state.novel);
+                    }
+                    return _buildMainLayout(context, state, editorController); // Pass controller
+                  } else if (state is editor_bloc.EditorError) {
+                    return Center(child: Text('错误: \${state.message}'));
+                  } else {
+                    // 走到这里意味着 isFullscreenLoading 为 false，且 Bloc 状态未知
+                    return const Center(child: Text('未知状态'));
+                  }
+                },
+              );
             }
-          },
-        );
-      }
+          );
+        },
+      ),
     );
   }
 
   // 构建主布局
-  Widget _buildMainLayout(BuildContext context, editor_bloc.EditorLoaded state) {
-    return Consumer2<EditorLayoutManager, EditorScreenController>(
-      builder: (context, layoutState, controllerState, child) {
-        final hasVisibleAIPanels = layoutState.visiblePanels.isNotEmpty;
-        final isLoadingMore = state.isLoading || controllerState.isLoadingMore;
+  Widget _buildMainLayout(BuildContext context, editor_bloc.EditorLoaded editorBlocState, EditorScreenController editorController) {
+    // No longer need Consumer2 here if editorController is passed directly
+    // final layoutState = Provider.of<EditorLayoutManager>(context); // Can get this if needed
 
-        return Stack(
+    final layoutState = layoutManager; // Assuming layoutManager is available via the constructor
+    final hasVisibleAIPanels = layoutState.visiblePanels.isNotEmpty;
+    
+    // isLoadingMore is true if the bloc state is loading or the controller's isLoadingMore is true
+    // but ensure we are not in a full screen loading state already handled outside.
+    final isLoadingMore = (editorBlocState.isLoading || editorController.isLoadingMore) && !editorController.isFullscreenLoading;
+
+    return Stack(
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                // 左侧导航
-                if (layoutState.isEditorSidebarVisible) ...[
-                  SizedBox(
-                    width: layoutState.editorSidebarWidth,
-                    child: EditorSidebar(
-                      novel: controllerState.novel,
-                      tabController: controllerState.tabController,
-                      onOpenAIChat: () {
-                        layoutState.toggleAIChatSidebar();
-                      },
-                      onOpenSettings: layoutState.toggleNovelSettings,
-                      onToggleSidebar: layoutState.toggleEditorSidebar,
-                      onAdjustWidth: () => _showEditorSidebarWidthDialog(context),
-                    ),
+            // 左侧导航
+            if (layoutState.isEditorSidebarVisible) ...[
+              SizedBox(
+                width: layoutState.editorSidebarWidth,
+                child: EditorSidebar(
+                  novel: editorController.novel,
+                  tabController: editorController.tabController,
+                  onOpenAIChat: () {
+                    layoutState.toggleAIChatSidebar();
+                  },
+                  onOpenSettings: layoutState.toggleNovelSettings,
+                  onToggleSidebar: layoutState.toggleEditorSidebar,
+                  onAdjustWidth: () => _showEditorSidebarWidthDialog(context),
+                ),
+              ),
+              DraggableDivider(
+                onDragUpdate: (delta) {
+                  layoutState.updateEditorSidebarWidth(delta.delta.dx);
+                },
+                onDragEnd: (_) {
+                  layoutState.saveEditorSidebarWidth();
+                },
+              ),
+            ],
+            // 主编辑区域
+            Expanded(
+              child: Column(
+                children: [
+                  // 编辑器顶部工具栏和操作栏
+                  EditorAppBar(
+                    novelTitle: editorController.novel.title,
+                    wordCount: stateManager.calculateTotalWordCount(editorBlocState.novel),
+                    isSaving: editorBlocState.isSaving,
+                    lastSaveTime: editorBlocState.lastSaveTime,
+                    onBackPressed: () => Navigator.pop(context),
+                    onChatPressed: layoutState.toggleAIChatSidebar,
+                    isChatActive: layoutState.isAIChatSidebarVisible,
+                    onAiConfigPressed: layoutState.toggleSettingsPanel,
+                    isSettingsActive: layoutState.isSettingsPanelVisible,
+                    onPlanPressed: editorController.togglePlanView,
+                    isPlanActive: editorController.isPlanViewActive,
+                    onWritePressed: (editorController.isPlanViewActive || editorController.isNextOutlineViewActive)
+                        ? (editorController.isPlanViewActive ? editorController.togglePlanView : editorController.toggleNextOutlineView)
+                        : null,
+                    onNextOutlinePressed: editorController.toggleNextOutlineView,
+                    onAIGenerationPressed: layoutState.toggleAISceneGenerationPanel,
+                    onAISummaryPressed: layoutState.toggleAISummaryPanel,
+                    onAutoContinueWritingPressed: onAutoContinueWritingPressed,
+                    isAIGenerationActive: layoutState.isAISceneGenerationPanelVisible || layoutState.isAISummaryPanelVisible,
+                    isNextOutlineActive: editorController.isNextOutlineViewActive,
                   ),
-                  DraggableDivider(
-                    onDragUpdate: (delta) {
-                      layoutState.updateEditorSidebarWidth(delta.delta.dx);
-                    },
-                    onDragEnd: (_) {
-                      layoutState.saveEditorSidebarWidth();
-                    },
+                  // 主编辑区域与聊天侧边栏
+                  Expanded(
+                    child: layoutState.isNovelSettingsVisible
+                      ? MultiRepositoryProvider(
+                          providers: [
+                            RepositoryProvider<EditorRepository>(
+                              create: (context) => editorController.editorRepository,
+                            ),
+                            RepositoryProvider<StorageRepository>(
+                              create: (context) => AliyunOssStorageRepository(editorController.apiClient),
+                            ),
+                          ],
+                          child: NovelSettingsView(
+                            novel: editorController.novel,
+                            onSettingsClose: layoutState.toggleNovelSettings,
+                          ),
+                        )
+                      : Row(
+                          children: [
+                            // 根据当前视图模式选择显示内容
+                            Expanded(
+                              child: editorController.isPlanViewActive
+                                ? PlanView(
+                                    novelId: editorController.novel.id,
+                                    planBloc: editorController.planBloc,
+                                    onSwitchToWrite: editorController.togglePlanView,
+                                  )
+                                : editorController.isNextOutlineViewActive
+                                  ? NextOutlineView(
+                                      novelId: editorController.novel.id,
+                                      novelTitle: editorController.novel.title,
+                                      onSwitchToWrite: editorController.toggleNextOutlineView,
+                                    )
+                                  : Padding(
+                                      padding: const EdgeInsets.only(
+                                          left: 16, right: 16, bottom: 16),
+                                      child: EditorMainArea(
+                                        key: editorController.editorMainAreaKey,
+                                        novel: editorBlocState.novel,
+                                        editorBloc: editorController.editorBloc,
+                                        sceneControllers: editorController.sceneControllers,
+                                        sceneSummaryControllers:
+                                            editorController.sceneSummaryControllers,
+                                        activeActId: editorBlocState.activeActId,
+                                        activeChapterId: editorBlocState.activeChapterId,
+                                        activeSceneId: editorBlocState.activeSceneId,
+                                        scrollController: editorController.scrollController,
+                                        sceneKeys: editorController.sceneKeys,
+                                      ),
+                                    ),
+                            ),
+
+                            // 右侧多AI面板组件
+                            if (hasVisibleAIPanels) ...[
+                              DraggableDivider(
+                                onDragUpdate: (delta) {
+                                  // 更新最左侧面板的宽度，这里影响主编辑区域和面板的边界
+                                  final firstPanelId = layoutState.visiblePanels.first;
+                                  layoutState.updatePanelWidth(firstPanelId, delta.delta.dx);
+                                },
+                                onDragEnd: (_) {
+                                  layoutState.savePanelWidths();
+                                },
+                              ),
+                              // 使用多面板组件
+                              RepositoryProvider<PromptRepository>(
+                                create: (context) => editorController.promptRepository,
+                                child: MultiAIPanelView(
+                                  novelId: editorController.novel.id,
+                                  chapterId: editorBlocState.activeChapterId,
+                                  layoutManager: layoutState,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                   ),
                 ],
-                // 主编辑区域
-                Expanded(
-                  child: Column(
-                    children: [
-                      // 编辑器顶部工具栏和操作栏
-                      EditorAppBar(
-                        novelTitle: controllerState.novel.title,
-                        wordCount: stateManager.calculateTotalWordCount(state.novel),
-                        isSaving: state.isSaving,
-                        lastSaveTime: state.lastSaveTime,
-                        onBackPressed: () => Navigator.pop(context),
-                        onChatPressed: layoutState.toggleAIChatSidebar,
-                        isChatActive: layoutState.isAIChatSidebarVisible,
-                        onAiConfigPressed: layoutState.toggleSettingsPanel,
-                        isSettingsActive: layoutState.isSettingsPanelVisible,
-                        onPlanPressed: controllerState.togglePlanView,
-                        isPlanActive: controllerState.isPlanViewActive,
-                        onWritePressed: (controllerState.isPlanViewActive || controllerState.isNextOutlineViewActive)
-                            ? (controllerState.isPlanViewActive ? controllerState.togglePlanView : controllerState.toggleNextOutlineView)
-                            : null,
-                        onNextOutlinePressed: controllerState.toggleNextOutlineView,
-                        onAIGenerationPressed: layoutState.toggleAISceneGenerationPanel,
-                        onAISummaryPressed: layoutState.toggleAISummaryPanel,
-                        onAutoContinueWritingPressed: onAutoContinueWritingPressed,
-                        isAIGenerationActive: layoutState.isAISceneGenerationPanelVisible || layoutState.isAISummaryPanelVisible,
-                        isNextOutlineActive: controllerState.isNextOutlineViewActive,
-                      ),
-                      // 主编辑区域与聊天侧边栏
-                      Expanded(
-                        child: layoutState.isNovelSettingsVisible
-                          ? MultiRepositoryProvider(
-                              providers: [
-                                RepositoryProvider<EditorRepository>(
-                                  create: (context) => controllerState.editorRepository,
-                                ),
-                                RepositoryProvider<StorageRepository>(
-                                  create: (context) => AliyunOssStorageRepository(controllerState.apiClient),
-                                ),
-                              ],
-                              child: NovelSettingsView(
-                                novel: controllerState.novel,
-                                onSettingsClose: layoutState.toggleNovelSettings,
-                              ),
-                            )
-                          : Row(
-                              children: [
-                                // 根据当前视图模式选择显示内容
-                                Expanded(
-                                  child: controllerState.isPlanViewActive
-                                    ? PlanView(
-                                        novelId: controllerState.novel.id,
-                                        planBloc: controllerState.planBloc,
-                                        onSwitchToWrite: controllerState.togglePlanView,
-                                      )
-                                    : controllerState.isNextOutlineViewActive
-                                      ? NextOutlineView(
-                                          novelId: controllerState.novel.id,
-                                          novelTitle: controllerState.novel.title,
-                                          onSwitchToWrite: controllerState.toggleNextOutlineView,
-                                        )
-                                      : Padding(
-                                          padding: const EdgeInsets.only(
-                                              left: 16, right: 16, bottom: 16),
-                                          child: EditorMainArea(
-                                            key: controllerState.editorMainAreaKey,
-                                            novel: state.novel,
-                                            editorBloc: controllerState.editorBloc,
-                                            sceneControllers: controllerState.sceneControllers,
-                                            sceneSummaryControllers:
-                                                controllerState.sceneSummaryControllers,
-                                            activeActId: state.activeActId,
-                                            activeChapterId: state.activeChapterId,
-                                            activeSceneId: state.activeSceneId,
-                                            scrollController: controllerState.scrollController,
-                                            sceneKeys: controllerState.sceneKeys,
-                                          ),
-                                        ),
-                                ),
-
-                                // 右侧多AI面板组件
-                                if (hasVisibleAIPanels) ...[
-                                  DraggableDivider(
-                                    onDragUpdate: (delta) {
-                                      // 更新最左侧面板的宽度，这里影响主编辑区域和面板的边界
-                                      final firstPanelId = layoutState.visiblePanels.first;
-                                      layoutState.updatePanelWidth(firstPanelId, delta.delta.dx);
-                                    },
-                                    onDragEnd: (_) {
-                                      layoutState.savePanelWidths();
-                                    },
-                                  ),
-                                  // 使用多面板组件
-                                  RepositoryProvider<PromptRepository>(
-                                    create: (context) => controllerState.promptRepository,
-                                    child: MultiAIPanelView(
-                                      novelId: controllerState.novel.id,
-                                      chapterId: state.activeChapterId,
-                                      layoutManager: layoutState,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
-            // 侧边栏切换按钮
-            if (!layoutState.isEditorSidebarVisible)
-              Positioned(
-                left: 0,
-                top: 16,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: layoutState.toggleEditorSidebar,
+          ],
+        ),
+        // 侧边栏切换按钮
+        if (!layoutState.isEditorSidebarVisible)
+          Positioned(
+            left: 0,
+            top: 16,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: layoutState.toggleEditorSidebar,
+                borderRadius: const BorderRadius.only(
+                  topRight: Radius.circular(8),
+                  bottomRight: Radius.circular(8),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withAlpha(25),
                     borderRadius: const BorderRadius.only(
                       topRight: Radius.circular(8),
                       bottomRight: Radius.circular(8),
                     ),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .primary
-                            .withAlpha(25),
-                        borderRadius: const BorderRadius.only(
-                          topRight: Radius.circular(8),
-                          bottomRight: Radius.circular(8),
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.arrow_forward_ios,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
+                  ),
+                  child: Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
               ),
-            // 设置面板
-            if (layoutState.isSettingsPanelVisible)
-              Positioned.fill(
-                child: GestureDetector(
-                  onTap: layoutState.toggleSettingsPanel,
-                  child: Container(
-                    color: Colors.black.withAlpha(128),
-                    child: Center(
-                      child: GestureDetector(
-                        onTap: () {},
-                        child: controllerState.currentUserId == null
-                            ? EditorDialogManager.buildLoginRequiredPanel(
-                                context,
-                                layoutState.toggleSettingsPanel,
-                              )
-                            : SettingsPanel(
-                                userId: controllerState.currentUserId!,
-                                onClose: layoutState.toggleSettingsPanel,
-                                editorSettings: EditorSettings.fromMap(state.settings),
-                                onEditorSettingsChanged: (settings) {
-                                  context.read<editor_bloc.EditorBloc>().add(
-                                      editor_bloc.UpdateEditorSettings(settings: settings.toMap()));
-                                },
-                              ),
-                      ),
-                    ),
+            ),
+          ),
+        // 设置面板
+        if (layoutState.isSettingsPanelVisible)
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: layoutState.toggleSettingsPanel,
+              child: Container(
+                color: Colors.black.withAlpha(128),
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {},
+                    child: editorController.currentUserId == null
+                        ? EditorDialogManager.buildLoginRequiredPanel(
+                            context,
+                            layoutState.toggleSettingsPanel,
+                          )
+                        : SettingsPanel(
+                            userId: editorController.currentUserId!,
+                            onClose: layoutState.toggleSettingsPanel,
+                            editorSettings: EditorSettings.fromMap(editorBlocState.settings),
+                            onEditorSettingsChanged: (settings) {
+                              context.read<editor_bloc.EditorBloc>().add(
+                                  editor_bloc.UpdateEditorSettings(settings: settings.toMap()));
+                            },
+                          ),
                   ),
                 ),
               ),
-            // 浮动按钮 - 当没有AI聊天面板时显示
-            if (!layoutState.isAIChatSidebarVisible && !state.isSaving)
-              Positioned(
-                right: 16,
-                bottom: 16,
-                child: FloatingActionButton(
-                  heroTag: 'chat',
-                  onPressed: layoutState.toggleAIChatSidebar,
-                  backgroundColor: Colors.grey.shade700,
-                  tooltip: '打开AI聊天',
-                  child: const Icon(
-                    Icons.chat,
-                    color: Colors.white,
-                  ),
+            ),
+          ),
+        // 浮动按钮 - 当没有AI聊天面板时显示
+        if (!layoutState.isAIChatSidebarVisible && !editorBlocState.isSaving)
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: FloatingActionButton(
+              heroTag: 'chat',
+              onPressed: layoutState.toggleAIChatSidebar,
+              backgroundColor: Colors.grey.shade700,
+              tooltip: '打开AI聊天',
+              child: const Icon(
+                Icons.chat,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        // 保存中浮动按钮
+        if (editorBlocState.isSaving)
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: FloatingActionButton(
+              heroTag: 'saving',
+              onPressed: null,
+              backgroundColor: Colors.grey.shade400,
+              tooltip: '正在保存...',
+              child: const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
               ),
-            // 保存中浮动按钮
-            if (state.isSaving)
-              Positioned(
-                right: 16,
-                bottom: 16,
-                child: FloatingActionButton(
-                  heroTag: 'saving',
-                  onPressed: null,
-                  backgroundColor: Colors.grey.shade400,
-                  tooltip: '正在保存...',
-                  child: const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  ),
-                ),
-              ),
-            // 加载动画覆盖层
-            if (isLoadingMore)
-              _buildLoadingOverlay(context),
-            // 添加全屏加载动画覆盖层
-            if (controllerState.isFullscreenLoading)
-              FullscreenLoadingOverlay(
-                loadingMessage: controllerState.loadingMessage,
-                showProgressIndicator: true,
-                progress: controllerState.loadingProgress >= 0 ? controllerState.loadingProgress : -1,
-              ),
-          ],
-        );
-      },
+            ),
+          ),
+        // 加载动画覆盖层 (用于非全屏的 "加载更多")
+        if (isLoadingMore) // This condition now implies !editorController.isFullscreenLoading
+          _buildLoadingOverlay(context, editorController), // Pass controller
+        // 全屏加载动画覆盖层 - 这部分的主要控制已移到顶层 build 方法
+        // 如果 EditorLoaded 状态内部也可能触发特定类型的全屏加载，可以保留一个更局部的控制
+        // 但为了避免混淆，最好让 EditorScreenController.isFullscreenLoading 统一控制
+        // if (editorController.isFullscreenLoading) // Redundant if handled at the top level
+        //   FullscreenLoadingOverlay(
+        //     loadingMessage: editorController.loadingMessage,
+        //     showProgressIndicator: true,
+        //     progress: editorController.loadingProgress >= 0 ? editorController.loadingProgress : -1,
+        //   ),
+      ],
     );
   }
 
@@ -359,7 +384,7 @@ class EditorLayout extends StatelessWidget {
     );
   }
 
-  Widget _buildLoadingOverlay(BuildContext context) {
+  Widget _buildLoadingOverlay(BuildContext context, EditorScreenController editorController) {
     return Positioned(
       left: 0,
       right: 0,
@@ -383,7 +408,7 @@ class EditorLayout extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (controller.isLoadingMore)
+                if (editorController.isLoadingMore) // Use passed controller
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
                     margin: const EdgeInsets.only(bottom: 8),
@@ -422,10 +447,10 @@ class EditorLayout extends StatelessWidget {
                     ),
                   ),
                 
-                if (!controller.isLoadingMore) ...[
-                  if (controller.hasReachedEnd)
+                if (!editorController.isLoadingMore) ...[ // Use passed controller
+                  if (editorController.hasReachedEnd) // Use passed controller
                     _buildEndOfContentIndicator("已到达底部"),
-                  if (controller.hasReachedStart)
+                  if (editorController.hasReachedStart) // Use passed controller
                     _buildEndOfContentIndicator("已到达顶部"),
                 ],
               ],

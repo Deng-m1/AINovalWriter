@@ -13,7 +13,7 @@ class NovelSettingRepositoryImpl implements NovelSettingRepository {
   final ApiClient apiClient;
 
   // API路径基础部分
-  String _getBasePath(String novelId) => '/api/v1/novels/$novelId/settings';
+  String _getBasePath(String novelId) => '/novels/$novelId/settings';
 
   // ==================== 设定条目管理 ====================
   @override
