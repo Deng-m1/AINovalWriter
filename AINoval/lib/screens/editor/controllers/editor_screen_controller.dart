@@ -142,6 +142,9 @@ class EditorScreenController extends ChangeNotifier {
   String get loadingMessage => _loadingMessage;
   double get loadingProgress => _loadingProgress;
 
+  // 新增：用于跟踪最近滚动方向的变量
+  String _lastEffectiveScrollDirection = 'none';
+
   // 添加事件订阅变量
   StreamSubscription<NovelStructureUpdatedEvent>? _novelStructureSubscription;
 
@@ -435,6 +438,21 @@ class EditorScreenController extends ChangeNotifier {
     final scrollInfo = _calculateScrollInfo();
     final bool isRapidScrolling = scrollInfo.isRapid;
     
+    // 更新最近的滚动方向
+    final currentPos = scrollController.offset;
+    if (_lastScrollPosition != null) {
+      // 添加0.5的阈值以避免微小抖动导致的误判
+      if (currentPos > _lastScrollPosition! + 0.5) {
+        _lastEffectiveScrollDirection = 'down';
+      } else if (currentPos < _lastScrollPosition! - 0.5) {
+        _lastEffectiveScrollDirection = 'up';
+      }
+    }
+    // _lastScrollPosition 会在 _calculateScrollInfo 中或在此函数末尾更新
+    // 但为了确保 _checkScrollBoundaries 能拿到最新的方向前的 _lastScrollPosition，
+    // _calculateScrollInfo 内部更新 _lastScrollPosition 的时机很重要。
+    // 当前 _calculateScrollInfo 在末尾更新 _lastScrollPosition，是正确的。
+
     // 在每次滚动事件中更新滚动状态
     if (isRapidScrolling && _scrollState != ScrollState.userScrolling) {
       _scrollState = ScrollState.userScrolling;
@@ -556,14 +574,13 @@ class EditorScreenController extends ChangeNotifier {
       } 
       // 检查顶部边界
       else if (offset <= dynamicPreloadDistance) {
-        // 如果已经标记为hasReachedStart=true，但需要检查是否真的在第一卷
+        // 如果已经标记为hasReachedStart=true
         if (state.hasReachedStart) {
           // 判断当前活动章节所在卷索引
           int focusActIndex = -1;
           String? currentFocusChapterId = state.activeChapterId;
           
           if (currentFocusChapterId != null) {
-            // 遍历查找焦点章节所在Act
             for (int i = 0; i < state.novel.acts.length; i++) {
               final act = state.novel.acts[i];
               for (final chapter in act.chapters) {
@@ -576,14 +593,10 @@ class EditorScreenController extends ChangeNotifier {
             }
           }
           
-          // 如果不是第一卷，强制重置hasReachedStart标志并尝试加载
+          // 如果不是第一卷，强制重置hasReachedStart标志并尝试加载上一卷内容
           if (focusActIndex > 0) {
             AppLogger.i('EditorScreenController', '虽然标记为已到达顶部，但当前在第${focusActIndex + 1}卷，尝试加载上一卷内容');
-            
-            // 重置标志
-            editorBloc.add(const editor_bloc.ResetActLoadingFlags());
-            
-            // 加载上一卷内容
+            editorBloc.add(const editor_bloc.ResetActLoadingFlags()); // 重置标志
             _loadPreviousActContent(state, focusActIndex);
             return;
           }
@@ -592,11 +605,25 @@ class EditorScreenController extends ChangeNotifier {
           if (kDebugMode && focusActIndex == 0) {
             AppLogger.d('EditorScreenController', '确认当前在第一卷，维持已到达顶部状态');
           }
-          return;
+          return; // 返回，因为已在顶部且是第一卷
         }
         
-        // 正常触发向上加载
-        _loadMoreScenes('up');
+        // 如果尚未到达顶部 (state.hasReachedStart is false)
+        // 根据最近的滚动意图决定加载方向
+        if (_lastEffectiveScrollDirection == 'down') {
+          AppLogger.i('EditorScreenController', '靠近顶部，但滚动意图是 DOWN. 尝试向下加载.');
+          if (!state.hasReachedEnd) {
+              _loadMoreScenes('down');
+          } else {
+              // 如果意图向下但已到达末尾 (通常是内容极少的情况)
+              // 此时仍然尝试向上加载以正确设置 hasReachedStart
+              AppLogger.i('EditorScreenController', '靠近顶部，滚动意图DOWN，但已到达末尾. 尝试向上加载以确认起始边界.');
+              _loadMoreScenes('up');
+          }
+        } else { // 滚动意图是 'up' 或 'none'
+          AppLogger.i('EditorScreenController', '靠近顶部，滚动意图是 UP 或 NONE. 尝试向上加载.');
+          _loadMoreScenes('up');
+        }
       }
     }
   }

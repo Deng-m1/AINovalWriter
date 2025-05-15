@@ -284,9 +284,17 @@ class EditorMainAreaState extends State<EditorMainArea> {
       if (_focusUpdateTimer == null || !_focusUpdateTimer!.isActive) {
         _focusUpdateTimer = Timer(const Duration(milliseconds: 200), () {
           if (mounted) {
-            // 先更新所有章节位置，然后再更新焦点
-            _updateAllChapterPositions();
+            _updateAllChapterPositions(); // _updateFocusChapter 和 _updateVisibleItems 可能依赖最新的位置
             _updateFocusChapter();
+
+            // 将 _updateVisibleItems 移到这里
+            if (widget.scrollController.hasClients) {
+                final scrollPosition = widget.scrollController.position;
+                final viewportStart = scrollPosition.pixels;
+                final viewportEnd = viewportStart + scrollPosition.viewportDimension;
+                _updateVisibleItems(viewportStart - _preloadDistance, viewportEnd + _preloadDistance);
+            }
+
             _isScrollingDrivenFocus = false; // 标记滚动相关的焦点更新结束
           }
         });
@@ -473,14 +481,20 @@ class EditorMainAreaState extends State<EditorMainArea> {
       
       // 找到章节所属的卷ID
       if (fromChapterId != null) {
-        for (final act in widget.novel.acts) {
-          for (final chapter in act.chapters) {
-            if (chapter.id == fromChapterId) {
-              actId = act.id;
-              break;
+        if (widget.editorBloc.state is editor_bloc.EditorLoaded) {
+          final editorState = widget.editorBloc.state as editor_bloc.EditorLoaded;
+          actId = editorState.chapterToActMap[fromChapterId];
+        } else {
+          AppLogger.w('EditorMainArea', '_loadMoreInDirection (up): EditorBloc state is not EditorLoaded. Falling back to iterating acts.');
+          for (final actLoop in widget.novel.acts) {
+            for (final chapterLoop in actLoop.chapters) {
+              if (chapterLoop.id == fromChapterId) {
+                actId = actLoop.id;
+                break;
+              }
             }
+            if (actId != null) break;
           }
-          if (actId != null) break;
         }
       }
       
@@ -491,14 +505,20 @@ class EditorMainAreaState extends State<EditorMainArea> {
       
       // 找到章节所属的卷ID
       if (fromChapterId != null) {
-        for (final act in widget.novel.acts) {
-          for (final chapter in act.chapters) {
-            if (chapter.id == fromChapterId) {
-              actId = act.id;
-              break;
+        if (widget.editorBloc.state is editor_bloc.EditorLoaded) {
+          final editorState = widget.editorBloc.state as editor_bloc.EditorLoaded;
+          actId = editorState.chapterToActMap[fromChapterId];
+        } else {
+          AppLogger.w('EditorMainArea', '_loadMoreInDirection (down): EditorBloc state is not EditorLoaded. Falling back to iterating acts.');
+          for (final actLoop in widget.novel.acts) {
+            for (final chapterLoop in actLoop.chapters) {
+              if (chapterLoop.id == fromChapterId) {
+                actId = actLoop.id;
+                break;
+              }
             }
+            if (actId != null) break;
           }
-          if (actId != null) break;
         }
       }
       
@@ -714,8 +734,8 @@ class EditorMainAreaState extends State<EditorMainArea> {
           ),
           
           // 添加加载动画覆盖层
-          if (isLoadingMore && !_isFullscreenLoading)
-            _buildLoadingOverlay(),
+          // if (isLoadingMore && !_isFullscreenLoading)  // Removed this line and the next
+          //   _buildLoadingOverlay(), // Removed this line
             
           // 添加全屏加载覆盖层
           if (_isFullscreenLoading)
@@ -726,39 +746,6 @@ class EditorMainAreaState extends State<EditorMainArea> {
         ],
       ),
     );
-  }
-  
-  // 创建一个加载动画覆盖层，类似社交媒体应用
-  Widget _buildLoadingOverlay() {
-    String loadingMessage = '正在加载更多内容...';
-    
-    // 检查是否有更具体的加载状态
-    if (widget.editorBloc.state is editor_bloc.EditorLoaded) {
-      final state = widget.editorBloc.state as editor_bloc.EditorLoaded;
-      
-      // 确定当前焦点章节所在的Act
-      String? focusActTitle;
-      if (_focusChapterId != null) {
-        for (final act in widget.novel.acts) {
-          for (final chapter in act.chapters) {
-            if (chapter.id == _focusChapterId) {
-              focusActTitle = act.title;
-              break;
-            }
-          }
-          if (focusActTitle != null) break;
-        }
-      }
-      
-      // 根据已到达边界状态和焦点Act设置更具体的消息
-      if (state.hasReachedEnd && focusActTitle != null) {
-        loadingMessage = '$focusActTitle 已加载完成，正在加载下一卷内容...';
-      } else if (state.hasReachedStart && focusActTitle != null) {
-        loadingMessage = '$focusActTitle 顶部内容已加载完成';
-      }
-    }
-    
-    return LoadingOverlay(loadingMessage: loadingMessage);
   }
   
   // 替换原来的_buildOptimizedScrollView方法
@@ -880,19 +867,19 @@ class EditorMainAreaState extends State<EditorMainArea> {
       _lastReportedPosition = metrics;
       
       // 计算视口边界
-      final viewportStart = metrics.pixels;
-      final viewportEnd = metrics.pixels + metrics.viewportDimension;
+      // final viewportStart = metrics.pixels; // 这行不再需要
+      // final viewportEnd = metrics.pixels + metrics.viewportDimension; // 这行不再需要
       
-      // 更新可见项目
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          // 先更新可见项目
-          _updateVisibleItems(viewportStart - _preloadDistance, viewportEnd + _preloadDistance);
-          
-          // 然后确定焦点章节
-          _updateFocusChapter(); // 移除错误的double参数
-        }
-      });
+      // 更新可见项目 // 这整块将被移除
+      // SchedulerBinding.instance.addPostFrameCallback((_) {
+      //   if (mounted) {
+      //     // 先更新可见项目
+      //     _updateVisibleItems(viewportStart - _preloadDistance, viewportEnd + _preloadDistance);
+      //     
+      //     // 然后确定焦点章节
+      //     _updateFocusChapter(); // 移除错误的double参数
+      //   }
+      // });
     }
     return false;
   }
@@ -1061,11 +1048,10 @@ class EditorMainAreaState extends State<EditorMainArea> {
   bool _shouldRenderChapter(String actId, String chapterId) {
     // 如果章节所在Act没有章节或章节数很少，渲染全部
     final act = widget.novel.acts.firstWhere((a) => a.id == actId, orElse: () {
-      // 如果找不到Act，可能数据有问题，不渲染此章节
       AppLogger.w('EditorMainArea', '在 _shouldRenderChapter 中找不到 Act: $actId');
-      return novel_models.Act(id: '', title: '', chapters: [], order: 0); // 返回一个空Act避免崩溃
+      return novel_models.Act(id: '', title: '', chapters: [], order: 0); 
     });
-    if (act.id.isEmpty) return false; // 明确表示不渲染
+    if (act.id.isEmpty) return false;
 
     if (act.chapters.isEmpty || act.chapters.length <= 5) {
       return true;
@@ -1096,35 +1082,38 @@ class EditorMainAreaState extends State<EditorMainArea> {
     String? referenceActId;
     int referenceGlobalIndex = -1;
     int currentGlobalIndex = -1;
-    int globalIndex = 0;
-    
-    // 第一次遍历：找出所有章节的全局索引
-    final Map<String, int> chapterGlobalIndices = {};
-    // 记录每个章节对应的Act
-    final Map<String, String> chapterToActMap = {};
-    
-    for (final currentAct in widget.novel.acts) {
-      for (final chapter in currentAct.chapters) {
-        chapterGlobalIndices[chapter.id] = globalIndex++;
-        chapterToActMap[chapter.id] = currentAct.id;
-        
-        if (chapter.id == referenceChapterId) {
-          referenceActId = currentAct.id;
-          referenceGlobalIndex = chapterGlobalIndices[chapter.id]!;
-        }
-        
-        if (chapter.id == chapterId) {
-          currentGlobalIndex = chapterGlobalIndices[chapter.id]!;
-        }
-      }
-    }
-    
-    // 如果找不到索引，不渲染
-    if (referenceGlobalIndex == -1 || currentGlobalIndex == -1) {
-      AppLogger.w('EditorMainArea', '章节 $chapterId 或参考章节 $referenceChapterId 未找到全局索引，不渲染');
+
+    // 从 BLoC 状态获取预计算的映射
+    if (widget.editorBloc.state is! editor_bloc.EditorLoaded) {
+      AppLogger.w('EditorMainArea', '_shouldRenderChapter: EditorBloc state is not EditorLoaded. Defaulting to false.');
       return false;
     }
+    final state = widget.editorBloc.state as editor_bloc.EditorLoaded;
 
+    // 假设 EditorLoaded 状态中包含 chapterGlobalIndices 和 chapterToActMap
+    // 您需要在 EditorBloc 的 EditorLoaded state 中定义并维护这些映射。
+    // 例如:
+    // class EditorLoaded extends EditorState {
+    //   // ...其他属性
+    //   final Map<String, int> chapterGlobalIndices;
+    //   final Map<String, String> chapterToActMap;
+    //   EditorLoaded({required this.novel, ..., required this.chapterGlobalIndices, required this.chapterToActMap});
+    // }
+    // 然后在 EditorBloc 中更新它们。
+    // 请确保 state.chapterGlobalIndices 和 state.chapterToActMap 在您的 EditorLoaded state 中是有效的。
+    final Map<String, int> chapterGlobalIndices = state.chapterGlobalIndices; 
+    final Map<String, String> chapterToActMap = state.chapterToActMap;
+
+    referenceActId = chapterToActMap[referenceChapterId]; // referenceChapterId 已保证非null
+    referenceGlobalIndex = chapterGlobalIndices[referenceChapterId] ?? -1;
+    currentGlobalIndex = chapterGlobalIndices[chapterId] ?? -1;
+
+    if (referenceActId == null || referenceGlobalIndex == -1 || currentGlobalIndex == -1) {
+      AppLogger.w('EditorMainArea',
+          'Chapter $chapterId (current) or $referenceChapterId (reference) not found in global indices/maps or maps are incomplete. Cannot determine render status. Details: refActId: $referenceActId, refGlobalIdx: $referenceGlobalIndex, currentGlobalIdx: $currentGlobalIndex');
+      return false;
+    }
+    
     // 获取参考章节在 novel.acts 中的索引
     int referenceActIndexInNovel = -1;
     if (referenceActId != null) {
@@ -1590,7 +1579,14 @@ class EditorMainAreaState extends State<EditorMainArea> {
     
     // 如果启用了单卷模式且不是强制更新，则优先考虑当前焦点Act中的章节
     if (_enforceSingleActMode && _focusChapterId != null && !forceUpdate) {
-      String? currentFocusActId = _getCurrentFocusActId();
+      String? currentFocusActId;
+      if (widget.editorBloc.state is editor_bloc.EditorLoaded) {
+        final state = widget.editorBloc.state as editor_bloc.EditorLoaded;
+        currentFocusActId = state.chapterToActMap[_focusChapterId!];
+      } else {
+        AppLogger.w('EditorMainArea', '_updateFocusChapter (single act mode): EditorBloc state is not EditorLoaded. Skipping optimization.');
+      }
+
       if (currentFocusActId != null) {
         // 记录当前焦点Act中的章节和距离
         for (final entry in _chapterPositions.entries) {
@@ -1658,14 +1654,11 @@ class EditorMainAreaState extends State<EditorMainArea> {
       
       // 找到章节所在的Act
       String? actId;
-      for (final act in widget.novel.acts) {
-        for (final chapter in act.chapters) {
-          if (chapter.id == chapterId) {
-            actId = act.id;
-            break;
-          }
-        }
-        if (actId != null) break;
+      if (widget.editorBloc.state is editor_bloc.EditorLoaded) {
+        final state = widget.editorBloc.state as editor_bloc.EditorLoaded;
+        actId = state.chapterToActMap[chapterId];
+      } else {
+        AppLogger.w('EditorMainArea', '_updateFocusChapter: EditorBloc state is not EditorLoaded. Skipping optimization.');
       }
       
       // 跳过没找到Act的章节
@@ -1694,32 +1687,39 @@ class EditorMainAreaState extends State<EditorMainArea> {
     // 如果当前焦点章节不为空，且启用了单卷模式，强制阻止跨卷切换
     if (_enforceSingleActMode && _focusChapterId != null && !forceUpdate) {
       // 获取当前焦点章节对应的Act
-      String? currentFocusActId = _getCurrentFocusActId();
-      
-      // 如果有不同的Act，且都有可见章节
-      if (currentFocusActId != null && closestActId != null && 
-          currentFocusActId != closestActId &&
-          actToClosestChapters.containsKey(currentFocusActId) &&
-          actToClosestChapters[currentFocusActId]!.isNotEmpty) {
-        
-        // 查找当前焦点Act中最近的章节
-        String? closestChapterInCurrentAct;
-        double minDistanceInCurrentAct = double.infinity;
-        
-        actToClosestChapters[currentFocusActId]!.forEach((chapId, dist) {
-          if (dist < minDistanceInCurrentAct) {
-            minDistanceInCurrentAct = dist;
-            closestChapterInCurrentAct = chapId;
+      String? currentFocusActId;
+      final editorStateSnapshot = widget.editorBloc.state; // Use a snapshot to avoid race conditions with state changes
+      if (editorStateSnapshot is editor_bloc.EditorLoaded) {
+        currentFocusActId = editorStateSnapshot.chapterToActMap[_focusChapterId!];
+      } else {
+        AppLogger.w('EditorMainArea', '_updateFocusChapter (single act mode cross-volume check): EditorBloc state is not EditorLoaded. Skipping optimization.');
+      }
+
+      if (currentFocusActId != null) {
+        // 如果有不同的Act，且都有可见章节
+        if (currentFocusActId != closestActId &&
+            actToClosestChapters.containsKey(currentFocusActId) &&
+            actToClosestChapters[currentFocusActId]!.isNotEmpty) {
+          
+          // 查找当前焦点Act中最近的章节
+          String? closestChapterInCurrentAct;
+          double minDistanceInCurrentAct = double.infinity;
+          
+          actToClosestChapters[currentFocusActId]!.forEach((chapId, dist) {
+            if (dist < minDistanceInCurrentAct) {
+              minDistanceInCurrentAct = dist;
+              closestChapterInCurrentAct = chapId;
+            }
+          });
+          
+          // 如果当前Act有在视图中的章节，则不切换Act
+          if (closestChapterInCurrentAct != null) {
+            // 单卷模式下，只要当前Act有可见章节，就强制保持在当前Act
+            AppLogger.i('EditorMainArea', '单卷模式：强制保持在当前Act (${currentFocusActId})，不允许跨卷');
+            closestChapterId = closestChapterInCurrentAct;
+            minDistance = minDistanceInCurrentAct;
+            closestActId = currentFocusActId;
           }
-        });
-        
-        // 如果当前Act有在视图中的章节，则不切换Act
-        if (closestChapterInCurrentAct != null) {
-          // 单卷模式下，只要当前Act有可见章节，就强制保持在当前Act
-          AppLogger.i('EditorMainArea', '单卷模式：强制保持在当前Act (${currentFocusActId})，不允许跨卷');
-          closestChapterId = closestChapterInCurrentAct;
-          minDistance = minDistanceInCurrentAct;
-          closestActId = currentFocusActId;
         }
       }
     }
@@ -1869,14 +1869,20 @@ class EditorMainAreaState extends State<EditorMainArea> {
     if (state.hasReachedEnd && _focusChapterId != null) {
       // 查找焦点章节所在的Act
       String? focusActId;
-      for (final act in widget.novel.acts) {
-        for (final chapter in act.chapters) {
-          if (chapter.id == _focusChapterId) {
-            focusActId = act.id;
-            break;
+      if (widget.editorBloc.state is editor_bloc.EditorLoaded) {
+        final editorStateLoaded = widget.editorBloc.state as editor_bloc.EditorLoaded;
+        focusActId = editorStateLoaded.chapterToActMap[_focusChapterId!];
+      } else {
+        AppLogger.w('EditorMainArea', '_shouldShowAddActButton: EditorBloc state is not EditorLoaded.');
+        for (final actLoop in widget.novel.acts) {
+          for (final chapterLoop in actLoop.chapters) {
+            if (chapterLoop.id == _focusChapterId) {
+              focusActId = actLoop.id;
+              break;
+            }
           }
+          if (focusActId != null) break;
         }
-        if (focusActId != null) break;
       }
       
       // 判断焦点Act是否是最后一个Act
@@ -2109,9 +2115,9 @@ class EditorMainAreaState extends State<EditorMainArea> {
     // 清理与当前卷相关的全局Key
     for (final entry in widget.sceneKeys.entries) {
       final keyId = entry.key;
-      if (keyId.contains('act_$currentActId') || 
+      if (currentActId != null && (keyId.contains('act_$currentActId') || 
           keyId.contains('chapter_$currentActId') ||
-          keyId.startsWith(currentActId + '_')) {
+          keyId.startsWith(currentActId + '_'))) {
         keysToRemove.add(keyId);
       }
     }
@@ -2151,7 +2157,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
     // 4. 清理临时渲染记录
     final tempRenderToRemove = <String>[];
     _renderedScenes.forEach((key, _) {
-      if (key.startsWith('${currentActId}_')) {
+      if (currentActId != null && key.startsWith(currentActId)) {
         tempRenderToRemove.add(key);
       }
     });
@@ -2174,7 +2180,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
       
       // 强制刷新可见项目列表
       final List<String> newItems = _visibleItemsNotifier.value
-          .where((item) => !item.contains(currentActId))
+          .where((item) => currentActId == null || !item.contains(currentActId))
           .toList();
       
       if (newItems.length != _visibleItemsNotifier.value.length) {
@@ -2230,7 +2236,21 @@ class EditorMainAreaState extends State<EditorMainArea> {
     widget.editorBloc.add(const editor_bloc.ResetActLoadingFlags());
     
     // 获取当前焦点Act的位置信息
-    String? focusActId = _getCurrentFocusActId();
+    String? focusActId;
+    if (widget.editorBloc.state is! editor_bloc.EditorLoaded) {
+        AppLogger.w('EditorMainArea', '_resetBoundaryFlags: EditorBloc state is not EditorLoaded.');
+        focusActId = _getCurrentFocusActId(); // Fallback if state not loaded
+    } else {
+        final state = widget.editorBloc.state as editor_bloc.EditorLoaded;
+        if (_focusChapterId != null && state.chapterToActMap.containsKey(_focusChapterId)) {
+            focusActId = state.chapterToActMap[_focusChapterId!];
+        } else if (widget.activeChapterId != null && state.chapterToActMap.containsKey(widget.activeChapterId)) {
+            focusActId = state.chapterToActMap[widget.activeChapterId!];
+        } else {
+             focusActId = _getCurrentFocusActId(); // Fallback if no focus/active chapter or key not in map
+        }
+    }
+    
     if (focusActId == null) return;
     
     int actIndex = widget.novel.acts.indexWhere((act) => act.id == focusActId);

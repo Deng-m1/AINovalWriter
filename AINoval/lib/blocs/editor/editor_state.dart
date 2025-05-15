@@ -51,6 +51,8 @@ class EditorLoaded extends EditorState {
     this.pendingSummary,
     this.visibleRange,
     this.virtualListEnabled = true,
+    this.chapterGlobalIndices = const {},
+    this.chapterToActMap = const {},
   });
   final novel_models.Novel novel;
   final Map<String, dynamic> settings;
@@ -69,6 +71,8 @@ class EditorLoaded extends EditorState {
   final String? pendingSummary;
   final List<int>? visibleRange;
   final bool virtualListEnabled;
+  final Map<String, int> chapterGlobalIndices;
+  final Map<String, String> chapterToActMap;
   
   /// AI生成状态
   final AIGenerationStatus aiSummaryGenerationStatus;
@@ -109,6 +113,8 @@ class EditorLoaded extends EditorState {
     pendingSummary,
     visibleRange,
     virtualListEnabled,
+    chapterGlobalIndices,
+    chapterToActMap,
   ];
   
   EditorLoaded copyWith({
@@ -134,6 +140,8 @@ class EditorLoaded extends EditorState {
     String? pendingSummary,
     List<int>? visibleRange,
     bool? virtualListEnabled,
+    Map<String, int>? chapterGlobalIndices,
+    Map<String, String>? chapterToActMap,
   }) {
     return EditorLoaded(
       novel: novel ?? this.novel,
@@ -158,6 +166,8 @@ class EditorLoaded extends EditorState {
       pendingSummary: pendingSummary,
       visibleRange: visibleRange ?? this.visibleRange,
       virtualListEnabled: virtualListEnabled ?? this.virtualListEnabled,
+      chapterGlobalIndices: chapterGlobalIndices ?? this.chapterGlobalIndices,
+      chapterToActMap: chapterToActMap ?? this.chapterToActMap,
     );
   }
 }

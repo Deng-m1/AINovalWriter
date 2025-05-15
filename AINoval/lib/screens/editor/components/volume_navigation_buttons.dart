@@ -51,7 +51,6 @@ class VolumeNavigationButtons extends StatelessWidget {
     // 上方按钮显示条件：
     // 1. 是顶部按钮位置 (isTop)
     // 2. 不能是第一卷 (isFirstAct == false)
-    // 3. 或者，如果是第一卷 (isFirstAct == true)，则必须已经到达卷的开始 (hasReachedStart == true) -> 这部分逻辑移除，第一卷顶部永不显示上一卷
     final bool shouldShowTopButton = isTop && !isFirstAct;
     
     // 下方按钮显示条件：
@@ -60,8 +59,7 @@ class VolumeNavigationButtons extends StatelessWidget {
     
     // 确定按钮类型
     // 顶部按钮永远是"上一卷"
-    // 底部按钮在最后一卷且到达末尾时是"添加新卷"，否则是"下一卷"
-    final bool isAddNewVolume = !isTop && isLastAct && hasReachedEnd;
+    // 底部按钮在最后一卷时是"添加新卷"，否则是"下一卷"
     
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 300),
@@ -81,7 +79,6 @@ class VolumeNavigationButtons extends StatelessWidget {
           ? _buildButton(
               context,
               isTop: isTop,
-              isAddNewVolume: isAddNewVolume,
             )
           : const SizedBox.shrink(),
     );
@@ -90,13 +87,12 @@ class VolumeNavigationButtons extends StatelessWidget {
   Widget _buildButton(
     BuildContext context, {
     required bool isTop,
-    required bool isAddNewVolume,
   }) {
     final themeData = Theme.of(context);
     
     // 安全地获取前一个和下一个卷的信息
     final String? prevVolumeName = isFirstAct ? null : previousActTitle;
-    final String? nextVolumeName = isLastAct ? null : nextActTitle;
+    final String? nextVolumeName = this.isLastAct ? null : this.nextActTitle;
     
     // 按钮文本
     late final String buttonText;
@@ -116,24 +112,26 @@ class VolumeNavigationButtons extends StatelessWidget {
       }
       buttonIcon = Icons.arrow_upward_rounded;
       onPressed = onPreviousAct;
-    } else if (isAddNewVolume) {
-      // 底部按钮：添加新卷（仅在最后一卷的末尾显示）
-      buttonText = '添加新卷';
-      buttonIcon = Icons.add_rounded;
-      onPressed = onAddNewAct;
     } else {
-      // 底部按钮：下一卷
-      if (nextVolumeName == null) {
-        buttonText = '下一卷';
+      if (this.isLastAct) {
+        // 底部按钮：如果是最后一卷，则为"添加新卷"
+        buttonText = '添加新卷';
+        buttonIcon = Icons.add_rounded;
+        onPressed = onAddNewAct;
       } else {
-        String displayName = nextVolumeName;
-        if (displayName.length > 10) {
-          displayName = displayName.substring(0, 10) + '...';
+        // 底部按钮：如果不是最后一卷，则为"下一卷"
+        if (nextVolumeName == null) {
+          buttonText = '下一卷';
+        } else {
+          String displayName = nextVolumeName;
+          if (displayName.length > 10) {
+            displayName = displayName.substring(0, 10) + '...';
+          }
+          buttonText = '下一卷：$displayName';
         }
-        buttonText = '下一卷：$displayName';
+        buttonIcon = Icons.arrow_downward_rounded;
+        onPressed = onNextAct;
       }
-      buttonIcon = Icons.arrow_downward_rounded;
-      onPressed = onNextAct;
     }
     
     // 构建按钮

@@ -15,6 +15,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 part 'editor_event.dart';
 part 'editor_state.dart';
 
+// Helper class to hold the two maps
+class _ChapterMaps {
+  final Map<String, int> chapterGlobalIndices;
+  final Map<String, String> chapterToActMap;
+
+  _ChapterMaps(this.chapterGlobalIndices, this.chapterToActMap);
+}
+
 // Bloc实现
 class EditorBloc extends Bloc<EditorEvent, EditorState> {
   EditorBloc({
@@ -71,15 +79,29 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
   final Map<String, DateTime> _lastSummaryUpdateRequestTime = {};
   static const Duration _summaryUpdateRequestInterval = Duration(milliseconds: 800);
 
+  // Helper method to calculate chapter maps
+  _ChapterMaps _calculateChapterMaps(novel_models.Novel novel) {
+    final Map<String, int> chapterGlobalIndices = {};
+    final Map<String, String> chapterToActMap = {};
+    int globalIndex = 0;
+
+    for (final act in novel.acts) {
+      for (final chapter in act.chapters) {
+        chapterGlobalIndices[chapter.id] = globalIndex++;
+        chapterToActMap[chapter.id] = act.id;
+      }
+    }
+    return _ChapterMaps(chapterGlobalIndices, chapterToActMap);
+  }
+
   Future<void> _onLoadContentPaginated(
       LoadEditorContentPaginated event, Emitter<EditorState> emit) async {
     emit(EditorLoading());
 
     try {
-      // 获取小说数据（分页），如果lastEditedChapterId为null，使用空字符串
       final String lastEditedChapterId = event.lastEditedChapterId ?? '';
 
-      final novel = await repository.getNovelWithPaginatedScenes(
+      novel_models.Novel? novel = await repository.getNovelWithPaginatedScenes(
         event.novelId,
         lastEditedChapterId,
         chaptersLimit: event.chaptersLimit,
@@ -90,22 +112,39 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         return;
       }
 
-      // 获取编辑器设置
+      // 从此处开始，novel 不为 null
+      if (novel.acts.isEmpty) { 
+        AppLogger.i('EditorBloc/_onLoadContentPaginated', '检测到小说 (${novel.id}) 没有卷，尝试自动创建第一卷。');
+        try {
+          // novel.id 是安全的，因为 novel 在此不为 null
+          final novelWithNewAct = await repository.addNewAct(
+            novel.id, 
+            "第一卷", 
+          );
+          if (novelWithNewAct != null) {
+            novel = novelWithNewAct; // novel 可能被新对象（同样不为null）赋值
+            // novel.id 和 novel.acts 在此也是安全的
+            AppLogger.i('EditorBloc/_onLoadContentPaginated', '成功为小说 (${novel.id}) 自动创建第一卷。新的卷数量: ${novel.acts.length}');
+          } else {
+            AppLogger.w('EditorBloc/_onLoadContentPaginated', '为小说 (${novel.id}) 自动创建第一卷失败，repository.addNewAct 返回 null。');
+          }
+        } catch (e) {
+          AppLogger.e('EditorBloc/_onLoadContentPaginated', '为小说 (${novel?.id}) 自动创建第一卷时发生错误。', e);
+        }
+      }
+
       final settings = await repository.getEditorSettings();
 
-      // 设置默认的活动Act、Chapter和Scene，优先使用lastEditedChapterId
       String? activeActId;
-      String? activeChapterId = novel.lastEditedChapterId;
+      // novel 在此不为 null
+      String? activeChapterId = novel?.lastEditedChapterId;
       String? activeSceneId;
 
-      // 如果有lastEditedChapterId，找到对应的Act和Scene
       if (activeChapterId != null && activeChapterId.isNotEmpty) {
-        // 查找包含lastEditedChapterId的Act
-        for (final act in novel.acts) {
-          for (final chapter in act.chapters) {
+        for (final act_ in novel!.acts) { 
+          for (final chapter in act_.chapters) {
             if (chapter.id == activeChapterId) {
-              activeActId = act.id;
-              // 如果章节有场景，选择第一个场景
+              activeActId = act_.id;
               if (chapter.scenes.isNotEmpty) {
                 activeSceneId = chapter.scenes.first.id;
               }
@@ -116,18 +155,21 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         }
       }
 
-      // 如果没有找到活动章节，使用第一个可用的
-      if (activeActId == null && novel.acts.isNotEmpty) {
+      if (activeActId == null && novel!.acts.isNotEmpty) {
         activeActId = novel.acts.first.id;
-
         if (novel.acts.first.chapters.isNotEmpty) {
           activeChapterId = novel.acts.first.chapters.first.id;
-
           if (novel.acts.first.chapters.first.scenes.isNotEmpty) {
             activeSceneId = novel.acts.first.chapters.first.scenes.first.id;
           }
+        } else {
+          activeChapterId = null;
+          activeSceneId = null;
         }
       }
+      
+      // novel 在此不为 null，因此 novel! 是安全的
+      final chapterMaps = _calculateChapterMaps(novel!);
 
       emit(EditorLoaded(
         novel: novel,
@@ -137,6 +179,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         activeSceneId: activeSceneId,
         isDirty: false,
         isSaving: false,
+        chapterGlobalIndices: chapterMaps.chapterGlobalIndices, // Added
+        chapterToActMap: chapterMaps.chapterToActMap, // Added
       ));
     } catch (e) {
       emit(EditorError(message: '加载小说失败: ${e.toString()}'));
@@ -280,6 +324,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
             AppLogger.i('Blocs/editor/editor_bloc', '向下加载返回数据很少，可能已接近底部，设置hasReachedEnd=true');
           }
           
+          // Calculate chapter maps for the updated novel
+          final chapterMaps = _calculateChapterMaps(updatedNovel);
+          
           // 发送更新后的状态
           emit(EditorLoaded(
             novel: updatedNovel,
@@ -291,6 +338,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
             hasReachedStart: hasReachedStart,
             hasReachedEnd: hasReachedEnd,
             focusChapterId: updatedState.focusChapterId,
+            chapterGlobalIndices: chapterMaps.chapterGlobalIndices, // Added
+            chapterToActMap: chapterMaps.chapterToActMap, // Added
           ));
           
           AppLogger.i('Blocs/editor/editor_bloc', '加载更多场景成功，更新了 ${result.length} 个章节');
@@ -1439,12 +1488,17 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           }
         }
         
+        // Calculate chapter maps for the updated novel
+        final chapterMaps = _calculateChapterMaps(updatedNovel);
+
         // 在UI上标记为正在处理
         emit(currentState.copyWith(
           novel: updatedNovel,
           activeSceneId: newActiveSceneId,
           isDirty: true,
           isSaving: true,
+          chapterGlobalIndices: chapterMaps.chapterGlobalIndices, // Added
+          chapterToActMap: chapterMaps.chapterToActMap, // Added
         ));
         
         // 调用API删除场景
@@ -1466,6 +1520,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           isDirty: false,
           isSaving: false,
           lastSaveTime: DateTime.now(),
+          chapterGlobalIndices: chapterMaps.chapterGlobalIndices, // Ensure maps are consistent
+          chapterToActMap: chapterMaps.chapterToActMap,       // Ensure maps are consistent
         ));
         
         AppLogger.i('Blocs/editor/editor_bloc',
@@ -1536,6 +1592,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           // 设置新添加的Act为活动Act
           final newAct = updatedNovel.acts.last;
           
+          // Calculate chapter maps for the updated novel
+          final chapterMaps = _calculateChapterMaps(updatedNovel);
+
           // 发出更新状态
           emit(currentState.copyWith(
             novel: updatedNovel,
@@ -1546,6 +1605,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
             activeChapterId: newAct.chapters.isNotEmpty ? newAct.chapters.first.id : null,
             // 清除活动场景
             activeSceneId: null,
+            chapterGlobalIndices: chapterMaps.chapterGlobalIndices, // Added
+            chapterToActMap: chapterMaps.chapterToActMap, // Added
           ));
           
           AppLogger.i('EditorBloc/_onAddNewAct', '已更新UI状态，设置新Act为活动Act: ${newAct.id}');
@@ -1553,11 +1614,16 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           AppLogger.w('EditorBloc/_onAddNewAct', 
               '添加Act可能失败：之前${currentState.novel.acts.length}个，现在${updatedNovel.acts.length}个');
           
+          // Calculate chapter maps even if the addition might have issues, to reflect current state
+          final chapterMaps = _calculateChapterMaps(updatedNovel);
+
           // 仍然更新状态以刷新UI
           emit(currentState.copyWith(
             novel: updatedNovel,
             isSaving: false,
             errorMessage: 'Act可能未成功添加，请检查网络连接',
+            chapterGlobalIndices: chapterMaps.chapterGlobalIndices, // Added
+            chapterToActMap: chapterMaps.chapterToActMap, // Added
           ));
         }
       } catch (e) {
@@ -1617,11 +1683,15 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           AppLogger.w('EditorBloc/_onAddNewChapter', 
               '无法确定新添加的章节，使用更新后的小说数据');
           
+          // Calculate chapter maps for the updated novel
+          final chapterMaps = _calculateChapterMaps(updatedNovel);
           // 仍然更新状态
           emit(currentState.copyWith(
             novel: updatedNovel,
             isSaving: false,
             isDirty: false,
+            chapterGlobalIndices: chapterMaps.chapterGlobalIndices, // Added
+            chapterToActMap: chapterMaps.chapterToActMap, // Added
           ));
           return;
         }
@@ -1629,6 +1699,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         AppLogger.i('EditorBloc/_onAddNewChapter', 
             '成功添加新章节: actId=${updatedAct.id}, chapterId=${newChapter.id}');
         
+        // Calculate chapter maps for the updated novel
+        final chapterMaps = _calculateChapterMaps(updatedNovel);
+
         // 发出更新状态，并设置新章节为活动章节
         emit(currentState.copyWith(
           novel: updatedNovel,
@@ -1638,6 +1711,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           activeChapterId: newChapter.id,
           // 清除活动场景，因为新章节还没有场景
           activeSceneId: null,
+          chapterGlobalIndices: chapterMaps.chapterGlobalIndices, // Added
+          chapterToActMap: chapterMaps.chapterToActMap, // Added
         ));
         
         AppLogger.i('EditorBloc/_onAddNewChapter', 
@@ -1909,6 +1984,9 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         updatedAt: DateTime.now(),
       );
 
+      // Calculate chapter maps for the updated novel state
+      final chapterMaps = _calculateChapterMaps(updatedNovel);
+
       // 更新UI状态为 "正在保存"，并设置新的活动章节
       emit(currentState.copyWith(
         novel: updatedNovel, // 显示删除后的状态
@@ -1926,6 +2004,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         activeSceneId: currentState.activeChapterId == event.chapterId
             ? null
             : currentState.activeSceneId,
+        chapterGlobalIndices: chapterMaps.chapterGlobalIndices, // Added
+        chapterToActMap: chapterMaps.chapterToActMap, // Added
       ));
 
       try {
@@ -1948,12 +2028,15 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           isDirty: false,
           isSaving: false,
           lastSaveTime: DateTime.now(),
+          // chapterGlobalIndices and chapterToActMap are already part of the state from the previous emit
         ));
         AppLogger.i('Blocs/editor/editor_bloc',
             '章节删除成功: ${event.chapterId}');
       } catch (e) {
         AppLogger.e('Blocs/editor/editor_bloc', '删除章节失败', e);
         // 删除失败，恢复原始数据
+        // Recalculate maps for the original novel if rolling back
+        final originalChapterMaps = _calculateChapterMaps(originalNovel);
         emit((state as EditorLoaded).copyWith(
           novel: originalNovel,
           isSaving: false,
@@ -1961,6 +2044,8 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           activeActId: currentState.activeActId,
           activeChapterId: currentState.activeChapterId,
           activeSceneId: currentState.activeSceneId,
+          chapterGlobalIndices: originalChapterMaps.chapterGlobalIndices, // Added for rollback
+          chapterToActMap: originalChapterMaps.chapterToActMap, // Added for rollback
         ));
       }
     }
