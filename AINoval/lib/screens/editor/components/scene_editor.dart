@@ -43,6 +43,7 @@ class SceneEditor extends StatefulWidget {
     required this.summaryController,
     required this.editorBloc,
     this.onContentChanged, // 添加回调函数
+    this.isVisuallyNearby = true, // 新增参数，默认为true以保持当前行为
   });
   final String title;
   final int wordCount;
@@ -57,6 +58,7 @@ class SceneEditor extends StatefulWidget {
   final editor_bloc.EditorBloc editorBloc;
   // 添加内容变更回调
   final Function(String content, int wordCount, {bool syncToServer})? onContentChanged;
+  final bool isVisuallyNearby; // 新增参数声明
 
   @override
   State<SceneEditor> createState() => _SceneEditorState();
@@ -603,7 +605,7 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
   
   // 为了支持AutomaticKeepAliveClientMixin
   @override
-  bool get wantKeepAlive => true;
+  bool get wantKeepAlive => widget.isVisuallyNearby; // 使用 widget.isVisuallyNearby
 
   Widget _buildSceneHeader(ThemeData theme, bool isFocused) {
     return Padding(

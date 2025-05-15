@@ -265,7 +265,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
         widget.editorBloc.add(editor_bloc.LoadMoreScenes(
           fromChapterId: activeChapterId,
           direction: 'center',
-          chaptersLimit: 3,
+          chaptersLimit: 10,
           actId: activeActId,  // 添加actId参数
           preventFocusChange: true,  // 防止焦点自动变化
         ));
@@ -536,7 +536,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
         fromChapterId: fromChapterId,
         actId: actId,
         direction: direction,
-        chaptersLimit: 5, // 增加到5个章节，确保加载更多内容
+        chaptersLimit: 10, // 增加到10个章节，确保加载更多内容
         preventFocusChange: true, // 防止焦点改变
       ));
       
@@ -1126,7 +1126,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
     bool shouldRender;
 
     if (referenceActId == actId) { // 当前章节与参考章节在同一个Act
-      int sameActRenderThreshold = 10; 
+      int sameActRenderThreshold = 12; 
       
       int chapterIndexOfReferenceInAct = -1;
       if(referenceActIndexInNovel != -1 && referenceActId != null){
@@ -1138,24 +1138,24 @@ class EditorMainAreaState extends State<EditorMainArea> {
 
       // 如果参考章节是当前Act的前3章，或者当前章节是Act的前5章，增大渲染范围
       if (chapterIndexOfReferenceInAct != -1 && chapterIndexOfReferenceInAct < 3 || chapterIndexOfCurrentInAct != -1 && chapterIndexOfCurrentInAct < 5 ) {
-         sameActRenderThreshold = 15; // 渲染更多，保证前几章稳定
+         sameActRenderThreshold = 18; // 渲染更多，保证前几章稳定
       } else {
           bool isScrollingTowardsCurrent = (currentGlobalIndex < referenceGlobalIndex && _lastScrollDirection == 'up') ||
                                        (currentGlobalIndex > referenceGlobalIndex && _lastScrollDirection == 'down');
           if (isScrollingTowardsCurrent) {
-              sameActRenderThreshold = 12; 
+              sameActRenderThreshold = 15; 
           }
       }
       shouldRender = distance <= sameActRenderThreshold;
       AppLogger.d('EditorMainArea', 
           '章节$chapterId (Act $actId) 与参考章节 (Act $referenceActId) 同卷判断: 距离 $distance, 阈值 $sameActRenderThreshold, 渲染 $shouldRender, 参考章在Act中索引 $chapterIndexOfReferenceInAct, 当前章在Act中索引 $chapterIndexOfCurrentInAct');
     } else { // 跨卷
-      int crossActRenderThreshold = 5; 
+      int crossActRenderThreshold = 7; 
       bool isScrollingTowardsCurrent = (currentGlobalIndex < referenceGlobalIndex && _lastScrollDirection == 'up') ||
                                      (currentGlobalIndex > referenceGlobalIndex && _lastScrollDirection == 'down');
       
       if (referenceActIndexInNovel != -1 && currentChapterActIndexInNovel != -1 && (referenceActIndexInNovel - currentChapterActIndexInNovel).abs() == 1 && isScrollingTowardsCurrent) {
-          crossActRenderThreshold = 7;
+          crossActRenderThreshold = 10;
       }
       shouldRender = distance <= crossActRenderThreshold;
       AppLogger.d('EditorMainArea', 
@@ -1996,7 +1996,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
     widget.editorBloc.add(editor_bloc.LoadMoreScenes(
       fromChapterId: _targetChapterId ?? _targetActId!, 
       direction: 'center', 
-      chaptersLimit: 5, 
+      chaptersLimit: 10, 
       actId: _targetActId!,  // 添加actId参数
       preventFocusChange: true, // 对于上一卷，我们通常希望保持在加载内容的末尾附近，所以阻止焦点自动改变
     ));
@@ -2041,7 +2041,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
     widget.editorBloc.add(editor_bloc.LoadMoreScenes(
       fromChapterId: _targetChapterId ?? _targetActId!, 
       direction: 'center', 
-      chaptersLimit: 5,
+      chaptersLimit: 10,
       actId: _targetActId!,  // 添加actId参数
       preventFocusChange: _targetChapterId == null, 
     ));

@@ -254,7 +254,7 @@ class EditorScreenController extends ChangeNotifier {
         editorBloc.add(editor_bloc.LoadEditorContentPaginated(
           novelId: novel.id,
           lastEditedChapterId: lastEditedChapterId,
-          chaptersLimit: 3, // 减少初始加载的章节数量
+          chaptersLimit: 10, // 减少初始加载的章节数量
           loadAllSummaries: false, // 不加载所有摘要，减少初始加载量
         ));
       } else {
@@ -262,7 +262,7 @@ class EditorScreenController extends ChangeNotifier {
         AppLogger.i('EditorScreenController', '没有最后编辑的章节，使用常规分页加载');
         editorBloc.add(editor_bloc.LoadEditorContentPaginated(
           novelId: novel.id,
-          chaptersLimit: 3, // 减少初始加载的章节数量
+          chaptersLimit: 10, // 减少初始加载的章节数量
           loadAllSummaries: false, // 不加载所有摘要，减少初始加载量
         ));
       }

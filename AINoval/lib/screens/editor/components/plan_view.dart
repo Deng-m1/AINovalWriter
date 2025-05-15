@@ -362,7 +362,7 @@ class _PlanViewState extends State<PlanView> {
                   fromChapterId: chapterId,
                   actId: actId,
                   direction: 'center', // 保持 'center'，目标是加载并聚焦
-                  chaptersLimit: 5, // 增加加载章节数量，确保加载足够的内容
+                  chaptersLimit: 10, // 增加加载章节数量，确保加载足够的内容
                   targetChapterId: chapterId,
                   targetSceneId: scene.id
                 ));
