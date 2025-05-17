@@ -10,20 +10,15 @@ abstract class EditorEvent extends Equatable {
 
 /// 使用分页加载编辑器内容事件
 class LoadEditorContentPaginated extends EditorEvent {
-
   const LoadEditorContentPaginated({
     required this.novelId,
-    this.lastEditedChapterId,
-    this.chaptersLimit = 5,
     this.loadAllSummaries = false,
   });
   final String novelId;
-  final String? lastEditedChapterId;
-  final int chaptersLimit;
   final bool loadAllSummaries;
 
   @override
-  List<Object?> get props => [novelId, lastEditedChapterId, chaptersLimit, loadAllSummaries];
+  List<Object?> get props => [novelId, loadAllSummaries];
 }
 
 /// 加载更多场景事件

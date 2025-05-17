@@ -1491,6 +1491,23 @@ class ApiClient {
     }
   }
 
+  /// 获取小说及其所有场景
+  /// 
+  /// 与分页加载不同，一次性获取小说的所有场景数据
+  Future<Map<String, dynamic>?> getNovelWithAllScenes(String novelId) async {
+    try {
+      final response = await _dio.post('/novels/get-with-scenes', data: {
+        'id': novelId,
+      });
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      AppLogger.e('ApiClient', '获取小说及其所有场景失败: $novelId', e);
+      return null;
+    }
+  }
+
   /// 移动场景（用于Plan视图拖拽功能）
   Future<Map<String, dynamic>?> moveScene(
     String novelId,

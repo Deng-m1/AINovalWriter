@@ -12,6 +12,10 @@ abstract class EditorRepository {
   /// 基于上次编辑章节为中心，获取前后指定数量的章节及其场景内容
   Future<Novel?> getNovelWithPaginatedScenes(String novelId, String lastEditedChapterId, {int chaptersLimit = 5});
 
+  /// 获取小说详情（一次性加载所有场景）
+  /// 一次性获取小说的所有章节及其场景内容
+  Future<Novel?> getNovelWithAllScenes(String novelId);
+
   /// 加载更多章节场景
   /// 根据方向（向上或向下）加载更多章节的场景内容
   Future<Map<String, List<Scene>>> loadMoreScenes(String novelId, String? actId, String fromChapterId, String direction, {int chaptersLimit = 5});

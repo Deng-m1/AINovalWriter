@@ -99,17 +99,26 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     emit(EditorLoading());
 
     try {
-      final String lastEditedChapterId = event.lastEditedChapterId ?? '';
-
-      novel_models.Novel? novel = await repository.getNovelWithPaginatedScenes(
-        event.novelId,
-        lastEditedChapterId,
-        chaptersLimit: event.chaptersLimit,
-      );
+      // 使用getNovelWithAllScenes替代getNovelWithPaginatedScenes
+      novel_models.Novel? novel = await repository.getNovelWithAllScenes(event.novelId);
 
       if (novel == null) {
         emit(const EditorError(message: '无法加载小说数据'));
         return;
+      }
+      AppLogger.i('EditorBloc/_onLoadContentPaginated', 'Loaded novel from getNovelWithAllScenes. Novel ID: ${novel.id}, Title: ${novel.title}');
+      AppLogger.i('EditorBloc/_onLoadContentPaginated', 'Novel acts count: ${novel.acts.length}');
+      for (int i = 0; i < novel.acts.length; i++) {
+          final act = novel.acts[i];
+          AppLogger.i('EditorBloc/_onLoadContentPaginated', 'Act ${i} (${act.id}): Title: ${act.title}, Chapters count: ${act.chapters.length}');
+          for (int j = 0; j < act.chapters.length; j++) {
+              final chapter = act.chapters[j];
+              AppLogger.i('EditorBloc/_onLoadContentPaginated', '  Chapter ${j} (${chapter.id}): Title: ${chapter.title}, Scenes count: ${chapter.scenes.length}');
+              for (int k = 0; k < chapter.scenes.length; k++) {
+                  final scene = chapter.scenes[k];
+                  AppLogger.d('EditorBloc/_onLoadContentPaginated', '    Scene ${k} (${scene.id}): WordCount: ${scene.wordCount}, HasContent: ${scene.content.isNotEmpty}, Summary: ${scene.summary.content}');
+              }
+          }
       }
 
       // 从此处开始，novel 不为 null
@@ -1713,6 +1722,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           isDirty: false,
           activeActId: updatedAct.id,
           activeChapterId: newChapter.id,
+          focusChapterId: newChapter.id, // <--- 确保设置焦点到新章节
           // 清除活动场景，因为新章节还没有场景
           activeSceneId: null,
           chapterGlobalIndices: chapterMaps.chapterGlobalIndices, // Added

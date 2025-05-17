@@ -49,46 +49,53 @@ class EditorLayout extends StatelessWidget {
     stateManager.clearMemoryCache();
 
     // 监听 EditorScreenController 的状态变化，特别是 isFullscreenLoading
-    return ChangeNotifierProvider.value( // Ensure we are listening to the controller provided
+    return ChangeNotifierProvider.value(
       value: controller,
-      child: Consumer<EditorScreenController>( // Use Consumer to get the latest controller state
+      child: Consumer<EditorScreenController>(
         builder: (context, editorController, _) {
-          // 优先显示全屏加载动画
+          // 主要布局，始终在Stack中
+          Widget mainContent;
           if (editorController.isFullscreenLoading) {
-            return FullscreenLoadingOverlay(
-              loadingMessage: editorController.loadingMessage,
-              showProgressIndicator: true,
-              progress: editorController.loadingProgress >= 0 ? editorController.loadingProgress : -1,
+            // 如果正在全屏加载，主内容可以是空的，或者是一个基础占位符
+            // 因为FullscreenLoadingOverlay会覆盖它
+            mainContent = const SizedBox.shrink(); 
+          } else {
+            // 正常的主布局
+            mainContent = ValueListenableBuilder<String>(
+              valueListenable: stateManager.contentUpdateNotifier,
+              builder: (context, updateValue, child) {
+                return BlocBuilder<editor_bloc.EditorBloc, editor_bloc.EditorState>(
+                  bloc: editorController.editorBloc,
+                  builder: (context, state) {
+                    if (state is editor_bloc.EditorLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    } else if (state is editor_bloc.EditorLoaded) {
+                      if (stateManager.shouldCheckControllers(state)) {
+                        editorController.ensureControllersForNovel(state.novel);
+                      }
+                      return _buildMainLayout(context, state, editorController);
+                    } else if (state is editor_bloc.EditorError) {
+                      return Center(child: Text('错误: \${state.message}'));
+                    } else {
+                      return const Center(child: Text('未知状态'));
+                    }
+                  },
+                );
+              }
             );
           }
 
-          // 如果全屏加载已结束，则构建主要布局
-          return ValueListenableBuilder<String>(
-            valueListenable: stateManager.contentUpdateNotifier,
-            builder: (context, updateValue, child) {
-              // 使用BlocBuilder获取当前编辑器状态
-              return BlocBuilder<editor_bloc.EditorBloc, editor_bloc.EditorState>(
-                bloc: editorController.editorBloc, // Explicitly use the bloc from the controller
-                builder: (context, state) {
-                  // 根据状态渲染UI
-                  if (state is editor_bloc.EditorLoading) {
-                    // 此时 isFullscreenLoading 应该是 false
-                    return const Center(child: CircularProgressIndicator());
-                  } else if (state is editor_bloc.EditorLoaded) {
-                    // 使用节流函数决定是否需要检查控制器
-                    if (stateManager.shouldCheckControllers(state)) {
-                      editorController.ensureControllersForNovel(state.novel);
-                    }
-                    return _buildMainLayout(context, state, editorController); // Pass controller
-                  } else if (state is editor_bloc.EditorError) {
-                    return Center(child: Text('错误: \${state.message}'));
-                  } else {
-                    // 走到这里意味着 isFullscreenLoading 为 false，且 Bloc 状态未知
-                    return const Center(child: Text('未知状态'));
-                  }
-                },
-              );
-            }
+          // 使用Stack来容纳主内容和可能的覆盖层
+          return Stack(
+            children: [
+              mainContent,
+              if (editorController.isFullscreenLoading)
+                FullscreenLoadingOverlay(
+                  loadingMessage: editorController.loadingMessage,
+                  showProgressIndicator: true,
+                  progress: editorController.loadingProgress >= 0 ? editorController.loadingProgress : -1,
+                ),
+            ],
           );
         },
       ),
@@ -356,15 +363,6 @@ class EditorLayout extends StatelessWidget {
         // 加载动画覆盖层 (用于非全屏的 "加载更多")
         if (isLoadingMore) // This condition now implies !editorController.isFullscreenLoading
           _buildLoadingOverlay(context, editorController), // Pass controller
-        // 全屏加载动画覆盖层 - 这部分的主要控制已移到顶层 build 方法
-        // 如果 EditorLoaded 状态内部也可能触发特定类型的全屏加载，可以保留一个更局部的控制
-        // 但为了避免混淆，最好让 EditorScreenController.isFullscreenLoading 统一控制
-        // if (editorController.isFullscreenLoading) // Redundant if handled at the top level
-        //   FullscreenLoadingOverlay(
-        //     loadingMessage: editorController.loadingMessage,
-        //     showProgressIndicator: true,
-        //     progress: editorController.loadingProgress >= 0 ? editorController.loadingProgress : -1,
-        //   ),
       ],
     );
   }

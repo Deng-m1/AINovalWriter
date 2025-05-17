@@ -534,9 +534,12 @@ public class NovelServiceImpl implements NovelService {
                     log.info("分页加载章节，中心章节={}, 总章节数={}, 加载章节数={}, 范围从{}到{}",
                             centerChapterId, allChapterIds.size(), chapterIdsToLoad.size(), startIndex, endIndex);
 
+
+
+
                     // 获取这些章节的场景
                     return Flux.fromIterable(chapterIdsToLoad)
-                            .flatMap(chapterId -> sceneRepository.findByChapterId(chapterId))
+                            .flatMap(sceneRepository::findByChapterId)
                             .collectList()
                             .map(scenes -> {
                                 // 按章节ID分组，明确指定返回类型

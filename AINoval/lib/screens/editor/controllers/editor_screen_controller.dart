@@ -143,7 +143,7 @@ class EditorScreenController extends ChangeNotifier {
   double get loadingProgress => _loadingProgress;
 
   // 新增：用于跟踪最近滚动方向的变量
-  String _lastEffectiveScrollDirection = 'none';
+  // String _lastEffectiveScrollDirection = 'none'; // 移除此行
 
   // 添加事件订阅变量
   StreamSubscription<NovelStructureUpdatedEvent>? _novelStructureSubscription;
@@ -246,26 +246,13 @@ class EditorScreenController extends ChangeNotifier {
     
     // 添加延迟以避免初始化同时发送大量请求
     Future.delayed(const Duration(milliseconds: 500), () {
-      if (lastEditedChapterId != null && lastEditedChapterId.isNotEmpty) {
-        // 如果有最后编辑的章节，从该章节开始加载
-        AppLogger.i('EditorScreenController', '从最后编辑的章节加载: $lastEditedChapterId');
-        
-        // 先使用分页加载获取初始数据
-        editorBloc.add(editor_bloc.LoadEditorContentPaginated(
-          novelId: novel.id,
-          lastEditedChapterId: lastEditedChapterId,
-          chaptersLimit: 10, // 减少初始加载的章节数量
-          loadAllSummaries: false, // 不加载所有摘要，减少初始加载量
-        ));
-      } else {
-        // 如果没有最后编辑的章节，使用常规分页加载，但限制章节数量
-        AppLogger.i('EditorScreenController', '没有最后编辑的章节，使用常规分页加载');
-        editorBloc.add(editor_bloc.LoadEditorContentPaginated(
-          novelId: novel.id,
-          chaptersLimit: 10, // 减少初始加载的章节数量
-          loadAllSummaries: false, // 不加载所有摘要，减少初始加载量
-        ));
-      }
+      // 使用一次性加载API获取全部小说内容
+      AppLogger.i('EditorScreenController', '开始一次性加载小说数据: ${novel.id}');
+      
+      editorBloc.add(editor_bloc.LoadEditorContentPaginated(
+        novelId: novel.id,
+        loadAllSummaries: false, // 不加载所有摘要，减少初始加载量
+      ));
       
       // 设置一个延迟关闭加载动画，确保至少显示一定时间
       Future.delayed(const Duration(seconds: 2), () {
@@ -438,21 +425,6 @@ class EditorScreenController extends ChangeNotifier {
     final scrollInfo = _calculateScrollInfo();
     final bool isRapidScrolling = scrollInfo.isRapid;
     
-    // 更新最近的滚动方向
-    final currentPos = scrollController.offset;
-    if (_lastScrollPosition != null) {
-      // 添加0.5的阈值以避免微小抖动导致的误判
-      if (currentPos > _lastScrollPosition! + 0.5) {
-        _lastEffectiveScrollDirection = 'down';
-      } else if (currentPos < _lastScrollPosition! - 0.5) {
-        _lastEffectiveScrollDirection = 'up';
-      }
-    }
-    // _lastScrollPosition 会在 _calculateScrollInfo 中或在此函数末尾更新
-    // 但为了确保 _checkScrollBoundaries 能拿到最新的方向前的 _lastScrollPosition，
-    // _calculateScrollInfo 内部更新 _lastScrollPosition 的时机很重要。
-    // 当前 _calculateScrollInfo 在末尾更新 _lastScrollPosition，是正确的。
-
     // 在每次滚动事件中更新滚动状态
     if (isRapidScrolling && _scrollState != ScrollState.userScrolling) {
       _scrollState = ScrollState.userScrolling;
@@ -609,21 +581,9 @@ class EditorScreenController extends ChangeNotifier {
         }
         
         // 如果尚未到达顶部 (state.hasReachedStart is false)
-        // 根据最近的滚动意图决定加载方向
-        if (_lastEffectiveScrollDirection == 'down') {
-          AppLogger.i('EditorScreenController', '靠近顶部，但滚动意图是 DOWN. 尝试向下加载.');
-          if (!state.hasReachedEnd) {
-              _loadMoreScenes('down');
-          } else {
-              // 如果意图向下但已到达末尾 (通常是内容极少的情况)
-              // 此时仍然尝试向上加载以正确设置 hasReachedStart
-              AppLogger.i('EditorScreenController', '靠近顶部，滚动意图DOWN，但已到达末尾. 尝试向上加载以确认起始边界.');
-              _loadMoreScenes('up');
-          }
-        } else { // 滚动意图是 'up' 或 'none'
-          AppLogger.i('EditorScreenController', '靠近顶部，滚动意图是 UP 或 NONE. 尝试向上加载.');
-          _loadMoreScenes('up');
-        }
+        // 直接尝试向上加载
+        AppLogger.i('EditorScreenController', '靠近顶部，尝试向上加载.');
+        _loadMoreScenes('up');
       }
     }
   }
@@ -743,7 +703,7 @@ class EditorScreenController extends ChangeNotifier {
             AppLogger.w('EditorScreenController', '没有章节可加载，请求加载小说结构');
             editorBloc.add(editor_bloc.LoadEditorContentPaginated(
               novelId: novel.id,
-              lastEditedChapterId: novel.lastEditedChapterId
+              loadAllSummaries: false,
             ));
             _isLoadingMore = false;
             notifyListeners(); // 更新UI状态
@@ -1420,8 +1380,6 @@ class EditorScreenController extends ChangeNotifier {
     // 重新加载编辑器内容
     editorBloc.add(editor_bloc.LoadEditorContentPaginated(
       novelId: novel.id,
-      lastEditedChapterId: focusChapterId,
-      chaptersLimit: 3,
       loadAllSummaries: false,
     ));
   }
@@ -1467,8 +1425,6 @@ class EditorScreenController extends ChangeNotifier {
         AppLogger.i('EditorScreenController', '未找到新章节对应的卷，重新加载小说结构');
         editorBloc.add(editor_bloc.LoadEditorContentPaginated(
           novelId: novel.id,
-          lastEditedChapterId: newChapterId,
-          chaptersLimit: 3,
           loadAllSummaries: false,
         ));
       }

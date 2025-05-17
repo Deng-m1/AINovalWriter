@@ -1487,43 +1487,30 @@ class EditorRepositoryImpl implements EditorRepository {
     try {
       AppLogger.i('EditorRepositoryImpl/addNewAct', '开始添加新Act: novelId=$novelId, title=$title');
       
-      // 创建新Act
-      final act = await addActFine(novelId, title);
-      AppLogger.i('EditorRepositoryImpl/addNewAct', '成功创建新Act: ${act.id}');
+      // 调用细粒度API创建新Act（这只会更新结构，不会返回整个小说）
+      await addActFine(novelId, title); 
+      AppLogger.i('EditorRepositoryImpl/addNewAct', '细粒度创建新Act调用完成');
       
       // 清除本地缓存，强制从API获取最新数据
       await _localStorageService.clearNovelCache(novelId);
-      AppLogger.i('EditorRepositoryImpl/addNewAct', '已清除本地缓存，准备获取最新数据');
+      AppLogger.i('EditorRepositoryImpl/addNewAct', '已清除本地缓存，准备获取最新数据 (getNovelWithAllScenes)');
       
-      // 从API获取更新后的小说数据
+      // 从API获取更新后的小说数据 (确保调用 getNovelWithAllScenes)
       try {
-        final data = await _apiClient.getNovelDetailById(novelId);
-        final novel = _convertBackendNovelWithScenesToFrontend(data);
-        
-        // 保存到本地存储
-        await _localStorageService.saveNovel(novel);
-        AppLogger.i('EditorRepositoryImpl/addNewAct', '成功获取并保存更新后的小说数据，Acts数量: ${novel.acts.length}');
-        
-        return novel;
-      } catch (e) {
-        AppLogger.e('EditorRepositoryImpl/addNewAct', '从API获取更新后的小说失败，尝试使用本地Act构建', e);
-        
-        // 如果API获取失败，尝试从本地构建
-        final localNovel = await _localStorageService.getNovel(novelId);
-        if (localNovel != null) {
-          // 添加新创建的Act到本地小说模型
-          final updatedActs = List<Act>.from(localNovel.acts)..add(act);
-          final updatedNovel = localNovel.copyWith(acts: updatedActs);
-          
-          // 保存到本地
-          await _localStorageService.saveNovel(updatedNovel);
-          AppLogger.i('EditorRepositoryImpl/addNewAct', '使用本地方式更新小说数据，Acts数量: ${updatedNovel.acts.length}');
-          
-          return updatedNovel;
+        final updatedNovel = await getNovelWithAllScenes(novelId); 
+
+        if (updatedNovel == null) {
+          AppLogger.e('EditorRepositoryImpl/addNewAct', '通过 getNovelWithAllScenes 获取更新后的小说失败，返回 null');
+          return null;
         }
+        
+        AppLogger.i('EditorRepositoryImpl/addNewAct', '成功获取并保存更新后的小说数据，Acts数量: ${updatedNovel.acts.length}');
+        
+        return updatedNovel;
+      } catch (e) {
+        AppLogger.e('EditorRepositoryImpl/addNewAct', '从API获取更新后的小说(getNovelWithAllScenes)失败', e);
+        return null;
       }
-      
-      return null;
     } catch (e) {
       AppLogger.e('EditorRepositoryImpl/addNewAct', '添加新Act失败', e);
       return null;
@@ -1535,57 +1522,30 @@ class EditorRepositoryImpl implements EditorRepository {
     try {
       AppLogger.i('EditorRepositoryImpl/addNewChapter', '开始添加新Chapter: novelId=$novelId, actId=$actId, title=$title');
       
-      // 创建新Chapter
-      final chapter = await addChapterFine(novelId, actId, title);
-      AppLogger.i('EditorRepositoryImpl/addNewChapter', '成功创建新Chapter: ${chapter.id}');
+      // 调用细粒度API创建新Chapter
+      await addChapterFine(novelId, actId, title); 
+      AppLogger.i('EditorRepositoryImpl/addNewChapter', '细粒度创建新Chapter调用完成');
       
       // 清除本地缓存，强制从API获取最新数据
       await _localStorageService.clearNovelCache(novelId);
-      AppLogger.i('EditorRepositoryImpl/addNewChapter', '已清除本地缓存，准备获取最新数据');
+      AppLogger.i('EditorRepositoryImpl/addNewChapter', '已清除本地缓存，准备获取最新数据 (getNovelWithAllScenes)');
       
       // 从API获取更新后的小说数据
       try {
-        final data = await _apiClient.getNovelDetailById(novelId);
-        final novel = _convertBackendNovelWithScenesToFrontend(data);
+        final updatedNovel = await getNovelWithAllScenes(novelId); 
+
+        if (updatedNovel == null) {
+           AppLogger.e('EditorRepositoryImpl/addNewChapter', '通过 getNovelWithAllScenes 获取更新后的小说失败，返回 null');
+           return null;
+        }
         
-        // 保存到本地存储
-        await _localStorageService.saveNovel(novel);
         AppLogger.i('EditorRepositoryImpl/addNewChapter', '成功获取并保存更新后的小说数据');
         
-        return novel;
+        return updatedNovel;
       } catch (e) {
-        AppLogger.e('EditorRepositoryImpl/addNewChapter', '从API获取更新后的小说失败，尝试使用本地Chapter构建', e);
-        
-        // 如果API获取失败，尝试从本地构建
-        final localNovel = await _localStorageService.getNovel(novelId);
-        if (localNovel != null) {
-          // 查找指定的Act
-          final actIndex = localNovel.acts.indexWhere((a) => a.id == actId);
-          if (actIndex >= 0) {
-            // 获取当前Act的章节列表
-            final act = localNovel.acts[actIndex];
-            final updatedChapters = List<Chapter>.from(act.chapters)..add(chapter);
-            
-            // 创建更新后的Act
-            final updatedAct = act.copyWith(chapters: updatedChapters);
-            
-            // 更新Acts列表
-            final updatedActs = List<Act>.from(localNovel.acts);
-            updatedActs[actIndex] = updatedAct;
-            
-            // 创建更新后的小说
-            final updatedNovel = localNovel.copyWith(acts: updatedActs);
-            
-            // 保存到本地
-            await _localStorageService.saveNovel(updatedNovel);
-            AppLogger.i('EditorRepositoryImpl/addNewChapter', '使用本地方式更新小说数据');
-            
-            return updatedNovel;
-          }
-        }
+        AppLogger.e('EditorRepositoryImpl/addNewChapter', '从API获取更新后的小说(getNovelWithAllScenes)失败', e);
+        return null;
       }
-      
-      return null;
     } catch (e) {
       AppLogger.e('EditorRepositoryImpl/addNewChapter', '添加新Chapter失败', e);
       return null;
@@ -2185,6 +2145,74 @@ class EditorRepositoryImpl implements EditorRepository {
     } catch (e) {
       AppLogger.e('EditorRepository/archiveNovel', '归档小说失败', e);
       throw ApiException(-1, '归档小说失败: $e');
+    }
+  }
+
+  /// 获取小说详情（一次性加载所有场景）
+  @override
+  Future<Novel?> getNovelWithAllScenes(String novelId) async {
+    try {
+      AppLogger.i(
+          'EditorRepositoryImpl/getNovelWithAllScenes', 
+          '从API获取小说(全部场景): novelId=$novelId');
+      
+      // 使用新的API获取全部数据
+      final data = await _apiClient.getNovelWithAllScenes(novelId);
+      
+      // 检查数据是否为空
+      if (data == null) {
+        AppLogger.e(
+            'EditorRepositoryImpl/getNovelWithAllScenes',
+            '从API获取小说(全部场景)失败: 返回空数据');
+        return null;
+      }
+
+      // 转换数据格式
+      final novel = _convertBackendNovelWithScenesToFrontend(data);
+      
+      // 将小说基本信息保存到本地（包含场景内容）
+      await _localStorageService.saveNovel(novel);
+      
+      // 将场景内容分别保存到本地
+      for (final act in novel.acts) {
+        for (final chapter in act.chapters) {
+          for (final scene in chapter.scenes) {
+            await _localStorageService.saveSceneContent(
+              novelId, 
+              act.id, 
+              chapter.id, 
+              scene.id, 
+              scene
+            );
+          }
+        }
+      }
+      
+      AppLogger.i(
+          'EditorRepositoryImpl/getNovelWithAllScenes', 
+          '从API获取小说(全部场景)成功: $novelId, 返回章节数: ${novel.acts.fold(0, (sum, act) => sum + act.chapters.length)}');
+      return novel;
+    } catch (e) {
+      AppLogger.e(
+          'EditorRepositoryImpl/getNovelWithAllScenes',
+          '从API获取小说(全部场景)失败',
+          e);
+          
+      // 如果获取失败，尝试回退到本地存储
+      try {
+        final localNovel = await _localStorageService.getNovel(novelId);
+        if (localNovel != null) {
+          AppLogger.i('EditorRepositoryImpl/getNovelWithAllScenes', 
+              '获取失败，回退到本地存储小说: $novelId');
+          return localNovel;
+        }
+      } catch (localError) {
+        AppLogger.e(
+            'EditorRepositoryImpl/getNovelWithAllScenes',
+            '本地存储回退也失败',
+            localError);
+      }
+      return null;
     }
   }
 }
