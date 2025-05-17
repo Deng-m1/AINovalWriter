@@ -184,6 +184,7 @@ class EditorLayoutManager extends ChangeNotifier {
       minEditorSidebarWidth,
       maxEditorSidebarWidth,
     );
+    notifyListeners();
   }
 
   // 更新聊天侧边栏宽度
