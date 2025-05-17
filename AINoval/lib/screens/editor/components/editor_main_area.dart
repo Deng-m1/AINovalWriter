@@ -1140,10 +1140,11 @@ class EditorMainAreaState extends State<EditorMainArea> {
       if (chapterIndexOfReferenceInAct != -1 && chapterIndexOfReferenceInAct < 3 || chapterIndexOfCurrentInAct != -1 && chapterIndexOfCurrentInAct < 5 ) {
          sameActRenderThreshold = 18; // 渲染更多，保证前几章稳定
       } else {
-          bool isScrollingTowardsCurrent = (currentGlobalIndex < referenceGlobalIndex && _lastScrollDirection == 'up') ||
-                                       (currentGlobalIndex > referenceGlobalIndex && _lastScrollDirection == 'down');
-          if (isScrollingTowardsCurrent) {
-              sameActRenderThreshold = 15; 
+          // 向下滚动时，进一步增加同卷渲染阈值
+          if (currentGlobalIndex > referenceGlobalIndex && _lastScrollDirection == 'down') {
+              sameActRenderThreshold = 18; // 从 15 增加到 18
+          } else if (currentGlobalIndex < referenceGlobalIndex && _lastScrollDirection == 'up') {
+              sameActRenderThreshold = 15; // 保持向上滚动的阈值
           }
       }
       shouldRender = distance <= sameActRenderThreshold;
@@ -1273,6 +1274,10 @@ class EditorMainAreaState extends State<EditorMainArea> {
         '共${chapter.scenes.length}个场景，活动章节=${isActiveChapter}，'
         '活动场景ID=$currentActiveSceneId');
     
+    // 新增：判断父章节是否应该被渲染，以此决定其内场景的 isParentVisuallyNearby
+    final bool isChapterConsideredVisibleByParent = _shouldRenderChapter(actId, chapter.id);
+    AppLogger.d('EditorMainArea', 'Chapter ${chapter.id} _shouldRenderChapter: $isChapterConsideredVisibleByParent');
+
     // 强制渲染章节内所有场景
     for (int i = 0; i < chapter.scenes.length; i++) {
       final scene = chapter.scenes[i];
@@ -1304,6 +1309,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
           sceneKeys: widget.sceneKeys,
           editorBloc: widget.editorBloc,
           parseDocumentSafely: DocumentParser.parseDocumentSafely,
+          isParentVisuallyNearby: isChapterConsideredVisibleByParent, // <--- 修改点
           onVisibilityChanged: (isVisible) {
             // 记录时间以便清理
             _lastVisibleTime[sceneId] = DateTime.now();

@@ -1187,6 +1187,10 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           }
           
           // 将合并后的场景转换回列表
+          // 注意：这种基于Map的合并方式不保证场景的原始顺序。
+          // 如果场景顺序很重要，并且API返回的scenesToAdd是有序的，
+          // 或者场景对象自身没有可用于排序的字段（如order），
+          // 则可能需要更复杂的合并逻辑来保留或重建正确的顺序。
           List<novel_models.Scene> mergedScenes = sceneMap.values.toList();
           
           // 创建更新后的章节
