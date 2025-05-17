@@ -408,40 +408,6 @@ class _VirtualizedSceneLoaderState extends State<VirtualizedSceneLoader> {
     );
   }
 
-  /// 判断场景是否属于跨卷（与当前活动场景不在同一卷）
-  /// 
-  /// 跨卷场景使用延迟加载策略，减轻一次性加载大量场景的压力
-  bool _isCrossActFromActiveScene() {
-    // 提取当前场景的Act ID
-    final parts = widget.sceneId.split('_');
-    if (parts.length < 3) return false;
-    final currentActId = parts[0];
-    
-    // 获取活动场景信息
-    final state = widget.editorBloc.state;
-    if (state is editor_bloc.EditorLoaded && state.activeActId != null) {
-      // 如果活动Act ID与当前场景Act ID不同，则是跨卷场景
-      return state.activeActId != currentActId;
-    }
-    
-    return false;
-  }
-  
-  /// 为跨卷场景计算延迟时间，避免同时初始化太多控制器
-  /// 
-  /// 使用场景ID计算一个伪随机的延迟时间，确保加载分散
-  Duration _calculateDelayForCrossActScene() {
-    // 提取场景ID中的相关信息，用于计算随机延迟
-    final parts = widget.sceneId.split('_');
-    if (parts.length < 3) return const Duration(milliseconds: 100);
-    
-    // 使用场景ID的哈希值计算一个伪随机的延迟时间
-    final hash = widget.sceneId.hashCode.abs();
-    final baseDelay = 200; // 基础延迟200毫秒
-    final randomAddition = hash % 800; // 0-800毫秒的随机附加延迟
-    
-    return Duration(milliseconds: baseDelay + randomAddition);
-  }
 
   /// 获取或创建场景控制器
   QuillController _getOrCreateSceneController() {

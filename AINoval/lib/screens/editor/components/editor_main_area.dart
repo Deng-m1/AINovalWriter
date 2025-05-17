@@ -7,8 +7,7 @@ import 'package:ainoval/blocs/editor/editor_bloc.dart';
 import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart' as novel_models;
 import 'package:ainoval/utils/logger.dart';
-import 'package:ainoval/utils/quill_helper.dart';
-import 'package:ainoval/utils/word_count_analyzer.dart';
+
 import 'package:collection/collection.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -20,12 +19,12 @@ import 'package:uuid/uuid.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ainoval/screens/editor/components/act_section.dart';
 import 'package:ainoval/screens/editor/components/chapter_section.dart';
-import 'package:ainoval/screens/editor/components/scene_editor.dart';
+
 import 'package:ainoval/screens/editor/components/volume_navigation_buttons.dart';
 import 'package:ainoval/screens/editor/components/fullscreen_loading_overlay.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_quill/flutter_quill.dart';
-import 'package:visibility_detector/visibility_detector.dart';
+
 import 'package:ainoval/screens/editor/controllers/editor_screen_controller.dart';
 
 // 引入提取出的组件
@@ -80,7 +79,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
   String _loadingMessage = '正在加载...';
   
   double _estimatedPageHeight = 800.0; 
-  double get _preloadDistance => _estimatedPageHeight * 2.5; 
+  double get _preloadDistance => _estimatedPageHeight * 4.0; // 从 2.5 增加到 4.0
   ScrollMetrics? _lastReportedPosition;
   final ValueNotifier<List<String>> _visibleItemsNotifier = ValueNotifier<List<String>>([]);
   
@@ -238,10 +237,32 @@ class EditorMainAreaState extends State<EditorMainArea> {
     _chapterLayouts.clear();
     
     // 获取Scrollable的RenderObject作为共同的祖先
-    final scrollableRenderObject = Scrollable.of(context)?.context.findRenderObject();
+    // final scrollableRenderObject = Scrollable.of(context)?.context.findRenderObject(); // 旧的方式
+
+    if (!widget.scrollController.hasClients) {
+        AppLogger.w('EditorMainArea', 'No scroll client for layout calculation.');
+        _novelStructureChanged = false; // Prevent re-triggering if this is the issue
+        return;
+    }
+    final BuildContext? scrollableContext = widget.scrollController.position.context.storageContext;
+
+    if (scrollableContext == null) {
+        AppLogger.w('EditorMainArea', 'Scrollable storageContext is null for layout calculation.');
+        _novelStructureChanged = false;
+        return;
+    }
+
+    final ScrollableState? scrollableState = Scrollable.of(scrollableContext);
+    if (scrollableState == null) {
+        AppLogger.w('EditorMainArea', 'Scrollable.of(scrollableContext) returned null for layout calculation.');
+        _novelStructureChanged = false;
+        return;
+    }
+    final RenderObject? scrollableRenderObject = scrollableState.context.findRenderObject();
+
     if (scrollableRenderObject == null) {
-        AppLogger.w('EditorMainArea', 'Could not find Scrollable RenderObject for layout calculation.');
-        _novelStructureChanged = false; // 避免无限循环
+        AppLogger.w('EditorMainArea', 'Scrollable RenderObject is null for layout calculation.');
+        _novelStructureChanged = false;
         return;
     }
 
@@ -296,10 +317,6 @@ class EditorMainAreaState extends State<EditorMainArea> {
       
       AppLogger.i('EditorMainArea', '场景刷新完成: 清理前渲染场景数 $oldRenderedCount，当前渲染场景数 ${_renderedScenes.length}');
     });
-  }
-  
-  void _checkForVisibleEmptyChapters() {
-    return;
   }
 
   void _setupScrollListener() {
@@ -422,10 +439,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
     }
   }
   
-  Timer? _scrollDebounceTimer;
-  
-  DateTime? _lastLoadUpTime;
-  DateTime? _lastLoadDownTime;
+
   
   @override
   Widget build(BuildContext context) {
@@ -1031,39 +1045,6 @@ class EditorMainAreaState extends State<EditorMainArea> {
     }
   }
   
-  bool _shouldRenderChapter(String actId, String chapterId) {
-    final act = widget.novel.acts.firstWhereOrNull((a) => a.id == actId);
-    if (act == null) return false;
-
-    if (act.chapters.isEmpty || act.chapters.length <= 5) return true;
-    
-    if (widget.activeChapterId == chapterId || _focusChapterId == chapterId) return true;
-    
-    final referenceChapterId = _focusChapterId ?? widget.activeChapterId;
-    if (referenceChapterId == null) {
-      final chapterIndexInAct = act.chapters.indexWhere((ch) => ch.id == chapterId);
-      return chapterIndexInAct != -1 && chapterIndexInAct < 3;
-    }
-    
-    try {
-      int referenceIndex = -1;
-      int currentIndex = -1;
-      
-      if (act.chapters.any((ch) => ch.id == referenceChapterId)) {
-        referenceIndex = act.chapters.indexWhere((ch) => ch.id == referenceChapterId);
-        currentIndex = act.chapters.indexWhere((ch) => ch.id == chapterId);
-        
-        if (referenceIndex != -1 && currentIndex != -1) {
-          final distance = (currentIndex - referenceIndex).abs();
-          return distance <= 5; // 渲染参考章节附近5章
-        }
-      }
-      return false;
-    } catch (e) {
-      AppLogger.e('EditorMainArea', '判断章节渲染状态出错', e);
-      return false;
-    }
-  }
   
   void refreshUI() {
     if (mounted) {
