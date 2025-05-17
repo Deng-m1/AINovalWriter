@@ -39,7 +39,6 @@ class VirtualizedSceneLoader extends StatefulWidget {
     required this.sceneKeys,
     required this.editorBloc,
     required this.parseDocumentSafely,
-    required this.isVisible,
     this.sceneIndex,
     this.onVisibilityChanged,
   }) : super(key: key);
@@ -77,9 +76,6 @@ class VirtualizedSceneLoader extends StatefulWidget {
   /// 文档内容解析函数
   final Function(String) parseDocumentSafely;
   
-  /// 当前场景是否可见
-  final bool isVisible;
-  
   /// 场景在章节中的序号，从1开始
   final int? sceneIndex;
   
@@ -96,14 +92,15 @@ class _VirtualizedSceneLoaderState extends State<VirtualizedSceneLoader> {
   
   /// 标记场景控制器是否正在初始化过程中
   bool _isControllerInitializing = false; // 添加标志避免重复初始化
+  bool _isDetectedVisible = false; // 新的状态，由 VisibilityDetector驱动
 
   @override
   void initState() {
     super.initState();
     
     // 如果是活动场景或已标记为可见，立即初始化
-    if (widget.isActive || widget.isVisible) {
-      _initializeControllers();
+    if (widget.isActive) {
+      _tryInitializeControllers();
     }
   }
   
@@ -116,34 +113,19 @@ class _VirtualizedSceneLoaderState extends State<VirtualizedSceneLoader> {
       // 优先检查活动状态变化，这是最重要的
       if (widget.isActive && !oldWidget.isActive) {
         AppLogger.i('VirtualizedSceneLoader', '场景 ${widget.sceneId} 变为活动状态，立即初始化');
-        _initializeControllers();
+        _tryInitializeControllers();
       } 
       // 其次检查可见性变化
-      else if (widget.isVisible && !oldWidget.isVisible) {
-        // 检查是否是跨卷场景，如果是则使用延迟加载策略
-        bool isCrossActFromActiveScene = _isCrossActFromActiveScene();
-        
-        if (isCrossActFromActiveScene) {
-          // 跨卷场景延迟初始化，减轻一次性加载压力
-          final delay = _calculateDelayForCrossActScene();
-          AppLogger.d('VirtualizedSceneLoader', '场景 ${widget.sceneId} 是跨卷场景，延迟${delay.inMilliseconds}ms初始化');
-          
-          Future.delayed(delay, () {
-            if (mounted && widget.isVisible && !_isInitialized && !_isControllerInitializing) {
-              _initializeControllers();
-            }
-          });
-        } else {
-          // 非跨卷场景直接初始化
-          AppLogger.d('VirtualizedSceneLoader', '场景 ${widget.sceneId} 变为可见状态，初始化控制器');
-          _initializeControllers();
-        }
+      else if (widget.isActive && !oldWidget.isActive && _isDetectedVisible && _isInitialized && mounted) {
+        setState(() {
+          AppLogger.d('VirtualizedSceneLoader', '场景 ${widget.sceneId} 激活且可见，刷新');
+        });
       }
     }
     
     // 当可见性状态变化时，通知父组件
-    if (widget.isVisible != oldWidget.isVisible) {
-      widget.onVisibilityChanged?.call(widget.isVisible);
+    if (widget.isActive != oldWidget.isActive) {
+      widget.onVisibilityChanged?.call(widget.isActive);
     }
     
     // 如果场景变为活动状态，但之前不是活动状态，强制刷新UI
@@ -158,7 +140,7 @@ class _VirtualizedSceneLoaderState extends State<VirtualizedSceneLoader> {
   /// 
   /// 使用计算隔离或同步初始化文档，
   /// 确保不会阻塞UI线程并处理可能的错误情况
-  void _initializeControllers() {
+  void _tryInitializeControllers() {
     if (_isInitialized || _isControllerInitializing) return;
     
     _isControllerInitializing = true; // 设置标志防止重复初始化
@@ -242,37 +224,62 @@ class _VirtualizedSceneLoaderState extends State<VirtualizedSceneLoader> {
 
   @override
   Widget build(BuildContext context) {
-    // 不可见且不强制渲染时，返回空的占位Widget
-    if (!_isInitialized && !widget.isVisible) {
-      return const SizedBox.shrink();
-    }
-
-    // 创建或获取场景控制器
+    // 获取控制器，如果尚未初始化，这些可能是临时的空控制器
+    // _tryInitializeControllers 会在后台更新 Map 中的实例
     final sceneController = _getOrCreateSceneController();
     final summaryController = _getOrCreateSummaryController();
 
-    if (widget.isVisible && !_isInitialized) {
-      _initializeControllers();
-    }
+    return VisibilityDetector(
+      key: ValueKey('vis_det_${widget.sceneId}'), // 确保key唯一
+      onVisibilityChanged: (visibilityInfo) {
+        if (!mounted) return;
+        final newVisibility = visibilityInfo.visibleFraction > 0.05; // 可见百分比阈值
+        
+        if (_isDetectedVisible != newVisibility) {
+          setState(() {
+            _isDetectedVisible = newVisibility;
+          });
+          widget.onVisibilityChanged?.call(_isDetectedVisible); // 通知父组件
+          
+          AppLogger.d('VirtualizedSceneLoader', '场景 ${widget.sceneId} 可见性改变: $_isDetectedVisible');
 
-    // 使用GlobalKey
-    return SceneEditor(
-      key: widget.sceneKeys[widget.sceneId] ?? GlobalKey(),
-      title: widget.scene.title.isNotEmpty ? widget.scene.title : '场景',
-      wordCount: widget.scene.wordCount ,
-      isActive: widget.isActive,
-      actId: widget.actId,
-      chapterId: widget.chapterId,
-      sceneId: widget.scene.id,
-      isFirst: widget.isFirst,
-      sceneIndex: widget.sceneIndex,
-      controller: sceneController,
-      summaryController: summaryController,
-      editorBloc: widget.editorBloc,
-      onContentChanged: (content, wordCount, {syncToServer = false}) {
-        // Update the scene content
-        // ... existing code ...
+          if (_isDetectedVisible && !_isInitialized && !_isControllerInitializing) {
+            _tryInitializeControllers(); // 当场景变得可见时，尝试初始化
+          }
+        }
       },
+      child: Builder( // 使用Builder确保在VisibilityDetector回调之后访问状态
+        builder: (context) {
+          // 基于 _isDetectedVisible 和 _isInitialized 来决定渲染真实内容还是占位符
+          if (!_isInitialized && !_isDetectedVisible && !widget.isActive) {
+            // 如果未初始化，且探测器认为不可见，且非活动场景，则显示占位符或SizedBox.shrink()
+            // 保持一个最小高度的占位符可能对滚动平滑性更好
+            return _buildPlaceholder(); // 或者 SizedBox.shrink();
+          }
+
+          // 如果已初始化，或者虽然未初始化但探测器认为是可见的（即将初始化），或者场景是活动的
+          // 则构建SceneEditor
+          // 传递 _isDetectedVisible 给 SceneEditor 的 isVisuallyNearby
+          return SceneEditor(
+            key: widget.sceneKeys[widget.sceneId] ?? GlobalKey(), // 确保key存在
+            title: widget.scene.title.isNotEmpty ? widget.scene.title : '场景',
+            wordCount: widget.scene.wordCount,
+            isActive: widget.isActive,
+            actId: widget.actId,
+            chapterId: widget.chapterId,
+            sceneId: widget.scene.id,
+            isFirst: widget.isFirst,
+            sceneIndex: widget.sceneIndex,
+            controller: sceneController, // 这些控制器会被后台的 _tryInitializeControllers 更新
+            summaryController: summaryController,
+            editorBloc: widget.editorBloc,
+            isVisuallyNearby: _isDetectedVisible || widget.isActive, // 或者仅 _isDetectedVisible
+            onContentChanged: (content, wordCount, {syncToServer = false}) {
+              // ...
+            },
+          );
+        },
+      ),
     );
   }
   

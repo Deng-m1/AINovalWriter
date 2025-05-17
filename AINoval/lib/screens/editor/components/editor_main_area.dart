@@ -1304,7 +1304,6 @@ class EditorMainAreaState extends State<EditorMainArea> {
           sceneKeys: widget.sceneKeys,
           editorBloc: widget.editorBloc,
           parseDocumentSafely: DocumentParser.parseDocumentSafely,
-          isVisible: true, // 强制所有场景可见
           onVisibilityChanged: (isVisible) {
             // 记录时间以便清理
             _lastVisibleTime[sceneId] = DateTime.now();

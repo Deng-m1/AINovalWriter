@@ -122,6 +122,7 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
     _setupBlocListener();
     
     // 初始化最后保存的内容
+    //TODO 是否需要初始化？
     _lastSavedContent = widget.controller.document.toPlainText();
     
     // 延迟完整初始化，优先显示基础UI
@@ -238,7 +239,7 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
 
     // 立即计算最新字数，用于显示
     final text = widget.controller.document.toPlainText();
-    final currentWordCount = WordCountAnalyzer.countWords(text);
+    //final currentWordCount = WordCountAnalyzer.countWords(text);
 
     // 更新当前场景标题旁的字数显示（如果widget有回调方法）
     // 后续可添加回调通知上层组件更新显示
@@ -416,29 +417,29 @@ class _SceneEditorState extends State<SceneEditor> with AutomaticKeepAliveClient
     });
   }
 
-  // 简化的选区矩形计算
-  Rect _calculateSelectionRect() {
-    try {
-      // 获取编辑器渲染对象
-      final RenderBox? editorBox =
-          _editorContentKey.currentContext?.findRenderObject() as RenderBox?;
-      if (editorBox == null) return Rect.zero;
+  // // 简化的选区矩形计算
+  // Rect _calculateSelectionRect() {
+  //   try {
+  //     // 获取编辑器渲染对象
+  //     final RenderBox? editorBox =
+  //         _editorContentKey.currentContext?.findRenderObject() as RenderBox?;
+  //     if (editorBox == null) return Rect.zero;
 
-      // 获取编辑器全局坐标
-      final editorOffset = editorBox.localToGlobal(Offset.zero);
-      final editorWidth = editorBox.size.width;
+  //     // 获取编辑器全局坐标
+  //     final editorOffset = editorBox.localToGlobal(Offset.zero);
+  //     final editorWidth = editorBox.size.width;
 
-      // 创建一个固定位置，避免复杂计算
-      return Rect.fromLTWH(
-        editorWidth * 0.5 - 50, // 水平居中偏左
-        50, // 固定在顶部下方50像素
-        100, // 固定宽度
-        30, // 固定高度
-      );
-    } catch (e) {
-      return Rect.zero;
-    }
-  }
+  //     // 创建一个固定位置，避免复杂计算
+  //     return Rect.fromLTWH(
+  //       editorWidth * 0.5 - 50, // 水平居中偏左
+  //       50, // 固定在顶部下方50像素
+  //       100, // 固定宽度
+  //       30, // 固定高度
+  //     );
+  //   } catch (e) {
+  //     return Rect.zero;
+  //   }
+  // }
 
   @override
   void dispose() {
