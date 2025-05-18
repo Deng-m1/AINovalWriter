@@ -285,6 +285,16 @@ public interface NovelService {
     Mono<String> getChapterRangeSummaries(String novelId, String startChapterId, String endChapterId);
 
     /**
+     * 获取指定章节范围内的场景内容
+     *
+     * @param novelId 小说ID
+     * @param startChapterId 起始章节ID (null 表示从第一章开始)
+     * @param endChapterId 结束章节ID (null 表示到最后一章)
+     * @return 拼接后的场景内容字符串
+     */
+    Mono<String> getChapterRangeContext(String novelId, String startChapterId, String endChapterId);
+
+    /**
      * 添加一个新章节到最后一卷的末尾，并创建一个包含初始摘要的空场景。
      *
      * @param novelId           小说ID

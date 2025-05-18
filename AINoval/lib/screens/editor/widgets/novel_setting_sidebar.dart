@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ainoval/blocs/setting/setting_bloc.dart';
 import 'package:ainoval/models/novel_setting_item.dart';
 import 'package:ainoval/models/setting_group.dart';
+import 'package:ainoval/models/setting_type.dart'; // 导入设定类型枚举
 import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/screens/editor/widgets/novel_setting_detail.dart';
 import 'package:ainoval/screens/editor/widgets/novel_setting_group_dialog.dart';
@@ -248,38 +249,38 @@ class _NovelSettingSidebarState extends State<NovelSettingSidebar> {
   }
   
   // 保存设定条目
-  void _saveSettingItem(NovelSettingItem item) {
-    AppLogger.i('NovelSettingSidebar', '保存设定条目: ${item.name}, ID=${item.id}, 组ID=${_currentGroupId}');
+  void _saveSettingItem(NovelSettingItem item, String? groupId) {
+    AppLogger.i('NovelSettingSidebar', '保存设定条目: ${item.name}, ID=${item.id}, 传入组ID=${groupId}');
     
     if (item.id == null) {
       // 创建新条目
       final settingBloc = context.read<SettingBloc>();
-      // 保存当前组ID的临时副本，避免setState后被清除
-      final String? tempGroupId = _currentGroupId;
       
-      AppLogger.i('NovelSettingSidebar', '创建条目时保存临时组ID: $tempGroupId');
+      // 改为先清除状态，再进行API操作，避免状态变化导致bloc关闭
+      setState(() {
+        _isEditingItem = false;
+        _selectedItemId = null;
+        _currentGroupId = null; // 清除当前组ID
+      });
       
-      if (tempGroupId != null) {
-        // 直接创建条目并添加到组中，不使用流监听
-        settingBloc.add(CreateSettingItem(
+      if (groupId != null) {
+        // 使用传入的组ID创建并添加到组中
+        settingBloc.add(CreateSettingItemAndAddToGroup(
           novelId: widget.novelId,
           item: item,
-          groupId: tempGroupId, // 直接传递组ID给bloc
+          groupId: groupId,
         ));
+        
+        AppLogger.i('NovelSettingSidebar', '使用组ID创建并添加到组: $groupId');
       } else {
         // 无组ID时直接创建条目
         settingBloc.add(CreateSettingItem(
           novelId: widget.novelId,
           item: item,
         ));
+        
+        AppLogger.i('NovelSettingSidebar', '无组ID创建');
       }
-      
-      // 返回到列表视图
-      setState(() {
-        _isEditingItem = false;
-        _selectedItemId = null;
-        _currentGroupId = null; // 清除当前组ID
-      });
     } else {
       // 更新现有条目
       context.read<SettingBloc>().add(UpdateSettingItem(
@@ -923,6 +924,10 @@ class _NovelSettingSidebarState extends State<NovelSettingSidebar> {
   
   // 构建设定条目项
   Widget _buildSettingItemTile(ThemeData theme, NovelSettingItem item, String? groupId) {
+    // 将类型值转换为枚举
+    final typeEnum = SettingType.fromValue(item.type ?? 'OTHER');
+    final typeDisplayName = typeEnum.displayName;
+    
     return Padding(
       padding: EdgeInsets.fromLTRB(groupId != null ? 16 : 8, 8, 8, 8),
       child: Card(
@@ -952,22 +957,22 @@ class _NovelSettingSidebarState extends State<NovelSettingSidebar> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     // 设定类型图标 - 缩小尺寸
-                    _buildTypeIcon(item.type ?? '其他'),
+                    _buildTypeIcon(item.type ?? 'OTHER'),
                     const SizedBox(width: 10),
                     
                     // 设定类型文字 - 缩小尺寸
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: _getTypeColor(item.type ?? '其他').withOpacity(0.1),
+                        color: _getTypeColor(typeEnum).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        item.type ?? '其他',
+                        typeDisplayName,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          color: _getTypeColor(item.type ?? '其他'),
+                          color: _getTypeColor(typeEnum),
                         ),
                       ),
                     ),
@@ -989,6 +994,28 @@ class _NovelSettingSidebarState extends State<NovelSettingSidebar> {
                   ],
                 ),
                 
+                // 生成方式标识（如果有）
+                if (item.generatedBy != null && item.generatedBy!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, left: 40),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.blue.shade100),
+                      ),
+                      child: Text(
+                        '由 ${item.generatedBy} 生成',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.blue.shade800,
+                        ),
+                      ),
+                    ),
+                  ),
+                
                 // 第二行：描述内容
                 if (item.description != null && item.description!.isNotEmpty)
                   Padding(
@@ -1002,6 +1029,42 @@ class _NovelSettingSidebarState extends State<NovelSettingSidebar> {
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  
+                // 显示属性（如果有）
+                if (item.attributes != null && item.attributes!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, left: 40),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: item.attributes!.entries.map((e) => Chip(
+                        label: Text('${e.key}: ${e.value}', style: const TextStyle(fontSize: 10)),
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        backgroundColor: theme.colorScheme.surfaceVariant.withOpacity(0.7),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      )).toList(),
+                    ),
+                  ),
+                
+                // 显示标签（如果有）
+                if (item.tags != null && item.tags!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, left: 40),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: item.tags!.map((tag) => Chip(
+                        label: Text(tag, style: const TextStyle(fontSize: 10)),
+                        backgroundColor: theme.colorScheme.secondaryContainer.withOpacity(0.6),
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      )).toList(),
                     ),
                   ),
               ],
@@ -1057,71 +1120,71 @@ class _NovelSettingSidebarState extends State<NovelSettingSidebar> {
   
   // 根据设定条目类型构建对应图标
   Widget _buildTypeIcon(String type) {
-    IconData iconData;
-    Color iconColor;
-    
-    switch (type.toLowerCase()) {
-      case '角色':
-        iconData = Icons.person;
-        iconColor = Colors.blue;
-        break;
-      case '地点':
-        iconData = Icons.place;
-        iconColor = Colors.green;
-        break;
-      case '物品':
-        iconData = Icons.inventory_2;
-        iconColor = Colors.orange;
-        break;
-      case '世界观':
-        iconData = Icons.public;
-        iconColor = Colors.purple;
-        break;
-      case '事件':
-        iconData = Icons.event;
-        iconColor = Colors.red;
-        break;
-      case '技能':
-        iconData = Icons.auto_awesome;
-        iconColor = Colors.teal;
-        break;
-      case '组织':
-        iconData = Icons.groups;
-        iconColor = Colors.indigo;
-        break;
-      default:
-        iconData = Icons.article;
-        iconColor = Colors.grey;
-    }
+    // 将类型值转换为枚举
+    final typeEnum = SettingType.fromValue(type);
     
     return CircleAvatar(
       radius: 18,  // 缩小图标尺寸
-      backgroundColor: iconColor.withOpacity(0.1),
+      backgroundColor: _getTypeColor(typeEnum).withOpacity(0.1),
       child: Icon(
-        iconData,
+        _getTypeIconData(typeEnum),
         size: 18,  // 缩小图标尺寸
-        color: iconColor,
+        color: _getTypeColor(typeEnum),
       ),
     );
   }
 
+  // 获取类型图标
+  IconData _getTypeIconData(SettingType type) {
+    switch (type) {
+      case SettingType.character:
+        return Icons.person;
+      case SettingType.location:
+        return Icons.place;
+      case SettingType.item:
+        return Icons.inventory_2;
+      case SettingType.lore:
+        return Icons.public;
+      case SettingType.event:
+        return Icons.event;
+      case SettingType.concept:
+        return Icons.auto_awesome;
+      case SettingType.faction:
+        return Icons.groups;
+      case SettingType.creature:
+        return Icons.pets;
+      case SettingType.magicSystem:
+        return Icons.auto_fix_high;
+      case SettingType.technology:
+        return Icons.science;
+      default:
+        return Icons.article;
+    }
+  }
+
   // 根据设定条目类型获取对应颜色
-  Color _getTypeColor(String type) {
-    switch (type.toLowerCase()) {
-      case '角色':
+  Color _getTypeColor(SettingType type) {
+    switch (type) {
+      case SettingType.character:
         return Colors.blue;
-      case '地点':
+      case SettingType.location:
         return Colors.green;
-      case '物品':
+      case SettingType.item:
         return Colors.orange;
-      case '世界观':
+      case SettingType.lore:
         return Colors.purple;
-      case '事件':
+      case SettingType.event:
         return Colors.red;
-      case '技能':
+      case SettingType.concept:
         return Colors.teal;
-      case '组织':
+      case SettingType.faction:
         return Colors.indigo;
+      case SettingType.creature:
+        return Colors.brown;
+      case SettingType.magicSystem:
+        return Colors.cyan;
+      case SettingType.technology:
+        return Colors.blueGrey;
       default:
         return Colors.grey.shade700;
     }

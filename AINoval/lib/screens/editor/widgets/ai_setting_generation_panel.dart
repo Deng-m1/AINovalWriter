@@ -19,11 +19,15 @@ class AISettingGenerationPanel extends StatelessWidget {
   final String novelId;
   final VoidCallback onClose; 
   final bool isCardMode;      
+  final EditorRepository editorRepository; // Added
+  final NovelAIRepository novelAIRepository; // Added
 
   const AISettingGenerationPanel({
     Key? key,
     required this.novelId,
     required this.onClose,
+    required this.editorRepository, // Added
+    required this.novelAIRepository, // Added
     this.isCardMode = false, 
   }) : super(key: key);
 
@@ -31,9 +35,8 @@ class AISettingGenerationPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocProvider<AISettingGenerationBloc>(
       create: (context) => AISettingGenerationBloc(
-        // Repositories are expected to be provided by a higher-level provider
-        editorRepository: context.read<EditorRepository>(), 
-        novelAIRepository: context.read<NovelAIRepository>(),
+        editorRepository: editorRepository, // Changed from context.read
+        novelAIRepository: novelAIRepository, // Changed from context.read
       )..add(LoadInitialDataForAISettingPanel(novelId)),
       child: AISettingGenerationView(novelId: novelId),
     );
@@ -536,32 +539,49 @@ class _NovelSettingItemCardState extends State<NovelSettingItemCard> {
   void _showAdoptDialog(BuildContext context, NovelSettingItem itemToAdopt, String novelId) {
     final settingBloc = context.read<SettingBloc>();
     
-    AppLogger.i("AISettingGenerationPanel", "Attempting to adopt setting: ${itemToAdopt.name}");
+    AppLogger.i("AISettingGenerationPanel", "准备采纳设定: ${itemToAdopt.name}, 描述长度: ${itemToAdopt.description?.length ?? 0}, 标签数量: ${itemToAdopt.tags?.length ?? 0}, 属性数量: ${itemToAdopt.attributes?.length ?? 0}");
 
     showDialog(
       context: context,
+      barrierDismissible: false, // 防止点击背景关闭对话框
       builder: (dialogContext) {
         return BlocProvider.value(
           value: settingBloc, 
           child: NovelSettingGroupSelectionDialog(
             novelId: novelId,
             onGroupSelected: (groupId, groupName) { 
-              NovelSettingItem itemForCreation = itemToAdopt.copyWith(
-                id: null, 
-                isAiSuggestion: false,
-                status: 'ACTIVE', 
-              );
-
-              settingBloc.add(CreateSettingItem(
-                novelId: novelId,
-                item: itemForCreation, 
-                groupId: groupId, 
-              ));
+              // 在这个回调中，对话框已经被关闭
               
-              Navigator.of(dialogContext).pop();
+              // 显示操作提示
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('正在将 "${itemToAdopt.name}" 添加到 "$groupName"...'))
               );
+              
+              // 确保类型值使用正确的枚举value值
+              final typeValue = itemToAdopt.type;
+              
+              // 准备创建的设定条目
+              NovelSettingItem itemForCreation = itemToAdopt.copyWith(
+                id: null, 
+                isAiSuggestion: false,
+                status: 'ACTIVE',
+                type: typeValue, // 确保使用原始的value值
+                // 明确设置content和description，确保不会丢失
+                content: "",  // 不再使用content字段
+                description: itemToAdopt.description,  // 保留description作为主要描述字段
+                attributes: itemToAdopt.attributes,  // 确保属性被保留
+                tags: itemToAdopt.tags,  // 确保标签被保留
+                generatedBy: "AI设定生成器"  // 明确标记生成来源
+              );
+              
+              // 在安全的上下文环境中创建并添加到组
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                settingBloc.add(CreateSettingItemAndAddToGroup(
+                  novelId: novelId,
+                  item: itemForCreation, 
+                  groupId: groupId, 
+                ));
+              });
             },
           ),
         );

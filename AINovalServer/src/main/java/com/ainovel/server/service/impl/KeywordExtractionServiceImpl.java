@@ -32,7 +32,7 @@ public class KeywordExtractionServiceImpl implements KeywordExtractionService {
     private final AIService aiService;
     private final ObjectMapper objectMapper;
     
-    @Value("${ainovel.ai.keyword-extraction.model:gpt-3.5-turbo}")
+    @Value("${ainovel.ai.keyword-extraction.model:gemini-2.0-flash}")
     private String extractionModelName;
     
     @Value("${ainovel.ai.keyword-extraction.timeout:10}")
@@ -40,6 +40,12 @@ public class KeywordExtractionServiceImpl implements KeywordExtractionService {
     
     @Value("${ainovel.ai.keyword-extraction.max-text-length:3000}")
     private int maxTextLength;
+
+    @Value("${ai.gemini.api-key}")
+    private String apiKey;
+
+    @Value("${ai.gemini.api-key:https://generativelanguage.googleapis.com/v1beta/models/}")
+    private String endPoint;
     
     @Autowired
     public KeywordExtractionServiceImpl(AIService aiService, ObjectMapper objectMapper) {
@@ -99,7 +105,7 @@ public class KeywordExtractionServiceImpl implements KeywordExtractionService {
             }
             
             // 这里使用直接的API调用
-            aiService.createAIModelProvider(provider, extractionModelName, "", "")
+            aiService.createAIModelProvider(provider, extractionModelName, apiKey, endPoint)
                 .generateContent(request)
                 .timeout(Duration.ofSeconds(timeoutSeconds))
                 .flatMap(this::parseKeywords)

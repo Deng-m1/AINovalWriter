@@ -115,8 +115,15 @@ class _NovelSettingGroupSelectionDialogState extends State<NovelSettingGroupSele
                                 : Colors.grey,
                           ),
                           onTap: () {
-                            widget.onGroupSelected(group.id!, group.name);
-                            Navigator.of(context).pop();
+                            // 不立即关闭对话框，以避免引起上下文失效
+                            // 使用Future.microtask确保回调在对话框处理之后执行
+                            Future.microtask(() {
+                              Navigator.of(context).pop();
+                              // 延迟调用
+                              Future.delayed(Duration.zero, () {
+                                widget.onGroupSelected(group.id!, group.name);
+                              });
+                            });
                           },
                         );
                       },
@@ -190,9 +197,15 @@ class _NovelSettingGroupSelectionDialogState extends State<NovelSettingGroupSele
                 // 检查是否有新添加的设定组
                 final newGroup = state.groups.where((g) => g.name == group.name).lastOrNull;
                 if (newGroup != null && newGroup.id != null) {
-                  widget.onGroupSelected(newGroup.id!, newGroup.name);
+                  subscription.cancel(); // 先停止监听
+                  
+                  // 先关闭对话框，再进行后续处理
                   Navigator.of(context).pop(); // 关闭选择对话框
-                  subscription.cancel(); // 停止监听
+                  
+                  // 使用延迟调用确保上下文不会丢失
+                  Future.delayed(Duration.zero, () {
+                    widget.onGroupSelected(newGroup.id!, newGroup.name);
+                  });
                 }
               }
             });

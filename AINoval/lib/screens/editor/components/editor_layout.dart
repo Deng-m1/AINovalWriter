@@ -165,7 +165,11 @@ class EditorLayout extends StatelessWidget {
                     onAIGenerationPressed: layoutState.toggleAISceneGenerationPanel,
                     onAISummaryPressed: layoutState.toggleAISummaryPanel,
                     onAutoContinueWritingPressed: layoutState.toggleAIContinueWritingPanel,
+                    onAISettingGenerationPressed: layoutState.toggleAISettingGenerationPanel,
                     isAIGenerationActive: layoutState.isAISceneGenerationPanelVisible || layoutState.isAISummaryPanelVisible || layoutState.isAIContinueWritingPanelVisible,
+                    isAISummaryActive: layoutState.isAISummaryPanelVisible,
+                    isAIContinueWritingActive: layoutState.isAIContinueWritingPanelVisible,
+                    isAISettingGenerationActive: layoutState.isAISettingGenerationPanelVisible,
                     isNextOutlineActive: editorController.isNextOutlineViewActive,
                   ),
                   // 主编辑区域与聊天侧边栏
@@ -241,6 +245,8 @@ class EditorLayout extends StatelessWidget {
                                   layoutManager: layoutState,
                                   userId: editorController.currentUserId,
                                   userAiModelConfigRepository: UserAIModelConfigRepositoryImpl(apiClient: editorController.apiClient),
+                                  editorRepository: editorController.editorRepository,
+                                  novelAIRepository: editorController.novelAIRepository,
                                   onContinueWritingSubmit: (parameters) {
                                     AppLogger.i('EditorLayout', 'Continue Writing Submitted: $parameters');
                                     ScaffoldMessenger.of(context).showSnackBar(

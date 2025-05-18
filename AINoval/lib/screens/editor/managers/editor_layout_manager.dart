@@ -317,7 +317,13 @@ class EditorLayoutManager extends ChangeNotifier {
   }
 
   void toggleAISettingGenerationPanel() {
-    isAISettingGenerationPanelVisible = !isAISettingGenerationPanelVisible;
+    if (visiblePanels.contains(aiSettingGenerationPanel)) {
+      visiblePanels.remove(aiSettingGenerationPanel);
+      isAISettingGenerationPanelVisible = false;
+    } else {
+      visiblePanels.add(aiSettingGenerationPanel);
+      isAISettingGenerationPanelVisible = true;
+    }
     saveVisiblePanels();
     notifyListeners();
   }

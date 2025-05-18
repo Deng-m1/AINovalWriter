@@ -221,6 +221,22 @@ class RemoveSettingRelationship extends SettingEvent {
   List<Object?> get props => [novelId, itemId, targetItemId, relationshipType];
 }
 
+// 创建设定条目并添加到组事件
+class CreateSettingItemAndAddToGroup extends SettingEvent {
+  final String novelId;
+  final NovelSettingItem item;
+  final String groupId;
+  
+  const CreateSettingItemAndAddToGroup({
+    required this.novelId,
+    required this.item,
+    required this.groupId,
+  });
+  
+  @override
+  List<Object?> get props => [novelId, item, groupId];
+}
+
 // 状态
 enum SettingStatus { initial, loading, success, failure }
 
@@ -281,6 +297,7 @@ class SettingBloc extends Bloc<SettingEvent, SettingState> {
     on<RemoveItemFromGroup>(_onRemoveItemFromGroup);
     on<AddSettingRelationship>(_onAddSettingRelationship);
     on<RemoveSettingRelationship>(_onRemoveSettingRelationship);
+    on<CreateSettingItemAndAddToGroup>(_onCreateSettingItemAndAddToGroup);
   }
   
   Future<void> _onLoadSettingGroups(
@@ -490,15 +507,8 @@ class SettingBloc extends Bloc<SettingEvent, SettingState> {
         // 记录日志
         AppLogger.i('SettingBloc', '成功添加设定条目到本地状态: id=${createdItem.id}, name=${createdItem.name}');
         
-        // 如果指定了组ID，立即将创建的条目添加到该组
-        if (event.groupId != null) {
-          AppLogger.i('SettingBloc', '将新创建的条目添加到组: ${event.groupId}');
-          add(AddItemToGroup(
-            novelId: event.novelId,
-            groupId: event.groupId!,
-            itemId: createdItem.id!,
-          ));
-        }
+        // 重要修改：不再在这里调用add(AddItemToGroup)，而是通过专门的合并事件处理
+        // 这样避免了BLoC关闭后无法添加新事件的问题
       } else {
         // 如果没有有效ID，重新加载整个列表
         AppLogger.w('SettingBloc', '创建的设定条目没有有效ID，将重新加载列表');
@@ -709,6 +719,82 @@ class SettingBloc extends Bloc<SettingEvent, SettingState> {
       ));
     } catch (e) {
       AppLogger.e('SettingBloc', '删除设定条目关系失败', e);
+      emit(state.copyWith(
+        itemsStatus: SettingStatus.failure,
+        error: e.toString(),
+      ));
+    }
+  }
+  
+  Future<void> _onCreateSettingItemAndAddToGroup(
+    CreateSettingItemAndAddToGroup event,
+    Emitter<SettingState> emit,
+  ) async {
+    try {
+      emit(state.copyWith(itemsStatus: SettingStatus.loading));
+      
+      AppLogger.i('SettingBloc', '创建设定条目并添加到组: groupId=${event.groupId}');
+      
+      // 1. 创建设定条目
+      final createdItem = await settingRepository.createSettingItem(
+        novelId: event.novelId,
+        settingItem: event.item,
+      );
+      
+      // 确保createdItem有有效ID
+      if (createdItem.id != null && createdItem.id!.isNotEmpty) {
+        // 2. 将设定条目添加到组
+        final updatedGroup = await settingRepository.addItemToGroup(
+          novelId: event.novelId,
+          groupId: event.groupId,
+          itemId: createdItem.id!,
+        );
+        
+        // 3. 更新状态 - 同时更新条目列表和组列表
+        final updatedItems = List<NovelSettingItem>.from(state.items)..add(createdItem);
+        
+        // 按名称排序确保UI一致性
+        updatedItems.sort((a, b) => a.name.compareTo(b.name));
+        
+        // 更新组列表
+        final updatedGroups = state.groups.map((group) {
+          return group.id == event.groupId ? updatedGroup : group;
+        }).toList();
+        
+        emit(state.copyWith(
+          itemsStatus: SettingStatus.success,
+          groupsStatus: SettingStatus.success,
+          items: updatedItems,
+          groups: updatedGroups,
+        ));
+        
+        AppLogger.i('SettingBloc', '成功创建设定条目并添加到组: id=${createdItem.id}, name=${createdItem.name}, groupId=${event.groupId}');
+      } else {
+        // 如果没有有效ID，重新加载整个列表
+        AppLogger.w('SettingBloc', '创建的设定条目没有有效ID，将重新加载列表');
+        
+        // 并行加载条目和组
+        final items = await settingRepository.getNovelSettingItems(
+          novelId: event.novelId,
+          page: 0,
+          size: 20,
+          sortBy: 'name',
+          sortDirection: 'asc',
+        );
+        
+        final groups = await settingRepository.getNovelSettingGroups(
+          novelId: event.novelId,
+        );
+        
+        emit(state.copyWith(
+          itemsStatus: SettingStatus.success,
+          groupsStatus: SettingStatus.success,
+          items: items,
+          groups: groups,
+        ));
+      }
+    } catch (e) {
+      AppLogger.e('SettingBloc', '创建设定条目并添加到组失败', e);
       emit(state.copyWith(
         itemsStatus: SettingStatus.failure,
         error: e.toString(),

@@ -54,6 +54,12 @@ public interface PromptService {
     Mono<String> getSingleOutlineGenerationPrompt();
     
     /**
+     * 获取用于单轮剧情推演的提示词模板
+     * @return 提示词模板
+     */
+    Mono<String> getNextChapterOutlineGenerationPrompt();
+    
+    /**
      * 获取结构化的设定生成提示词，用于支持JSON Schema的模型
      * 
      * @param settingTypes 设定类型列表（逗号分隔）

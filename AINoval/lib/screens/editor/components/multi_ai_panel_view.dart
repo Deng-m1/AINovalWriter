@@ -8,6 +8,8 @@ import 'package:ainoval/screens/editor/widgets/ai_summary_panel.dart';
 import 'package:ainoval/screens/editor/widgets/continue_writing_form.dart';
 import 'package:ainoval/services/api_service/repositories/prompt_repository.dart';
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
+import 'package:ainoval/services/api_service/repositories/editor_repository.dart';
+import 'package:ainoval/services/api_service/repositories/novel_ai_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -22,6 +24,8 @@ class MultiAIPanelView extends StatefulWidget {
     required this.userId,
     required this.userAiModelConfigRepository,
     required this.onContinueWritingSubmit,
+    required this.editorRepository,
+    required this.novelAIRepository,
   }) : super(key: key);
 
   final String novelId;
@@ -30,6 +34,8 @@ class MultiAIPanelView extends StatefulWidget {
   final String? userId;
   final UserAIModelConfigRepository userAiModelConfigRepository;
   final Function(Map<String, dynamic> parameters) onContinueWritingSubmit;
+  final EditorRepository editorRepository;
+  final NovelAIRepository novelAIRepository;
 
   @override
   State<MultiAIPanelView> createState() => _MultiAIPanelViewState();
@@ -344,6 +350,8 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
         novelId: widget.novelId,
         onClose: widget.layoutManager.toggleAISettingGenerationPanel,
         isCardMode: true,
+        editorRepository: widget.editorRepository,
+        novelAIRepository: widget.novelAIRepository,
       ),
     );
   }

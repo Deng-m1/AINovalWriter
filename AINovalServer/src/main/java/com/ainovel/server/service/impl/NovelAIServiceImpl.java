@@ -209,7 +209,7 @@ public class NovelAIServiceImpl implements NovelAIService {
             .switchIfEmpty(Mono.error(new RuntimeException("用户没有已配置且验证的AI模型提供商。")));
 
         // 2. 获取章节内容 - 确保即使没有内容也返回空字符串而不是Empty信号
-        Mono<String> chapterContextMono = novelService.getChapterRangeSummaries(
+        Mono<String> chapterContextMono = novelService.getChapterRangeContext(
                 novelId, requestParams.getStartChapterId(), requestParams.getEndChapterId())
                 .switchIfEmpty(Mono.just("")) // 避免Empty信号导致后续zip操作失败
                 .subscribeOn(Schedulers.boundedElastic());

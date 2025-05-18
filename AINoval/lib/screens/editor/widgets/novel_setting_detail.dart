@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ainoval/blocs/setting/setting_bloc.dart';
 import 'package:ainoval/models/novel_setting_item.dart';
+import 'package:ainoval/models/setting_type.dart'; // 导入设定类型枚举
 import 'package:ainoval/screens/editor/widgets/novel_setting_relationship_dialog.dart';
 import 'package:ainoval/utils/logger.dart';
 import 'package:ainoval/services/api_service/repositories/novel_setting_repository.dart';
@@ -12,7 +13,7 @@ class NovelSettingDetail extends StatefulWidget {
   final String novelId;
   final String? groupId; // 所属设定组ID，可选
   final bool isEditing; // 是否处于编辑模式
-  final Function(NovelSettingItem) onSave; // 保存回调
+  final Function(NovelSettingItem, String?) onSave; // 保存回调，第二个参数为所选组ID
   final VoidCallback onCancel; // 取消回调
   
   const NovelSettingDetail({
@@ -34,8 +35,13 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
   
   // 表单控制器
   final _nameController = TextEditingController();
-  final _contentController = TextEditingController();
   final _descriptionController = TextEditingController();
+  
+  // 新增：标签控制器
+  final _tagsController = TextEditingController();
+  
+  // 新增：属性列表
+  final List<MapEntry<String, String>> _attributes = [];
   
   // 设定条目数据
   NovelSettingItem? _settingItem;
@@ -46,10 +52,10 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
   // 选择的设定组ID
   String? _selectedGroupId;
   
-  // 类型选项
-  final List<String> _typeOptions = [
-    '角色', '地点', '物品', '世界观', '事件', '技能', '组织', '其他'
-  ];
+  // 类型选项 - 使用枚举获取
+  late final List<String> _typeOptions = SettingType.values
+      .map((type) => type.displayName)
+      .toList();
   
   // 加载状态
   bool _isLoading = true;
@@ -73,8 +79,8 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
   @override
   void dispose() {
     _nameController.dispose();
-    _contentController.dispose();
     _descriptionController.dispose();
+    _tagsController.dispose();
     super.dispose();
   }
   
@@ -151,10 +157,19 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
     if (_settingItem == null) return;
     
     _nameController.text = _settingItem!.name;
-    _contentController.text = _settingItem!.content;
-    if (_settingItem!.description != null) {
-      _descriptionController.text = _settingItem!.description!;
+    _descriptionController.text = (_settingItem!.description ?? _settingItem!.content)!;
+    
+    // 初始化标签
+    if (_settingItem!.tags != null && _settingItem!.tags!.isNotEmpty) {
+      _tagsController.text = _settingItem!.tags!.join(', ');
     }
+    
+    // 初始化属性
+    _attributes.clear();
+    if (_settingItem!.attributes != null) {
+      _attributes.addAll(_settingItem!.attributes!.entries.toList());
+    }
+    
     _selectedType = _settingItem!.type;
     _selectedGroupId = widget.groupId; // 如果有传入groupId，将其设为默认选择
   }
@@ -168,35 +183,53 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
     });
     
     try {
+      // 获取选择的类型枚举
+      final typeEnum = _getTypeEnumFromDisplayName(_selectedType ?? '其他');
+      
+      // 处理标签
+      List<String>? tags;
+      if (_tagsController.text.isNotEmpty) {
+        tags = _tagsController.text.split(',')
+            .map((tag) => tag.trim())
+            .where((tag) => tag.isNotEmpty)
+            .toList();
+      }
+      
+      // 转换属性为Map
+      Map<String, String>? attributes;
+      if (_attributes.isNotEmpty) {
+        attributes = Map.fromEntries(_attributes);
+      }
+      
       // 构建设定条目对象
       final settingItem = NovelSettingItem(
         id: widget.itemId,
         novelId: widget.novelId,
+        type: typeEnum.value, // 保存value值而不是displayName
         name: _nameController.text,
-        type: _selectedType,
-        content: _contentController.text,
-        description: _descriptionController.text.isNotEmpty 
-            ? _descriptionController.text 
-            : null,
+        content: "",
+        description: _descriptionController.text,
+        attributes: attributes,
+        tags: tags,
         relationships: _settingItem?.relationships,
+        generatedBy: _settingItem?.generatedBy,
+        imageUrl: _settingItem?.imageUrl,
+        sceneIds: _settingItem?.sceneIds,
+        priority: _settingItem?.priority,
+        status: _settingItem?.status,
+        isAiSuggestion: _settingItem?.isAiSuggestion ?? false,
       );
       
-      // 调用保存回调
-      widget.onSave(settingItem);
+      // 记录所选的组ID
+      final String? selectedGroupId = _selectedGroupId ?? widget.groupId;
       
-      // 如果选择了设定组但与传入的不同，添加到该组
-      if (_selectedGroupId != null && _selectedGroupId != widget.groupId) {
-        // 延迟添加到设定组，确保条目已保存
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (settingItem.id != null) {
-            context.read<SettingBloc>().add(AddItemToGroup(
-              novelId: widget.novelId,
-              groupId: _selectedGroupId!,
-              itemId: settingItem.id!,
-            ));
-          }
-        });
-      }
+      AppLogger.i('NovelSettingDetail', 
+        '保存设定条目: ${settingItem.name}, 类型: ${typeEnum.value}, ' 
+        '选择的组ID: ${selectedGroupId ?? "无"}'
+      );
+      
+      // 调用保存回调，将设定条目和选择的组ID传递给父组件处理
+      widget.onSave(settingItem, selectedGroupId);
       
       setState(() {
         _isSaving = false;
@@ -518,6 +551,9 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
           _settingItem = currentItem;
         }
         
+        // 获取条目类型的枚举
+        final settingTypeEnum = SettingType.fromValue(_settingItem!.type ?? 'OTHER');
+        
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -527,8 +563,8 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // 类型图标
-                  _buildLargeTypeIcon(_settingItem!.type ?? '其他'),
+                  // 类型图标 - 直接使用枚举
+                  _buildLargeTypeIcon(settingTypeEnum),
                   const SizedBox(width: 16),
                   
                   // 条目详情信息
@@ -540,15 +576,15 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: _getTypeColor(_settingItem!.type ?? '其他').withOpacity(0.1),
+                            color: _getTypeColor(settingTypeEnum).withOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            _settingItem!.type ?? '其他',
+                            settingTypeEnum.displayName,
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
-                              color: _getTypeColor(_settingItem!.type ?? '其他'),
+                              color: _getTypeColor(settingTypeEnum),
                             ),
                           ),
                         ),
@@ -571,42 +607,29 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
               
               const SizedBox(height: 16),
               
-              // 描述
-              if (_settingItem!.description != null && _settingItem!.description!.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    border: Border.all(color: Colors.grey.shade200),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '简介',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey.shade700,
-                        ),
+              // 生成方式标签（如果有）
+              if (_settingItem!.generatedBy != null && _settingItem!.generatedBy!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.shade100),
+                    ),
+                    child: Text(
+                      '由 ${_settingItem!.generatedBy} 生成',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.blue.shade800,
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _settingItem!.description!,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.5,
-                          color: Colors.grey.shade800,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-                
-              const SizedBox(height: 24),
               
-              // 内容
+              // 描述部分（统一后的）
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -626,7 +649,7 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '详细内容',
+                      '描述',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -635,7 +658,7 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      _settingItem!.content,
+                      _settingItem!.description ?? _settingItem!.content!,
                       style: const TextStyle(
                         fontSize: 15,
                         height: 1.6,
@@ -644,6 +667,96 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
                   ],
                 ),
               ),
+              
+              // 显示属性（如果有）
+              if (_settingItem!.attributes != null && _settingItem!.attributes!.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(top: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    border: Border.all(color: Colors.grey.shade200),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '属性',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _settingItem!.attributes!.entries.map((entry) {
+                          return Chip(
+                            label: Text(
+                              '${entry.key}: ${entry.value}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            backgroundColor: theme.colorScheme.surfaceVariant,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                ),
+              
+              // 显示标签（如果有）
+              if (_settingItem!.tags != null && _settingItem!.tags!.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(top: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    border: Border.all(color: Colors.grey.shade200),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '标签',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _settingItem!.tags!.map((tag) {
+                          return Chip(
+                            label: Text(
+                              tag,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            backgroundColor: theme.colorScheme.secondaryContainer,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                ),
               
               const SizedBox(height: 24),
               
@@ -921,39 +1034,128 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
             
             const SizedBox(height: 16),
             
-            // 描述
+            // 描述（合并后的）
             TextFormField(
               controller: _descriptionController,
               decoration: InputDecoration(
-                labelText: '简要描述',
-                hintText: '输入简要描述（可选）',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              maxLines: 2,
-            ),
-            
-            const SizedBox(height: 16),
-            
-            // 内容
-            TextFormField(
-              controller: _contentController,
-              decoration: InputDecoration(
-                labelText: '详细内容',
-                hintText: '输入详细的设定内容',
+                labelText: '描述',
+                hintText: '输入设定描述',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
                 alignLabelWithHint: true,
               ),
-              maxLines: 12,
+              maxLines: 8,
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return '请输入设定内容';
+                  return '请输入设定描述';
                 }
                 return null;
               },
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // 标签输入
+            TextFormField(
+              controller: _tagsController,
+              decoration: InputDecoration(
+                labelText: '标签',
+                hintText: '输入标签，用逗号分隔（例如：魔法, 神秘, 古代）',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // 属性编辑
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '属性',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('添加属性'),
+                      onPressed: () {
+                        _showAddAttributeDialog(context);
+                      },
+                    ),
+                  ],
+                ),
+                
+                if (_attributes.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      '暂无属性，点击"添加属性"按钮添加',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(top: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      border: Border.all(color: Colors.grey.shade200),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _attributes.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final attribute = _attributes[index];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  attribute.key,
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              const Text(': '),
+                              Expanded(
+                                flex: 3,
+                                child: Text(attribute.value),
+                              ),
+                            ],
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                            onPressed: () {
+                              setState(() {
+                                _attributes.removeAt(index);
+                              });
+                            },
+                            tooltip: '删除',
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
@@ -961,8 +1163,77 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
     );
   }
   
-  // 构建大型类型图标（用于详情页顶部）
-  Widget _buildLargeTypeIcon(String type) {
+  // 添加属性对话框
+  void _showAddAttributeDialog(BuildContext context) {
+    final keyController = TextEditingController();
+    final valueController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('添加属性'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: keyController,
+                decoration: const InputDecoration(
+                  labelText: '属性名',
+                  hintText: '例如：年龄、身高、能力值',
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return '请输入属性名';
+                  }
+                  if (_attributes.any((attr) => attr.key == value)) {
+                    return '属性名已存在';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: valueController,
+                decoration: const InputDecoration(
+                  labelText: '属性值',
+                  hintText: '例如：18、175cm、高级',
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return '请输入属性值';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                setState(() {
+                  _attributes.add(MapEntry(keyController.text, valueController.text));
+                });
+                Navigator.of(dialogContext).pop();
+              }
+            },
+            child: const Text('添加'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // 构建大型类型图标（用于详情页顶部） - 直接接收枚举
+  Widget _buildLargeTypeIcon(SettingType type) {
     final iconData = _getTypeIconData(type);
     final iconColor = _getTypeColor(type);
     
@@ -985,58 +1256,79 @@ class _NovelSettingDetailState extends State<NovelSettingDetail> {
     );
   }
   
-  // 构建小型类型图标（用于表单和列表项）
-  Widget _buildTypeIcon(String type) {
+  // 构建小型类型图标（用于表单和列表项） - 接收中文名或枚举
+  Widget _buildTypeIcon(dynamic type) {
+    final SettingType typeEnum = type is SettingType ? type : _getTypeEnumFromDisplayName(type);
     return CircleAvatar(
       radius: 14,
-      backgroundColor: _getTypeColor(type).withOpacity(0.1),
+      backgroundColor: _getTypeColor(typeEnum).withOpacity(0.1),
       child: Icon(
-        _getTypeIconData(type),
+        _getTypeIconData(typeEnum),
         size: 14,
-        color: _getTypeColor(type),
+        color: _getTypeColor(typeEnum),
       ),
     );
   }
   
+  // 获取类型枚举
+  SettingType _getTypeEnumFromDisplayName(String displayName) {
+    return SettingType.values.firstWhere(
+      (type) => type.displayName == displayName,
+      orElse: () => SettingType.other,
+    );
+  }
+  
   // 获取类型图标
-  IconData _getTypeIconData(String type) {
-    switch (type.toLowerCase()) {
-      case '角色':
+  IconData _getTypeIconData(SettingType type) {
+    switch (type) {
+      case SettingType.character:
         return Icons.person;
-      case '地点':
+      case SettingType.location:
         return Icons.place;
-      case '物品':
+      case SettingType.item:
         return Icons.inventory_2;
-      case '世界观':
+      case SettingType.lore:
         return Icons.public;
-      case '事件':
+      case SettingType.event:
         return Icons.event;
-      case '技能':
+      case SettingType.concept:
         return Icons.auto_awesome;
-      case '组织':
+      case SettingType.faction:
         return Icons.groups;
+      case SettingType.creature:
+        return Icons.pets;
+      case SettingType.magicSystem:
+        return Icons.auto_fix_high;
+      case SettingType.technology:
+        return Icons.science;
       default:
         return Icons.article;
     }
   }
   
   // 根据类型获取颜色
-  Color _getTypeColor(String type) {
-    switch (type.toLowerCase()) {
-      case '角色':
+  Color _getTypeColor(SettingType type) {
+    switch (type) {
+      case SettingType.character:
         return Colors.blue;
-      case '地点':
+      case SettingType.location:
         return Colors.green;
-      case '物品':
+      case SettingType.item:
         return Colors.orange;
-      case '世界观':
+      case SettingType.lore:
         return Colors.purple;
-      case '事件':
+      case SettingType.event:
         return Colors.red;
-      case '技能':
+      case SettingType.concept:
         return Colors.teal;
-      case '组织':
+      case SettingType.faction:
         return Colors.indigo;
+      case SettingType.creature:
+        return Colors.brown;
+      case SettingType.magicSystem:
+        return Colors.cyan;
+      case SettingType.technology:
+        return Colors.blueGrey;
       default:
         return Colors.grey.shade700;
     }

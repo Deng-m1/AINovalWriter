@@ -20,7 +20,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_quill/flutter_quill.dart' hide EditorState;
-import 'package:collection/collection.dart'; // Add this line
+import 'package:collection/collection.dart';
+
+import '../../../services/api_service/repositories/impl/novel_ai_repository_impl.dart';
+import '../../../services/api_service/repositories/novel_ai_repository.dart'; // Add this line
 
 // 添加这些顶层定义，放在import语句之后，类定义之前
 // 滚动状态枚举
@@ -55,6 +58,7 @@ class EditorScreenController extends ChangeNotifier {
   late final ApiClient apiClient;
   late final EditorRepositoryImpl editorRepository;
   late final PromptRepository promptRepository;
+  late final NovelAIRepository novelAIRepository;
   late final LocalStorageService localStorageService;
   late final SyncService syncService;
 
@@ -180,6 +184,7 @@ class EditorScreenController extends ChangeNotifier {
     apiClient = ApiClient();
     editorRepository = EditorRepositoryImpl();
     promptRepository = PromptRepositoryImpl(apiClient);
+    novelAIRepository = NovelAIRepositoryImpl(apiClient: apiClient);
     localStorageService = LocalStorageService();
 
     tabController = TabController(length: 4, vsync: vsync);
@@ -1789,4 +1794,6 @@ String _findActIdForChapter(novel_models.Novel novel, String chapterId) {
   }
   throw Exception('章节 $chapterId 不存在于小说结构中');
 }
+
+
 }

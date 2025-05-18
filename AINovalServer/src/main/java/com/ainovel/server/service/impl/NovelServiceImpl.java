@@ -1140,6 +1140,110 @@ public class NovelServiceImpl implements NovelService {
                 return Mono.just("获取章节摘要时发生错误。");
             });
     }
+    
+    @Override
+    public Mono<String> getChapterRangeContext(String novelId, String startChapterId, String endChapterId) {
+        return findNovelById(novelId)
+            .<String>flatMap(novel -> { // 显式指定 flatMap 返回类型为 Mono<String>
+                Structure structure = novel.getStructure();
+                if (structure == null || structure.getActs() == null || structure.getActs().isEmpty()) {
+                    log.warn("小说 {} 没有有效的结构或章节信息，无法获取内容范围", novelId);
+                    return Mono.just(""); // 或者返回特定错误信息
+                }
+
+                // 获取所有章节的扁平列表，方便查找索引
+                List<Chapter> allChapters = structure.getActs().stream()
+                    .flatMap(act -> act.getChapters().stream())
+                    .collect(Collectors.toList());
+
+                if (allChapters.isEmpty()) {
+                     log.warn("小说 {} 结构中没有章节，无法获取内容范围", novelId);
+                    return Mono.just("");
+                }
+
+                int startIndex = 0;
+                int endIndex = allChapters.size() - 1;
+
+                // 确定起始索引
+                if (startChapterId != null) {
+                    boolean foundStart = false;
+                    for (int i = 0; i < allChapters.size(); i++) {
+                        if (allChapters.get(i).getId().equals(startChapterId)) {
+                            startIndex = i;
+                            foundStart = true;
+                            break;
+                        }
+                    }
+                    if (!foundStart) {
+                         log.warn("未找到起始章节ID: {}, 将从第一章开始", startChapterId);
+                    }
+                }
+
+                // 确定结束索引
+                if (endChapterId != null) {
+                     boolean foundEnd = false;
+                    for (int i = 0; i < allChapters.size(); i++) {
+                        if (allChapters.get(i).getId().equals(endChapterId)) {
+                            endIndex = i;
+                            foundEnd = true;
+                            break;
+                        }
+                    }
+                     if (!foundEnd) {
+                         log.warn("未找到结束章节ID: {}, 将到最后一章结束", endChapterId);
+                         endIndex = allChapters.size() - 1; // 确保 endIndex 有效
+                    }
+                }
+
+                // 确保索引有效且 startIndex <= endIndex
+                if (startIndex > endIndex) {
+                    log.warn("起始章节索引 ({}) 大于结束章节索引 ({}), 无法获取内容范围", startIndex, endIndex);
+                    return Mono.just("");
+                }
+
+                // 获取指定范围内的章节ID列表
+                List<String> targetChapterIds = allChapters.subList(startIndex, endIndex + 1).stream()
+                    .map(Chapter::getId)
+                    .collect(Collectors.toList());
+
+                 log.debug("获取小说 {} 从索引 {} 到 {} 的章节内容, 章节ID列表: {}", novelId, startIndex, endIndex, targetChapterIds);
+
+                // 并行获取所有目标章节的场景，然后串行处理拼接（保证顺序）
+                return Flux.fromIterable(targetChapterIds)
+                    .<String>concatMap(chapterId -> {
+                        // 获取章节标题
+                        String chapterTitle = allChapters.stream()
+                            .filter(chapter -> chapter.getId().equals(chapterId))
+                            .findFirst()
+                            .map(Chapter::getTitle)
+                            .orElse("未命名章节");
+                        
+                        // 为每个章节创建一个包含标题和内容的字符串
+                        return sceneService.findSceneByChapterIdOrdered(chapterId) // 使用有序的场景检索
+                            .map(scene -> {
+                                // 获取场景标题和内容
+                                String sceneTitle = scene.getTitle() != null ? scene.getTitle() : "场景";
+                                String sceneContent = scene.getContent() != null ? scene.getContent() : "";
+                                
+                                // 返回格式化的场景内容
+                                return String.format("【场景：%s】\n%s", sceneTitle, sceneContent);
+                            })
+                            .collect(Collectors.joining("\n\n")) // 拼接同一章节中的所有场景
+                            .map(scenesContent -> {
+                                // 添加章节标题作为前缀
+                                return String.format("## %s\n\n%s", chapterTitle, scenesContent);
+                            })
+                            .defaultIfEmpty(String.format("## %s\n\n(无内容)", chapterTitle)); // 如果章节没有场景，添加默认提示
+                    })
+                    .collect(Collectors.joining("\n\n---\n\n")) // 拼接不同章节的内容，用分隔符区分
+                    .defaultIfEmpty(""); // 如果没有找到任何内容，返回空字符串
+            })
+            .onErrorResume(e -> {
+                log.error("获取小说 {} 章节范围内容时出错: {}", novelId, e.getMessage(), e);
+                // 可以返回一个错误提示字符串，或者空字符串，或者重新抛出异常
+                return Mono.just("获取章节内容时发生错误。");
+            });
+    }
 
     @Override
     public Mono<CreatedChapterInfo> addChapterWithInitialScene(

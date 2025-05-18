@@ -8,7 +8,7 @@ class NovelSettingItem extends Equatable {
   final String? userId;
   final String name;
   final String? type;
-  final String content;
+  final String? content;
   final String? description;
   final Map<String, String>? attributes;
   final String? imageUrl;
@@ -30,7 +30,7 @@ class NovelSettingItem extends Equatable {
     this.userId,
     required this.name,
     this.type,
-    required this.content,
+    this.content = "",
     this.description,
     this.attributes,
     this.imageUrl,
@@ -86,7 +86,7 @@ class NovelSettingItem extends Equatable {
       userId: json['userId'] as String?,
       name: json['name'] as String? ?? '未命名设定',
       type: json['type'] as String?,
-      content: json['content'] as String? ?? '',
+      content: json['content'] as String?,
       description: json['description'] as String?,
       attributes: attributesMap,
       imageUrl: json['imageUrl'] as String?,
@@ -111,7 +111,7 @@ class NovelSettingItem extends Equatable {
     if (userId != null) data['userId'] = userId;
     data['name'] = name;
     if (type != null) data['type'] = type;
-    data['content'] = content;
+    if (content != null) data['content'] = content;
     if (description != null) data['description'] = description;
     if (attributes != null) data['attributes'] = attributes;
     if (imageUrl != null) data['imageUrl'] = imageUrl;

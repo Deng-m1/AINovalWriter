@@ -43,9 +43,34 @@ public class PromptServiceImpl implements PromptService {
         
         // 新增设定生成相关提示词模板
         DEFAULT_TEMPLATES.put("setting_item_generation", "你是一个专业的小说设定分析专家。你的任务是从提供的文本中提取并生成小说设定项。" +
-            "每个对象必须代表一个不同的设定项，并且必须包含'name'（字符串）、'type'（字符串，必须是提供的有效类型之一）和'description'（字符串）。" +
-            "可选字段是'attributes'（Map<String, String>）和'tags'（List<String>）。" +
+            "每个对象必须代表一个不同的设定项，并且必须包含\'name\'（字符串）、\'type\'（字符串，必须是提供的有效类型之一）和\'description\'（字符串）。" +
+            "可选字段是\'attributes\'（Map<String, String>）和\'tags\'（List<String>）。" +
             "确保输出是有效的JSON对象列表。如果找不到某种类型的设定，请不要包含它。");
+
+        // 新增：下一章剧情大纲生成提示词模板
+        DEFAULT_TEMPLATES.put("next_chapter_outline_generation", "你是一位专业的小说创作顾问，擅长为作者的下一章内容提供多个剧情发展选项。" +
+            "你的目标是基于提供的小说背景信息、最近章节的完整内容以及作者的特定指导，创作出 {{numberOfOptions}} 个不同的、详细的、仅覆盖一章内容的剧情大纲选项。" +
+            "请仔细研读\"上一章节完整内容\"，以确保你的建议在文风、文笔和情节发展上与原文保持一致性和连贯性。" +
+            "每个剧情大纲选项都应该足够详细，能够支撑起一个完整章节的写作，并明确指出故事将如何在本章内发展和可能的小高潮。" +
+            "不要生成超出单章范围的剧情。"+
+            "\n\n小说当前进展摘要：\n{{contextSummary}}" +
+            "\n\n上一章节完整内容：\n{{previousChapterContent}}" +
+            "\n\n作者的创作方向引导：\n{{authorGuidance}}" +
+            "\n\n请为每个选项提供以下结构化内容：" +
+            "\n1. 选项标题：一个简短且引人入胜的标题，点明本章核心内容。" +
+            "\n2. 本章剧情概要：详细描述本章的主要情节脉络、发展和转折（预计300-500字）。" +
+            "\n3. 本章主要事件：列出3-5个关键事件或场景节点。" +
+            "\n4. 本章涉及的主要角色及其行动：明确指出哪些角色是本章的焦点，以及他们的关键行为和动机。" +
+            "\n5. 本章冲突与悬念：描述本章内的核心冲突，以及为后续章节可能留下的悬念或伏笔。" +
+            "\n\n输出格式示例：" +
+            "\n选项 1：" +
+            "\n选项标题：[标题]" +
+            "\n本章剧情概要：[详细概要]" +
+            "\n本章主要事件：\n- [事件1]\n- [事件2]\n- [事件3]" +
+            "\n本章涉及的主要角色及其行动：[角色列表和行动描述]" +
+            "\n本章冲突与悬念：[冲突或悬念描述]" +
+            "\n\n选项 2：..." +
+            "\n\n请确保每个选项都提供独特且合理的剧情走向，同时忠于已有的故事设定和角色塑造。");
     }
 
     @Autowired
@@ -190,6 +215,16 @@ public class PromptServiceImpl implements PromptService {
     }
 
     @Override
+    public Mono<String> getNextChapterOutlineGenerationPrompt() {
+        return getPromptTemplate("next_chapter_outline_generation")
+                .switchIfEmpty(Mono.defer(() -> {
+                    String defaultTemplate = DEFAULT_TEMPLATES.get("next_chapter_outline_generation");
+                    return savePromptTemplate("next_chapter_outline_generation", defaultTemplate)
+                            .thenReturn(defaultTemplate);
+                }));
+    }
+
+    @Override
     public Mono<String> getSingleOutlineGenerationPrompt() {
         String prompt = "基于以下上下文信息，为小说生成一个有趣而合理的后续剧情大纲选项。"
                 + "请确保生成的剧情与已有内容保持连贯，符合角色性格，推动情节发展。\n\n"
@@ -219,11 +254,15 @@ public class PromptServiceImpl implements PromptService {
     public Mono<String> getPromptTemplate(String promptType) {
         log.info("获取提示词模板，类型: {}", promptType);
 
-        return mongoTemplate.findOne(
-                Query.query(Criteria.where("type").is(promptType)),
-                PromptTemplate.class
-        )
-                .map(template -> template.getContent());
+        // 尝试从数据库获取模板
+        Query query = Query.query(Criteria.where("type").is(promptType));
+        
+        return mongoTemplate.findOne(query, PromptTemplate.class)
+                .flatMap(promptTemplate -> Mono.justOrEmpty(promptTemplate.getContent()))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("数据库中未找到类型为 '{}' 的提示词模板，将使用默认模板。", promptType);
+                    return Mono.justOrEmpty(DEFAULT_TEMPLATES.get(promptType));
+                }));
     }
 
     @Override
@@ -235,7 +274,6 @@ public class PromptServiceImpl implements PromptService {
                 "type",
                 PromptTemplate.class,
                 String.class
-        )
-                .collectList();
+        ).collectList();
     }
 }

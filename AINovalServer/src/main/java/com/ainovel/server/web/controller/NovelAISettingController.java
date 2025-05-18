@@ -22,7 +22,7 @@ import java.util.List;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/novels/{novelId}/ai")
+@RequestMapping("/api/v1/novels/{novelId}/ai")
 @RequiredArgsConstructor
 @Tag(name = "Novel AI Setting", description = "小说 AI 设定生成相关 API")
 public class NovelAISettingController {
