@@ -13,13 +13,14 @@ import 'package:provider/provider.dart';
 
 class ChapterSection extends StatefulWidget {
   const ChapterSection({
-    super.key,
+    super.key, // Will be replaced by chapterKey if passed
     required this.title,
     required this.scenes,
     required this.actId,
     required this.chapterId,
     required this.editorBloc,
     this.chapterIndex, // 添加章节序号参数
+    this.chapterKey, // New GlobalKey parameter
   });
   final String title;
   final List<Widget> scenes;
@@ -27,6 +28,7 @@ class ChapterSection extends StatefulWidget {
   final String chapterId;
   final EditorBloc editorBloc;
   final int? chapterIndex; // 章节在卷中的序号，从1开始
+  final GlobalKey? chapterKey; // New GlobalKey parameter
 
   @override
   State<ChapterSection> createState() => _ChapterSectionState();
@@ -35,9 +37,9 @@ class ChapterSection extends StatefulWidget {
 class _ChapterSectionState extends State<ChapterSection> {
   late TextEditingController _chapterTitleController;
   late debouncer.Debouncer _debouncer;
-  // 为章节创建一个ValueKey，确保唯一性
-  late final Key _chapterKey =
-      ValueKey('chapter_${widget.actId}_${widget.chapterId}');
+  // 为章节创建一个ValueKey，确保唯一性 - This will be overridden by widget.chapterKey if provided
+  // late final Key _chapterKey =
+  //     ValueKey('chapter_${widget.actId}_${widget.chapterId}');
 
   @override
   void initState() {
@@ -103,7 +105,7 @@ class _ChapterSectionState extends State<ChapterSection> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Column(
-      key: _chapterKey, // 使用ValueKey
+      key: widget.chapterKey, // Use the passed GlobalKey here
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Chapter标题

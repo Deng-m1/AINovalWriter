@@ -110,13 +110,13 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
       AppLogger.i('EditorBloc/_onLoadContentPaginated', 'Novel acts count: ${novel.acts.length}');
       for (int i = 0; i < novel.acts.length; i++) {
           final act = novel.acts[i];
-          AppLogger.i('EditorBloc/_onLoadContentPaginated', 'Act ${i} (${act.id}): Title: ${act.title}, Chapters count: ${act.chapters.length}');
+          //AppLogger.i('EditorBloc/_onLoadContentPaginated', 'Act ${i} (${act.id}): Title: ${act.title}, Chapters count: ${act.chapters.length}');
           for (int j = 0; j < act.chapters.length; j++) {
               final chapter = act.chapters[j];
-              AppLogger.i('EditorBloc/_onLoadContentPaginated', '  Chapter ${j} (${chapter.id}): Title: ${chapter.title}, Scenes count: ${chapter.scenes.length}');
+              //AppLogger.i('EditorBloc/_onLoadContentPaginated', '  Chapter ${j} (${chapter.id}): Title: ${chapter.title}, Scenes count: ${chapter.scenes.length}');
               for (int k = 0; k < chapter.scenes.length; k++) {
                   final scene = chapter.scenes[k];
-                  AppLogger.d('EditorBloc/_onLoadContentPaginated', '    Scene ${k} (${scene.id}): WordCount: ${scene.wordCount}, HasContent: ${scene.content.isNotEmpty}, Summary: ${scene.summary.content}');
+                  //AppLogger.d('EditorBloc/_onLoadContentPaginated', '    Scene ${k} (${scene.id}): WordCount: ${scene.wordCount}, HasContent: ${scene.content.isNotEmpty}, Summary: ${scene.summary.content}');
               }
           }
       }

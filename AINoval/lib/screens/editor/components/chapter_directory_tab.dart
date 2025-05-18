@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:ainoval/screens/editor/controllers/editor_screen_controller.dart';
 import 'package:ainoval/blocs/sidebar/sidebar_bloc.dart';
 import 'dart:async'; // Import for StreamSubscription
+import 'package:ainoval/utils/event_bus.dart'; // Import EventBus and the event
 
 /// 章节目录标签页组件
 class ChapterDirectoryTab extends StatefulWidget {
@@ -30,6 +31,7 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
   // New state for managing expanded acts
   final Map<String, bool> _expandedActs = {};
   StreamSubscription<EditorState>? _editorBlocSubscription;
+  StreamSubscription<NovelStructureUpdatedEvent>? _novelStructureUpdatedSubscription; // Added subscription
 
   @override
   void initState() {
@@ -56,6 +58,18 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
       _syncActiveActExpansion(editorState, context.read<SidebarBloc>().state);
       if (mounted) {
         setState(() {}); // Rebuild to reflect active act/chapter highlighting
+      }
+    });
+
+    // Listen for novel structure updates from the EventBus
+    _novelStructureUpdatedSubscription = EventBus.instance.on<NovelStructureUpdatedEvent>().listen((event) {
+      if (mounted && event.novelId == widget.novel.id) {
+        AppLogger.i('ChapterDirectoryTab', 
+          'Received NovelStructureUpdatedEvent for current novel (ID: ${widget.novel.id}, Type: ${event.updateType}). Reloading sidebar structure.');
+        // To avoid potential race conditions or build errors if SidebarBloc is already processing,
+        // add a small delay or check its state before adding the event.
+        // For simplicity now, just add the event.
+        sidebarBloc.add(LoadNovelStructure(widget.novel.id));
       }
     });
     
@@ -105,6 +119,7 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
     _searchController.dispose();
     _jumpController.dispose();
     _editorBlocSubscription?.cancel(); // Cancel subscription
+    _novelStructureUpdatedSubscription?.cancel(); // Cancel new subscription
     super.dispose();
   }
 
@@ -141,70 +156,15 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
   void _toggleChapter(String chapterId) async {
     final isCurrentlyExpanded = _expandedChapters[chapterId] ?? false;
     
+    setState(() {
+      _expandedChapters[chapterId] = !isCurrentlyExpanded;
+    });
+
     if (!isCurrentlyExpanded) {
-      // 在UI立即展开章节，不等待加载完成
-      setState(() {
-        _expandedChapters[chapterId] = true;
-      });
-      
       AppLogger.i('ChapterDirectoryTab', '展开章节: $chapterId');
-      
-      // 获取当前状态，检查章节是否有场景摘要
-      bool needsPreload = false;
-      String? actId;
-      
-      // 查找章节所属的 Act ID
-      final sidebarState = context.read<SidebarBloc>().state;
-      if (sidebarState is SidebarLoaded) {
-        for (final act in sidebarState.novelStructure.acts) {
-          for (final chapter in act.chapters) {
-            if (chapter.id == chapterId) {
-              actId = act.id;
-              needsPreload = chapter.scenes.isEmpty; // 如果没有场景，需要预加载
-              break;
-            }
-          }
-          if (actId != null) break;
-        }
-      }
-      
-      // 如果章节已有场景摘要数据，不需要额外加载
-      if (!needsPreload) {
-        AppLogger.i('ChapterDirectoryTab', '章节 $chapterId 已有场景摘要数据，无需预加载');
-        return;
-      }
-      
-      // 如果需要预加载，进行异步预加载
-      if (actId != null) {
-        AppLogger.i('ChapterDirectoryTab', '章节 $chapterId 需要预加载场景数据');
-        
-        try {
-          // 异步预加载场景并在完成后更新UI
-          await _editorController.preloadChapterScenes(chapterId, actId: actId);
-          
-          // 如果组件还在树中，更新UI
-          if (mounted) {
-            setState(() {
-              // 更新完成后的状态刷新
-              AppLogger.i('ChapterDirectoryTab', '章节 $chapterId 场景预加载完成，刷新UI');
-            });
-          }
-        } catch (e) {
-          AppLogger.e('ChapterDirectoryTab', '预加载章节场景失败', e);
-          
-          // 即使失败也保持章节展开状态
-          if (mounted) {
-            setState(() {});
-          }
-        }
-      } else {
-        AppLogger.w('ChapterDirectoryTab', '无法确定章节 $chapterId 所属的卷ID，无法预加载场景');
-      }
+      // 场景预加载逻辑已移除
     } else {
-      // 收起章节
-      setState(() {
-        _expandedChapters[chapterId] = false;
-      });
+      AppLogger.i('ChapterDirectoryTab', '收起章节: $chapterId');
     }
   }
 
@@ -303,47 +263,28 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
     );
   }
   
-  void _navigateToScene(String actId, String chapterId, String sceneId) {
+  void _navigateToChapter(String actId, String chapterId) {
     final editorBloc = context.read<EditorBloc>();
-    
-    // 先加载当前章节的场景（确保内容已加载）
-    AppLogger.i('ChapterDirectoryTab', '开始加载章节场景: $actId - $chapterId - $sceneId');
-    editorBloc.add(LoadMoreScenes(
-      fromChapterId: chapterId,
-      direction: 'center',
-      chaptersLimit: 5, // 增加加载章节数量，确保足够加载所有内容
-      actId: actId,
-      targetChapterId: chapterId,
-      targetSceneId: sceneId,
-      preventFocusChange: false // 确保设置为false，允许改变焦点
-    ));
-    
-    // 关键修改：先尝试通过EditorMainArea实例设置活动章节
-    if (_editorController.editorMainAreaKey.currentState != null) {
-      // 如果能获取到EditorMainArea实例，通过它设置活动章节
-      AppLogger.i('ChapterDirectoryTab', '通过EditorMainArea明确设置活动章节: $actId - $chapterId');
-      _editorController.editorMainAreaKey.currentState!.setActiveChapter(actId, chapterId);
-    }
-    
-    // 然后设置活动场景
-    editorBloc.add(SetActiveScene(
+    AppLogger.i('ChapterDirectoryTab', '准备跳转到章节: ActID=$actId, ChapterID=$chapterId');
+
+    // 1. 设置活动章节和卷（这将触发EditorBloc状态更新）
+    // 同时也将这个章节设置为焦点章节
+    editorBloc.add(SetActiveChapter(
       actId: actId,
       chapterId: chapterId,
-      sceneId: sceneId,
     ));
-    
-    // 主动滚动到活动场景
-    _scrollToActiveScene(actId, chapterId, sceneId);
-    
-    AppLogger.i('ChapterDirectoryTab', '已发送场景跳转请求: $actId - $chapterId - $sceneId');
-  }
-  
-  // 滚动到活动场景的辅助方法
-  void _scrollToActiveScene(String actId, String chapterId, String sceneId) {
-    // 延迟500ms确保UI已经更新
-    Future.delayed(const Duration(milliseconds: 500), () {
+    editorBloc.add(SetFocusChapter(chapterId: chapterId));
+
+
+    // 2. 确保目标章节在视图中
+    // 延迟执行，等待Bloc状态更新和UI重建
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return; // Check if the widget is still in the tree
       if (_editorController.editorMainAreaKey.currentState != null) {
-        _editorController.editorMainAreaKey.currentState!.scrollToActiveScene();
+        AppLogger.i('ChapterDirectoryTab', '通过EditorMainArea滚动到章节: $chapterId');
+        _editorController.editorMainAreaKey.currentState!.scrollToChapter(chapterId); 
+      } else {
+        AppLogger.w('ChapterDirectoryTab', 'EditorMainAreaKey.currentState为空，无法滚动到章节');
       }
     });
   }
@@ -868,24 +809,25 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
               highlightColor: theme.colorScheme.primary.withOpacity(0.05),
               onTap: () => _toggleChapter(chapter.id),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), // Reduced padding a bit
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 child: Row(
                   children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
-                      child: Transform.rotate(
-                        angle: isChapterExpandedForScenes ? 0.0 : -1.5708, // 0 or -90度
-                        child: Icon(
-                          Icons.keyboard_arrow_down,
-                          size: 18,
-                          color: isHighlighted
-                            ? theme.colorScheme.primary
-                            : Colors.grey.shade700,
+                    // Expand/Collapse Icon for toggling scenes list
+                     AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        child: Transform.rotate(
+                          angle: isChapterExpandedForScenes ? 0.0 : -1.5708, // 0 or -90度
+                          child: Icon(
+                            Icons.keyboard_arrow_down,
+                            size: 18,
+                            color: isHighlighted
+                              ? theme.colorScheme.primary
+                              : Colors.grey.shade700,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8), // Reduced spacing
+                    const SizedBox(width: 8),
                     
                     if (isActiveChapter) ...[ // Indicator for strictly active chapter
                       Container(
@@ -914,6 +856,29 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
                       ),
                     ),
                     
+                    // Jump to Chapter Button
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => _navigateToChapter(parentAct.id, chapter.id),
+                        borderRadius: BorderRadius.circular(20),
+                        splashColor: theme.colorScheme.primary.withOpacity(0.2),
+                        highlightColor: theme.colorScheme.primary.withOpacity(0.1),
+                        child: Tooltip(
+                          message: '跳转到此章节',
+                          child: Padding(
+                            padding: const EdgeInsets.all(6.0),
+                            child: Icon(
+                              Icons.shortcut_rounded, 
+                              size: 18,
+                              color: isHighlighted ? theme.colorScheme.primary : Colors.blueGrey.shade400,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
@@ -1105,7 +1070,7 @@ class _ChapterDirectoryTabState extends State<ChapterDirectoryTab> {
               borderRadius: BorderRadius.circular(8),
               splashColor: theme.colorScheme.primary.withOpacity(0.1),
               highlightColor: theme.colorScheme.primary.withOpacity(0.05),
-              onTap: () => _navigateToScene(actId, chapter.id, scene.id),
+              onTap: () => _navigateToChapter(actId, chapter.id),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                 child: Column(

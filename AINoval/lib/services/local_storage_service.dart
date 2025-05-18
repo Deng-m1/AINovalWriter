@@ -138,8 +138,8 @@ class LocalStorageService {
 
   // 保存单个小说
   Future<void> saveNovel(novel_models.Novel novel) async {
-    AppLogger.d('LocalStorageService',
-        'saveNovel: Attempting to save novel ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}');
+    //AppLogger.d('LocalStorageService',
+    //    'saveNovel: Attempting to save novel ID=${novel.id}, Title=${novel.title}, Acts=${novel.acts.length}');
     
     // 检查上次保存时间，如果短时间内多次保存同一个小说，可以合并为一次操作
     final cacheTime = _novelCacheTimestamp[novel.id];
@@ -148,8 +148,8 @@ class LocalStorageService {
       // 如果500毫秒内有多次保存，只更新缓存，延迟实际的存储操作
       _novelCache[novel.id] = novel;
       _novelCacheTimestamp[novel.id] = now;
-      AppLogger.i('LocalStorageService',
-          'saveNovel: Multiple saves detected within 500ms, delaying actual storage operation for novel ID=${novel.id}');
+      //AppLogger.i('LocalStorageService',
+      //    'saveNovel: Multiple saves detected within 500ms, delaying actual storage operation for novel ID=${novel.id}');
       return;
     }
     

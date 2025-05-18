@@ -45,7 +45,7 @@ class EditorMainArea extends StatefulWidget {
     this.activeChapterId,
     this.activeSceneId,
     required this.scrollController,
-    required this.sceneKeys,
+    required this.sceneKeys, // These are for scenes, not chapters
   });
   final novel_models.Novel novel;
   final editor_bloc.EditorBloc editorBloc;
@@ -55,7 +55,7 @@ class EditorMainArea extends StatefulWidget {
   final String? activeChapterId;
   final String? activeSceneId;
   final ScrollController scrollController;
-  final Map<String, GlobalKey> sceneKeys;
+  final Map<String, GlobalKey> sceneKeys; // These are for scenes, not chapters
 
   @override
   State<EditorMainArea> createState() => EditorMainAreaState();
@@ -84,6 +84,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
   final ValueNotifier<List<String>> _visibleItemsNotifier = ValueNotifier<List<String>>([]);
   
   String? _focusChapterId; 
+  String? _pendingScrollToChapterId; // For handling scroll to not-yet-built items
   
   bool _isNavigatingToAct = false;
   String? _targetActId;
@@ -96,6 +97,10 @@ class EditorMainAreaState extends State<EditorMainArea> {
   int? _previousActsCount;
   int? _previousTotalChaptersCount;
   int? _previousTotalScenesCount;
+  
+  // Map to store GlobalKeys for each chapter
+  final Map<String, GlobalKey> _chapterKeys = {};
+  final GlobalKey _scrollViewKey = GlobalKey(); // Key for the CustomScrollView
   
   @override
   void initState() {
@@ -130,6 +135,12 @@ class EditorMainAreaState extends State<EditorMainArea> {
             _updateVisibleItemsBasedOnCache();
             // _updateAllChapterPositions(); // 已被 _updateAllChapterLayouts 替代
             _updateFocusChapterBasedOnCache(true); // Force update on init
+
+            // Initial scroll to active chapter if available from bloc state
+            final editorState = widget.editorBloc.state;
+            if (editorState is editor_bloc.EditorLoaded && editorState.focusChapterId != null) {
+              scrollToChapter(editorState.focusChapterId!, initialScroll: true);
+            }
           }
         });
       }
@@ -212,15 +223,13 @@ class EditorMainAreaState extends State<EditorMainArea> {
           _updateFocusChapterBasedOnCache(true); // 强制更新焦点，因为activeChapterId可能已改变
         }
 
-        // 原有的UI刷新逻辑，例如当焦点由BLoC改变时
-        if (state.focusChapterId != null && _focusChapterId != state.focusChapterId) {
-            AppLogger.i('EditorMainArea', 'BlocListener: focusChapterId updated by BLoC to ${state.focusChapterId}. Current local focus is $_focusChapterId.');
-            // 如果BLoC的焦点与本地计算的焦点不同，且不是由滚动主导的，则采纳BLoC的焦点
-            if (!_isScrollingDrivenFocus) {
-                 _focusChapterId = state.focusChapterId;
-                 // 可能需要滚动到该章节
-                 // scrollToChapter(state.activeActId, state.focusChapterId);
-            }
+        // 监听 focusChapterId 的变化以滚动
+        if (state.focusChapterId != null && state.focusChapterId != _focusChapterId) {
+          AppLogger.i('EditorMainArea', 'BlocListener: focusChapterId changed to ${state.focusChapterId}, scrolling.');
+          _focusChapterId = state.focusChapterId; // 更新内部跟踪的 focusChapterId
+          scrollToChapter(state.focusChapterId!);
+        } else if (state.focusChapterId == null && _focusChapterId != null) {
+          _focusChapterId = null; // Clear internal tracking if bloc clears it
         }
 
       }
@@ -229,53 +238,29 @@ class EditorMainAreaState extends State<EditorMainArea> {
 
   void _updateAllChapterLayouts() {
     if (!mounted || !widget.scrollController.hasClients || !_novelStructureChanged) {
-        // AppLogger.d('EditorMainArea', 'Skipping chapter layout calculation - not mounted, no clients, or no structure change.');
         return;
     }
 
     AppLogger.d('EditorMainArea', 'Recalculating all chapter layouts...');
     _chapterLayouts.clear();
     
-    // 获取Scrollable的RenderObject作为共同的祖先
-    // final scrollableRenderObject = Scrollable.of(context)?.context.findRenderObject(); // 旧的方式
+    final RenderObject? scrollRenderObject = _scrollViewKey.currentContext?.findRenderObject();
 
-    if (!widget.scrollController.hasClients) {
-        AppLogger.w('EditorMainArea', 'No scroll client for layout calculation.');
+    if (scrollRenderObject == null) {
+        AppLogger.w('EditorMainArea', 'Scroll RenderObject is null for layout calculation (from _scrollViewKey).');
         _novelStructureChanged = false; // Prevent re-triggering if this is the issue
-        return;
-    }
-    final BuildContext? scrollableContext = widget.scrollController.position.context.storageContext;
-
-    if (scrollableContext == null) {
-        AppLogger.w('EditorMainArea', 'Scrollable storageContext is null for layout calculation.');
-        _novelStructureChanged = false;
-        return;
-    }
-
-    final ScrollableState? scrollableState = Scrollable.of(scrollableContext);
-    if (scrollableState == null) {
-        AppLogger.w('EditorMainArea', 'Scrollable.of(scrollableContext) returned null for layout calculation.');
-        _novelStructureChanged = false;
-        return;
-    }
-    final RenderObject? scrollableRenderObject = scrollableState.context.findRenderObject();
-
-    if (scrollableRenderObject == null) {
-        AppLogger.w('EditorMainArea', 'Scrollable RenderObject is null for layout calculation.');
-        _novelStructureChanged = false;
         return;
     }
 
     for (final act in widget.novel.acts) {
         for (final chapter in act.chapters) {
-            final chapterKeyString = 'chapter_${act.id}_${chapter.id}';
-            final globalKey = widget.sceneKeys[chapterKeyString];
+            // Use _chapterKeys map to get the GlobalKey for the chapter
+            final globalKey = _chapterKeys[chapter.id]; 
             if (globalKey?.currentContext != null) {
                 final renderBox = globalKey!.currentContext!.findRenderObject() as RenderBox?;
                 if (renderBox != null && renderBox.hasSize) {
                     try {
-                      // 计算相对于Scrollable视口的位置
-                      final position = renderBox.localToGlobal(Offset.zero, ancestor: scrollableRenderObject);
+                      final position = renderBox.localToGlobal(Offset.zero, ancestor: scrollRenderObject);
                       final size = renderBox.size;
                       _chapterLayouts[chapter.id] = Rect.fromLTWH(position.dx, position.dy, size.width, size.height);
                     } catch (e) {
@@ -289,7 +274,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
             }
         }
     }
-    _novelStructureChanged = false; // Reset flag after calculation
+    _novelStructureChanged = false; 
     AppLogger.d('EditorMainArea', 'Chapter layouts updated: ${_chapterLayouts.length} entries found.');
   }
   
@@ -513,6 +498,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
     AppLogger.i('EditorMainArea', '当前卷状态：isFirstAct=$isFirstAct, isLastAct=$isLastAct, hasReachedStart=$hasReachedStart, hasReachedEnd=$hasReachedEnd');
     
     return CustomScrollView(
+      key: _scrollViewKey, // Assign the key to CustomScrollView
       controller: widget.scrollController,
       physics: const AlwaysScrollableScrollPhysics(
         parent: BouncingScrollPhysics(),
@@ -751,11 +737,10 @@ class EditorMainAreaState extends State<EditorMainArea> {
       loadedChaptersCount: loadedChaptersCount, 
       chapters: [
         ...act.chapters.map((chapter) {
-          final chapterKeyString = 'chapter_${act.id}_${chapter.id}';
-          if (!widget.sceneKeys.containsKey(chapterKeyString)) {
-            widget.sceneKeys[chapterKeyString] = GlobalKey();
-          }
-          
+          // Ensure GlobalKey for chapter is created and stored in _chapterKeys
+          _chapterKeys.putIfAbsent(chapter.id, () => GlobalKey());
+          final chapterKeyForSection = _chapterKeys[chapter.id]!;
+
           final chapterIndex = act.chapters.indexOf(chapter) + 1;
 
           // isParentVisuallyNearby 的判断基于 visibleItems (由 _updateVisibleItemsBasedOnCache 更新)
@@ -764,8 +749,47 @@ class EditorMainAreaState extends State<EditorMainArea> {
               chapter.id == widget.activeChapterId || // BLoC 活动章节
               chapter.id == _focusChapterId; // 本地计算的焦点章节
 
+          // If this chapter is pending scroll, trigger scroll after build
+          if (chapter.id == _pendingScrollToChapterId) {
+            AppLogger.i('EditorMainArea', 'Target chapter $_pendingScrollToChapterId is being built, scheduling scroll.');
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _pendingScrollToChapterId != null) {
+                final keyToScroll = _chapterKeys[_pendingScrollToChapterId!];
+                if (keyToScroll != null && keyToScroll.currentContext != null) {
+                   Scrollable.ensureVisible(
+                    keyToScroll.currentContext!,
+                    alignment: 0.1, 
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeInOut,
+                  );
+                  AppLogger.i('EditorMainArea', 'Successfully scrolled to pending chapter: $_pendingScrollToChapterId');
+                  if (mounted) {
+                     setState(() {
+                      _pendingScrollToChapterId = null; 
+                    });
+                  }
+                } else {
+                  AppLogger.w('EditorMainArea', 'Key for pending chapter $_pendingScrollToChapterId became null before scroll could execute.');
+                   if (mounted) {
+                     setState(() {
+                      _pendingScrollToChapterId = null; 
+                    });
+                  }
+                }
+              } else if (mounted && _pendingScrollToChapterId != null) {
+                AppLogger.w('EditorMainArea', 'Component unmounted or pending ID cleared before scroll for $_pendingScrollToChapterId.');
+                 if (mounted) {
+                     setState(() {
+                      _pendingScrollToChapterId = null; 
+                    });
+                  }
+              }
+            });
+          }
+
           return ChapterSection(
-            key: widget.sceneKeys[chapterKeyString], // Chapter的Key
+            // Use the created/retrieved GlobalKey for the ChapterSection
+            chapterKey: chapterKeyForSection, 
             title: chapter.title,
             chapterId: chapter.id,
             actId: act.id,
@@ -787,7 +811,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
                   isActive: scene.id == widget.activeSceneId && chapter.id == widget.activeChapterId && act.id == widget.activeActId,
                   sceneControllers: widget.sceneControllers,
                   sceneSummaryControllers: widget.sceneSummaryControllers,
-                  sceneKeys: widget.sceneKeys, // 传递 sceneKeys 给 VSL
+                  sceneKeys: widget.sceneKeys, 
                   editorBloc: widget.editorBloc,
                   parseDocumentSafely: DocumentParser.parseDocumentSafely,
                   sceneIndex: index + 1,
@@ -1029,7 +1053,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
     if (offset <= minScroll + dynamicPreloadDistance && !state.hasReachedStart) {
         // 进一步确认是否真的是内容的开始
         final firstChapterId = widget.novel.acts.firstOrNull?.chapters.firstOrNull?.id;
-        if (_focusChapterId == firstChapterId || _chapterLayouts.keys.first == _focusChapterId) { // 粗略判断
+        if (_focusChapterId == firstChapterId || (_chapterLayouts.isNotEmpty && _chapterLayouts.keys.first == _focusChapterId) ) { // 粗略判断
              AppLogger.i('EditorMainArea', 'Near top & focus on first chapter, setting hasReachedStart=true');
              widget.editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedStart: true));
         }
@@ -1038,7 +1062,7 @@ class EditorMainAreaState extends State<EditorMainArea> {
     // 检查是否滚动到非常接近底部
     if (offset >= maxScroll - dynamicPreloadDistance && !state.hasReachedEnd) {
         final lastChapterId = widget.novel.acts.lastOrNull?.chapters.lastOrNull?.id;
-         if (_focusChapterId == lastChapterId || _chapterLayouts.keys.last == _focusChapterId) { // 粗略判断
+         if (_focusChapterId == lastChapterId || (_chapterLayouts.isNotEmpty && _chapterLayouts.keys.last == _focusChapterId) ) { // 粗略判断
             AppLogger.i('EditorMainArea', 'Near bottom & focus on last chapter, setting hasReachedEnd=true');
             widget.editorBloc.add(const editor_bloc.SetActLoadingFlags(hasReachedEnd: true));
         }
@@ -1127,5 +1151,41 @@ class EditorMainAreaState extends State<EditorMainArea> {
             AppLogger.w('EditorMainArea', 'Cannot scroll to chapter $chapterId: layout not found or no scroll client.');
         }
     });
+  }
+
+  // 新增方法：滚动到指定章节
+  void scrollToChapter(String chapterId, {bool initialScroll = false}) {
+    AppLogger.i('EditorMainArea', 'Attempting to scroll to chapter: $chapterId (Initial: $initialScroll)');
+    final chapterKey = _chapterKeys[chapterId];
+
+    if (chapterKey != null && chapterKey.currentContext != null) {
+      // Chapter is already built and context is available
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && chapterKey.currentContext != null) {
+          Scrollable.ensureVisible(
+            chapterKey.currentContext!,
+            alignment: 0.1, 
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeInOut,
+          );
+          AppLogger.i('EditorMainArea', 'Scrolled to chapter (already built): $chapterId');
+        }
+      });
+    } else {
+      // Chapter not yet built or key context is null
+      AppLogger.w('EditorMainArea', 'Scroll target chapter $chapterId not immediately available. Setting as pending.');
+      AppLogger.d('EditorMainArea', 'Details - Key exists: ${_chapterKeys.containsKey(chapterId)}, Context: ${chapterKey?.currentContext}');
+      
+      // Set as pending and trigger a state change to ensure build process runs
+      if (mounted) {
+        setState(() {
+          _pendingScrollToChapterId = chapterId;
+          // Ensure the list rebuilds, potentially including the target chapter
+          // This might involve jumping/scrolling approximately if the list is very long
+          // For now, with full load, just rebuilding should be okay if the item is far.
+        });
+      }
+      // The actual scroll will happen in _buildActAndChapterItems when the item is built.
+    }
   }
 }

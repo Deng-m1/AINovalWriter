@@ -1,10 +1,16 @@
+import 'dart:async';
 import 'package:ainoval/models/editor_content.dart';
+import 'package:ainoval/models/editor_settings.dart';
 import 'package:ainoval/models/novel_structure.dart';
+import 'package:ainoval/services/local_storage_service.dart';
 
 /// 编辑器仓库接口
 ///
 /// 定义与编辑器相关的所有API操作
 abstract class EditorRepository {
+  /// 获取本地存储服务
+  LocalStorageService getLocalStorageService();
+
   /// 获取小说
   Future<Novel?> getNovel(String novelId);
 
@@ -120,7 +126,7 @@ abstract class EditorRepository {
   );
 
   /// 获取小说详情，包含场景摘要（适用于Plan视图）
-  Future<Novel?> getNovelWithSceneSummaries(String novelId);
+  Future<Novel?> getNovelWithSceneSummaries(String novelId, {bool readOnly = false});
 
   /// 提交自动续写任务
   /// 

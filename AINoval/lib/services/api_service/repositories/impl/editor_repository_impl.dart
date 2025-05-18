@@ -15,6 +15,8 @@ import 'package:ainoval/utils/quill_helper.dart';
 import 'package:flutter_client_sse/constants/sse_request_type_enum.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'package:ainoval/utils/event_bus.dart'; // Added EventBus import
+import 'package:collection/collection.dart'; // For lastOrNull
 
 /// 编辑器仓库实现
 class EditorRepositoryImpl implements EditorRepository {
@@ -40,6 +42,21 @@ class EditorRepositoryImpl implements EditorRepository {
   /// 获取API客户端
   ApiClient getApiClient() {
     return _apiClient;
+  }
+
+  // Helper method to publish novel structure update events
+  void _publishNovelStructureUpdate(String novelId, String updateType, {String? actId, String? chapterId, String? sceneId}) {
+    final Map<String, dynamic> eventData = {};
+    if (actId != null) eventData['actId'] = actId;
+    if (chapterId != null) eventData['chapterId'] = chapterId;
+    if (sceneId != null) eventData['sceneId'] = sceneId;
+
+    EventBus.instance.fire(NovelStructureUpdatedEvent(
+      novelId: novelId,
+      updateType: updateType,
+      data: eventData, // Pass data as a map
+    ));
+    AppLogger.i(_tag, 'Published NovelStructureUpdatedEvent: novelId=$novelId, type=$updateType, data=$eventData');
   }
 
   /// 获取编辑器内容
@@ -567,6 +584,7 @@ class EditorRepositoryImpl implements EditorRepository {
 
           await _apiClient.updateNovelWithScenes(novelWithScenesJson);
           AppLogger.i('EditorRepositoryImpl/saveNovel', '小说已同步到服务器: ${novel.id}');
+          _publishNovelStructureUpdate(novel.id, 'NOVEL_STRUCTURE_SAVED'); // Publish event
         }
 
         return true;
@@ -979,13 +997,15 @@ class EditorRepositoryImpl implements EditorRepository {
       
       if (response != null && response.containsKey('scene')) {
         final sceneJson = response['scene'];
-        return Scene.fromJson(sceneJson);
+        final newScene = Scene.fromJson(sceneJson);
+        _publishNovelStructureUpdate(novelId, 'SCENE_ADDED', chapterId: chapterId, sceneId: newScene.id); // Publish event
+        return newScene;
       }
       
       // 创建默认场景
       AppLogger.w('EditorRepository/addSceneFine', '无法从响应中提取场景，创建默认场景');
       final sceneId = "scene_${DateTime.now().millisecondsSinceEpoch}";
-      return Scene(
+      final defaultScene = Scene(
         id: sceneId,
         content: QuillHelper.standardEmptyDelta,
         wordCount: 0,
@@ -997,6 +1017,8 @@ class EditorRepositoryImpl implements EditorRepository {
         version: 1,
         history: [],
       );
+      _publishNovelStructureUpdate(novelId, 'SCENE_ADDED', chapterId: chapterId, sceneId: defaultScene.id); // Publish event, ensured chapterId is available
+      return defaultScene;
     } catch (e) {
       AppLogger.e('EditorRepository/addSceneFine', '添加场景失败', e);
       throw ApiException(-1, '添加场景失败: $e');
@@ -1017,12 +1039,14 @@ class EditorRepositoryImpl implements EditorRepository {
       
       if (response != null && response.containsKey('act')) {
         final actJson = response['act'];
-        return Act(
+        final newAct = Act(
           id: actJson['id'] ?? 'act_${DateTime.now().millisecondsSinceEpoch}',
           title: actJson['title'] ?? title,
           order: actJson['order'] ?? 0,
           chapters: [],
         );
+        // Event for ACT_ADDED will be published by addNewAct after fetching the full novel structure
+        return newAct;
       }
       
       // 如果API没有返回新的Act，创建一个本地Act
@@ -1054,12 +1078,14 @@ class EditorRepositoryImpl implements EditorRepository {
       
       if (response != null && response.containsKey('chapter')) {
         final chapterJson = response['chapter'];
-        return Chapter(
+        final newChapter = Chapter(
           id: chapterJson['id'] ?? 'chapter_${DateTime.now().millisecondsSinceEpoch}',
           title: chapterJson['title'] ?? title,
           order: chapterJson['order'] ?? 0,
           scenes: [],
         );
+        // Event for CHAPTER_ADDED will be published by addNewChapter after fetching the full novel structure
+        return newChapter;
       }
       
       // 如果API没有返回新的Chapter，创建一个本地Chapter
@@ -1087,6 +1113,7 @@ class EditorRepositoryImpl implements EditorRepository {
       };
 
       await _apiClient.post('/novels/update-act-title', data: requestData);
+      _publishNovelStructureUpdate(novelId, 'ACT_TITLE_UPDATED', actId: actId); // Publish event
       return true;
     } catch (e) {
       AppLogger.e('EditorRepository/updateActTitle', '更新Act标题失败', e);
@@ -1106,6 +1133,7 @@ class EditorRepositoryImpl implements EditorRepository {
       };
 
       await _apiClient.post('/novels/update-chapter-title', data: requestData);
+      _publishNovelStructureUpdate(novelId, 'CHAPTER_TITLE_UPDATED', actId: actId, chapterId: chapterId); // Publish event
       return true;
     } catch (e) {
       AppLogger.e('EditorRepository/updateChapterTitle', '更新Chapter标题失败', e);
@@ -1182,6 +1210,7 @@ class EditorRepositoryImpl implements EditorRepository {
       };
 
       await _apiClient.post('/novels/delete-scene', data: requestData);
+      _publishNovelStructureUpdate(novelId, 'SCENE_DELETED', actId: actId, chapterId: chapterId, sceneId: sceneId); // Publish event
       return true;
     } catch (e) {
       AppLogger.e('EditorRepository/deleteScene', '删除场景失败', e);
@@ -1200,6 +1229,7 @@ class EditorRepositoryImpl implements EditorRepository {
       };
 
       await _apiClient.post('/novels/delete-chapter-fine', data: requestData);
+      _publishNovelStructureUpdate(novelId, 'CHAPTER_DELETED', actId: actId, chapterId: chapterId); // Publish event
       return true;
     } catch (e) {
       AppLogger.e('EditorRepository/deleteChapterFine', '删除章节失败', e);
@@ -1217,6 +1247,7 @@ class EditorRepositoryImpl implements EditorRepository {
       };
       
       await _apiClient.post('/novels/act/delete', data: requestData);
+      _publishNovelStructureUpdate(novelId, 'ACT_DELETED', actId: actId); // Publish event
       return true;
     } catch (e) {
       AppLogger.e('EditorRepository/deleteActFine', '删除卷失败', e);
@@ -1475,6 +1506,7 @@ class EditorRepositoryImpl implements EditorRepository {
       };
       
       await _apiClient.post('/novels/${novel.id}/update-structure', data: structureJson);
+      _publishNovelStructureUpdate(novel.id, 'NOVEL_STRUCTURE_BULK_UPDATED'); // Publish event
       return true;
     } catch (e) {
       AppLogger.e('EditorRepository/updateNovelStructure', '更新小说结构失败', e);
@@ -1488,7 +1520,7 @@ class EditorRepositoryImpl implements EditorRepository {
       AppLogger.i('EditorRepositoryImpl/addNewAct', '开始添加新Act: novelId=$novelId, title=$title');
       
       // 调用细粒度API创建新Act（这只会更新结构，不会返回整个小说）
-      await addActFine(novelId, title); 
+      final newAct = await addActFine(novelId, title); 
       AppLogger.i('EditorRepositoryImpl/addNewAct', '细粒度创建新Act调用完成');
       
       // 清除本地缓存，强制从API获取最新数据
@@ -1505,6 +1537,10 @@ class EditorRepositoryImpl implements EditorRepository {
         }
         
         AppLogger.i('EditorRepositoryImpl/addNewAct', '成功获取并保存更新后的小说数据，Acts数量: ${updatedNovel.acts.length}');
+        // Find the newly added act's ID, assuming it's the one with the matching title and likely last.
+        // A more robust way would be if addActFine returned the full new Act object with ID.
+        // For now, we'll use the ID from the `newAct` object returned by `addActFine`.
+        _publishNovelStructureUpdate(novelId, 'ACT_ADDED', actId: newAct.id); // Publish event
         
         return updatedNovel;
       } catch (e) {
@@ -1523,7 +1559,7 @@ class EditorRepositoryImpl implements EditorRepository {
       AppLogger.i('EditorRepositoryImpl/addNewChapter', '开始添加新Chapter: novelId=$novelId, actId=$actId, title=$title');
       
       // 调用细粒度API创建新Chapter
-      await addChapterFine(novelId, actId, title); 
+      final newChapter = await addChapterFine(novelId, actId, title); 
       AppLogger.i('EditorRepositoryImpl/addNewChapter', '细粒度创建新Chapter调用完成');
       
       // 清除本地缓存，强制从API获取最新数据
@@ -1540,6 +1576,8 @@ class EditorRepositoryImpl implements EditorRepository {
         }
         
         AppLogger.i('EditorRepositoryImpl/addNewChapter', '成功获取并保存更新后的小说数据');
+        // Similar to addNewAct, use the ID from newChapter.
+        _publishNovelStructureUpdate(novelId, 'CHAPTER_ADDED', actId: actId, chapterId: newChapter.id); // Publish event
         
         return updatedNovel;
       } catch (e) {
@@ -1592,7 +1630,9 @@ class EditorRepositoryImpl implements EditorRepository {
       
       if (response != null) {
         // 返回的应该是更新后的小说结构
-        return _convertBackendNovelWithScenesToFrontend(response);
+        final updatedNovel = _convertBackendNovelWithScenesToFrontend(response);
+        _publishNovelStructureUpdate(novelId, 'SCENE_MOVED_OR_STRUCTURE_CHANGED', actId: targetActId, chapterId: targetChapterId, sceneId: sourceSceneId ); // Publish event
+        return updatedNovel;
       }
       
       return null;
@@ -1791,9 +1831,9 @@ class EditorRepositoryImpl implements EditorRepository {
 
   /// 获取小说（带场景摘要）
   @override
-  Future<Novel?> getNovelWithSceneSummaries(String novelId) async {
+  Future<Novel?> getNovelWithSceneSummaries(String novelId, {bool readOnly = false}) async {
     try {
-      AppLogger.i('EditorRepository/getNovelWithSceneSummaries', '正在获取带场景摘要的小说结构: $novelId');
+      AppLogger.i('EditorRepository/getNovelWithSceneSummaries', '正在获取带场景摘要的小说结构: $novelId, readOnly: $readOnly');
       
       // 调用API获取带场景摘要的小说数据
       final data = await _apiClient.post('/novels/get-with-scene-summaries', data: {'id': novelId});
@@ -1876,8 +1916,10 @@ class EditorRepositoryImpl implements EditorRepository {
           AppLogger.i('EditorRepository/getNovelWithSceneSummaries', 
               '成功获取小说结构和场景摘要，共有${novelWithSummaries.novel.acts.length}个卷，${novelWithSummaries.sceneSummariesByChapter.length}个章节包含摘要');
               
-          // 缓存处理后的小说模型到本地存储
-          await _localStorageService.saveNovel(novelWithMergedSummaries);
+          // 缓存处理后的小说模型到本地存储 - 仅当不是只读时
+          if (!readOnly) {
+            await _localStorageService.saveNovel(novelWithMergedSummaries);
+          }
           
           return novelWithMergedSummaries;
         } catch (e) {
@@ -1888,27 +1930,29 @@ class EditorRepositoryImpl implements EditorRepository {
             AppLogger.i('EditorRepository/getNovelWithSceneSummaries', '尝试使用后备转换方法');
             final novel = _convertBackendNovelWithScenesToFrontend(data);
             
-            // 保存到本地存储
-            await _localStorageService.saveNovel(novel);
+            // 保存到本地存储 - 仅当不是只读时
+            if (!readOnly) {
+              await _localStorageService.saveNovel(novel);
+            }
             
             return novel;
           } catch (backupError) {
             AppLogger.e('EditorRepository/getNovelWithSceneSummaries', '后备转换方法也失败', backupError);
             // 如果后备方法也失败，尝试从本地获取
             AppLogger.i('EditorRepository/getNovelWithSceneSummaries', '尝试从本地存储获取小说数据');
-            return await getNovel(novelId);
+            return await getNovel(novelId); // getNovel might also save, consider its readOnly needs
           }
         }
       }
       
       AppLogger.w('EditorRepository/getNovelWithSceneSummaries', '服务器返回空数据');
       // 从本地存储获取
-      return await getNovel(novelId);
+      return await getNovel(novelId); // getNovel might also save
     } catch (e) {
       AppLogger.e('EditorRepository/getNovelWithSceneSummaries', '获取小说带摘要失败', e);
       // 尝试从本地获取
       AppLogger.i('EditorRepository/getNovelWithSceneSummaries', '尝试从本地存储获取小说数据');
-      return await getNovel(novelId);
+      return await getNovel(novelId); // getNovel might also save
     }
   }
 
@@ -1926,7 +1970,17 @@ class EditorRepositoryImpl implements EditorRepository {
       
       if (response != null) {
         // 返回的应该是更新后的小说结构
-        return _convertBackendNovelWithScenesToFrontend(response);
+        final updatedNovel = _convertBackendNovelWithScenesToFrontend(response);
+        // Attempt to find the newly added scene's ID. This is heuristic.
+        Scene? newSceneInstance;
+        final targetChapterInUpdatedNovel = updatedNovel.acts
+            .firstWhereOrNull((a) => a.id == actId)
+            ?.chapters.firstWhereOrNull((c) => c.id == chapterId);
+        if (targetChapterInUpdatedNovel != null && targetChapterInUpdatedNovel.scenes.isNotEmpty) {
+            newSceneInstance = targetChapterInUpdatedNovel.scenes.last; // Assuming last scene is the new one
+        }
+        _publishNovelStructureUpdate(novelId, 'SCENE_ADDED', actId: actId, chapterId: chapterId, sceneId: newSceneInstance?.id); // Publish event
+        return updatedNovel;
       }
       
       return null;
@@ -1944,10 +1998,12 @@ class EditorRepositoryImpl implements EditorRepository {
       if (changedComponents == null || changedComponents.isEmpty) {
         final backendNovelJson = _convertFrontendNovelToBackendJson(novel);
         await _apiClient.updateNovel(backendNovelJson);
+        _publishNovelStructureUpdate(novel.id, 'NOVEL_SMART_SYNCED_FULL'); // Publish event
         return true;
       }
       
       // 根据变更组件选择性同步
+      bool structurePotentiallyChanged = false;
       if (changedComponents.contains('metadata')) {
         // 仅同步元数据
         final metadataJson = {
@@ -1983,6 +2039,11 @@ class EditorRepositoryImpl implements EditorRepository {
           },
         };
         await _apiClient.post('/novels/${novel.id}/update-structure', data: structureJson);
+        structurePotentiallyChanged = true;
+      }
+
+      if (structurePotentiallyChanged) {
+         _publishNovelStructureUpdate(novel.id, 'NOVEL_SMART_SYNCED_PARTIAL'); // Publish event
       }
       
       return true;

@@ -1349,26 +1349,15 @@ class EditorScreenController extends ChangeNotifier {
   // 添加小说结构更新事件监听
   void _setupNovelStructureListener() {
     _novelStructureSubscription = EventBus.instance.on<NovelStructureUpdatedEvent>().listen((event) {
-      // 只处理当前正在编辑的小说
-      if (novel.id != null && event.novelId == novel.id) {
-        AppLogger.i('EditorScreenController', '收到小说结构更新事件: ${event.updateType}');
-        
-        // 根据不同类型的更新进行处理
-        switch (event.updateType) {
-          case 'outline_saved':
-            _handleOutlineSaved(event.data);
-            break;
-          default:
-            // 默认情况下刷新整个小说结构
-            refreshNovelStructure();
-            break;
-        }
+      if (event.novelId == novel.id) {
+        AppLogger.i('EditorScreenController', '收到小说结构更新事件: ${event.updateType}. 此事件现在主要由Sidebar处理，EditorScreenController不再因此刷新主编辑区。');
+        // _refreshNovelStructure(); // 注释掉此行，防止主编辑区刷新
       }
     });
   }
   
   // 刷新小说结构
-  void refreshNovelStructure() {
+  Future<void> _refreshNovelStructure() async {
     AppLogger.i('EditorScreenController', '刷新小说结构');
     
     // 获取当前焦点章节ID

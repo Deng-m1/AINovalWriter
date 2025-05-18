@@ -23,7 +23,7 @@ class SidebarBloc extends Bloc<SidebarEvent, SidebarState> {
       AppLogger.i('SidebarBloc', '开始加载小说结构和场景摘要: ${event.novelId}');
       
       // 使用专门的API获取包含场景摘要的小说结构
-      final novelWithSummaries = await _editorRepository.getNovelWithSceneSummaries(event.novelId);
+      final novelWithSummaries = await _editorRepository.getNovelWithSceneSummaries(event.novelId, readOnly: true);
       
       if (novelWithSummaries != null) {
         AppLogger.i('SidebarBloc', '成功加载小说结构和场景摘要');
