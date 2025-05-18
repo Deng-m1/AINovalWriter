@@ -10,16 +10,16 @@ import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
 /**
  * 小说设定条目实体
  * 用于存储小说的设定信息，如世界观、人物、地点、物品、纪年史等
  */
 @Data
-@Builder
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "novel_setting_items")
@@ -63,13 +63,13 @@ public class NovelSettingItem {
     // 设定条目优先级 (1-10，用于控制在相关性相似时的排序)
     private Integer priority;
     
-    // 生成方式 (manual, ai_generated, imported)
+    // 生成方式 (manual, ai_generated, imported, AI_SETTING_GENERATION)
     private String generatedBy;
     
     // 设定条目标签
     private List<String> tags;
     
-    // 设定条目状态 (active, inactive, draft, suggested)
+    // 设定条目状态 (active, inactive, draft, SUGGESTED)
     private String status;
     
     // 设定向量数据 (存储嵌入后的向量，用于相似性搜索)
@@ -92,7 +92,7 @@ public class NovelSettingItem {
      * 描述设定条目之间的关系
      */
     @Data
-    @Builder
+    @lombok.Builder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class SettingRelationship {

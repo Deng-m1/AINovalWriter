@@ -1,6 +1,7 @@
 import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:collection/collection.dart'; // For firstWhereOrNull
 
 /// 编辑器布局管理器
 /// 负责管理编辑器的布局和尺寸
@@ -17,13 +18,15 @@ class EditorLayoutManager extends ChangeNotifier {
   bool isAISummaryPanelVisible = false;
   bool isAISceneGenerationPanelVisible = false;
   bool isAIContinueWritingPanelVisible = false;
+  bool isAISettingGenerationPanelVisible = false;
   
   // 多面板显示时的顺序和位置
   final List<String> visiblePanels = [];
-  static const String aiChatPanel = 'aiChat';
-  static const String aiSummaryPanel = 'aiSummary';
-  static const String aiScenePanel = 'aiScene';
-  static const String aiContinueWritingPanel = 'aiContinueWriting';
+  static const String aiChatPanel = 'aiChatPanel';
+  static const String aiSummaryPanel = 'aiSummaryPanel';
+  static const String aiScenePanel = 'aiScenePanel';
+  static const String aiContinueWritingPanel = 'aiContinueWritingPanel';
+  static const String aiSettingGenerationPanel = 'aiSettingGenerationPanel';
 
   // 侧边栏宽度
   double editorSidebarWidth = 280;
@@ -35,6 +38,7 @@ class EditorLayoutManager extends ChangeNotifier {
     aiSummaryPanel: 350,
     aiScenePanel: 350,
     aiContinueWritingPanel: 350,
+    aiSettingGenerationPanel: 350,
   };
 
   // 侧边栏宽度限制
@@ -115,6 +119,9 @@ class EditorLayoutManager extends ChangeNotifier {
           if (savedWidthsList.length > 3) {
             panelWidths[aiContinueWritingPanel] = double.tryParse(savedWidthsList.elementAtOrNull(3) ?? panelWidths[aiContinueWritingPanel].toString())!.clamp(minPanelWidth, maxPanelWidth);
           }
+          if (savedWidthsList.length > 4) {
+            panelWidths[aiSettingGenerationPanel] = double.tryParse(savedWidthsList.elementAtOrNull(4) ?? panelWidths[aiSettingGenerationPanel].toString())!.clamp(minPanelWidth, maxPanelWidth);
+          }
         }
       }
     } catch (e) {
@@ -136,6 +143,7 @@ class EditorLayoutManager extends ChangeNotifier {
         isAISummaryPanelVisible = visiblePanels.contains(aiSummaryPanel);
         isAISceneGenerationPanelVisible = visiblePanels.contains(aiScenePanel);
         isAIContinueWritingPanelVisible = visiblePanels.contains(aiContinueWritingPanel);
+        isAISettingGenerationPanelVisible = visiblePanels.contains(aiSettingGenerationPanel);
       }
     } catch (e) {
       AppLogger.e('EditorLayoutManager', '加载可见面板失败', e);
@@ -160,7 +168,8 @@ class EditorLayoutManager extends ChangeNotifier {
         panelWidths[aiChatPanel],
         panelWidths[aiSummaryPanel],
         panelWidths[aiScenePanel],
-        panelWidths[aiContinueWritingPanel]
+        panelWidths[aiContinueWritingPanel],
+        panelWidths[aiSettingGenerationPanel]
       ].join(',');
       await prefs.setString(panelWidthsPrefKey, widthsString);
     } catch (e) {
@@ -303,6 +312,12 @@ class EditorLayoutManager extends ChangeNotifier {
     }
     final item = visiblePanels.removeAt(oldIndex);
     visiblePanels.insert(newIndex, item);
+    saveVisiblePanels();
+    notifyListeners();
+  }
+
+  void toggleAISettingGenerationPanel() {
+    isAISettingGenerationPanelVisible = !isAISettingGenerationPanelVisible;
     saveVisiblePanels();
     notifyListeners();
   }

@@ -17,11 +17,15 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
     required this.onPlanPressed,
     required this.isPlanActive,
     this.onWritePressed, // 新增可选参数
-    this.onAIGenerationPressed,
+    this.onAIGenerationPressed, // For AI Scene Generation
     this.onAISummaryPressed,
-    this.onAutoContinueWritingPressed, // 新增自动续写回调
+    this.onAutoContinueWritingPressed, 
+    this.onAISettingGenerationPressed, // New: For AI Setting Generation
     this.onNextOutlinePressed,
-    this.isAIGenerationActive = false,
+    this.isAIGenerationActive = false, // This might now represent the dropdown itself or a specific item
+    this.isAISummaryActive = false, // New: For AI Summary panel active state
+    this.isAIContinueWritingActive = false, // New: For AI Continue Writing panel active state
+    this.isAISettingGenerationActive = false, // New: For AI Setting Generation panel active state
     this.isNextOutlineActive = false,
   });
   final String novelTitle;
@@ -36,11 +40,15 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
   final VoidCallback onPlanPressed;
   final bool isPlanActive;
   final VoidCallback? onWritePressed;
-  final VoidCallback? onAIGenerationPressed;
-  final VoidCallback? onAISummaryPressed;
-  final VoidCallback? onAutoContinueWritingPressed; // 新增自动续写回调
+  final VoidCallback? onAIGenerationPressed; // AI 生成场景
+  final VoidCallback? onAISummaryPressed;    // AI 生成摘要
+  final VoidCallback? onAutoContinueWritingPressed; // 自动续写
+  final VoidCallback? onAISettingGenerationPressed; // AI 生成设定 (New)
   final VoidCallback? onNextOutlinePressed;
-  final bool isAIGenerationActive;
+  final bool isAIGenerationActive; // AI 生成场景面板激活状态
+  final bool isAISummaryActive; // AI 生成摘要面板激活状态 (New)
+  final bool isAIContinueWritingActive; // AI 自动续写面板激活状态 (New)
+  final bool isAISettingGenerationActive; // AI 生成设定面板激活状态 (New)
   final bool isNextOutlineActive;
 
   @override
@@ -58,6 +66,13 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
 
     // 构建实际显示的字数文本
     final String wordCountText = '${wordCount.toString()} 字';
+    
+    // Determine if the main "AI生成" dropdown should appear active
+    // It can be active if any of its sub-panels are active
+    final bool isAnyAIPanelActive = isAIGenerationActive || 
+                                  isAISummaryActive || 
+                                  isAIContinueWritingActive || 
+                                  isAISettingGenerationActive;
 
     return AppBar(
       titleSpacing: 0,
@@ -101,12 +116,12 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
                 onPressed: onAiConfigPressed,
               ),
 
-              // AI生成按钮
+              // AI生成按钮 (Dropdown)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4.0),
                 child: PopupMenuButton<String>(
                   offset: const Offset(0, 40),
-                  tooltip: 'AI生成',
+                  tooltip: 'AI辅助', // Changed tooltip to be more general
                   onSelected: (value) {
                     if (value == 'scene') {
                       onAIGenerationPressed?.call();
@@ -114,54 +129,66 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
                       onAISummaryPressed?.call();
                     } else if (value == 'continue-writing') {
                       onAutoContinueWritingPressed?.call();
+                    } else if (value == 'setting-generation') { // New case
+                      onAISettingGenerationPressed?.call();
                     }
                   },
                   itemBuilder: (context) => [
-                    const PopupMenuItem<String>(
+                    PopupMenuItem<String>(
                       value: 'scene',
                       child: Row(
                         children: [
-                          Icon(Icons.auto_awesome),
-                          SizedBox(width: 8),
-                          Text('AI生成场景'),
+                          Icon(Icons.auto_awesome_outlined, color: isAIGenerationActive ? theme.colorScheme.primary : null),
+                          const SizedBox(width: 8),
+                          Text('AI生成场景', style: TextStyle(color: isAIGenerationActive ? theme.colorScheme.primary : null)),
                         ],
                       ),
                     ),
-                    const PopupMenuItem<String>(
+                    PopupMenuItem<String>(
                       value: 'summary',
                       child: Row(
                         children: [
-                          Icon(Icons.summarize),
-                          SizedBox(width: 8),
-                          Text('AI生成摘要'),
+                          Icon(Icons.summarize_outlined, color: isAISummaryActive ? theme.colorScheme.primary : null),
+                          const SizedBox(width: 8),
+                          Text('AI生成摘要', style: TextStyle(color: isAISummaryActive ? theme.colorScheme.primary : null)),
                         ],
                       ),
                     ),
-                    const PopupMenuItem<String>(
+                    PopupMenuItem<String>(
                       value: 'continue-writing',
                       child: Row(
                         children: [
-                          Icon(Icons.auto_stories),
-                          SizedBox(width: 8),
-                          Text('自动续写'),
+                          Icon(Icons.auto_stories_outlined, color: isAIContinueWritingActive ? theme.colorScheme.primary : null),
+                          const SizedBox(width: 8),
+                          Text('自动续写', style: TextStyle(color: isAIContinueWritingActive ? theme.colorScheme.primary : null)),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem<String>( // New Menu Item
+                      value: 'setting-generation',
+                      child: Row(
+                        children: [
+                          Icon(Icons.auto_fix_high_outlined, color: isAISettingGenerationActive ? theme.colorScheme.primary : null), // Example Icon
+                          const SizedBox(width: 8),
+                          Text('AI生成设定', style: TextStyle(color: isAISettingGenerationActive ? theme.colorScheme.primary : null)),
                         ],
                       ),
                     ),
                   ],
                   child: TextButton.icon(
                     icon: Icon(
-                      Icons.auto_awesome,
+                      Icons.psychology_alt_outlined, // Changed icon to be more general for AI tools
                       size: 20,
-                      color: isAIGenerationActive
+                      color: isAnyAIPanelActive // Use combined active state
                           ? theme.colorScheme.primary
                           : theme.colorScheme.onSurfaceVariant,
                     ),
                     label: Row(
                       children: [
                         Text(
-                          'AI生成',
+                          'AI辅助', // Changed label to be more general
                           style: TextStyle(
-                            color: isAIGenerationActive
+                            color: isAnyAIPanelActive
                                 ? theme.colorScheme.primary
                                 : theme.colorScheme.onSurfaceVariant,
                             fontSize: 14,
@@ -171,14 +198,14 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
                         Icon(
                           Icons.arrow_drop_down,
                           size: 16,
-                          color: isAIGenerationActive
+                          color: isAnyAIPanelActive
                               ? theme.colorScheme.primary
                               : theme.colorScheme.onSurfaceVariant,
                         ),
                       ],
                     ),
                     style: TextButton.styleFrom(
-                      backgroundColor: isAIGenerationActive
+                      backgroundColor: isAnyAIPanelActive
                           ? theme.colorScheme.primaryContainer.withAlpha(76)
                           : Colors.transparent,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -186,7 +213,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
                         borderRadius: BorderRadius.circular(6),
                       ),
                     ),
-                    onPressed: null, // 由 PopupMenuButton 处理点击事件
+                    onPressed: null, // Let PopupMenuButton handle tap
                   ),
                 ),
               ),
@@ -194,7 +221,7 @@ class EditorAppBar extends StatelessWidget implements PreferredSizeWidget { // �
               // 剧情推演按钮
               _buildNavButton(
                 context: context,
-                icon: Icons.psychology_outlined,
+                icon: Icons.device_hub_outlined, // Changed icon for better distinction
                 label: '剧情推演',
                 isActive: isNextOutlineActive,
                 onPressed: onNextOutlinePressed ?? () {},

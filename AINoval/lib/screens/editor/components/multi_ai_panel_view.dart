@@ -3,11 +3,11 @@ import 'package:ainoval/screens/chat/widgets/ai_chat_sidebar.dart';
 import 'package:ainoval/screens/editor/components/draggable_divider.dart';
 import 'package:ainoval/screens/editor/managers/editor_layout_manager.dart';
 import 'package:ainoval/screens/editor/widgets/ai_generation_panel.dart';
+import 'package:ainoval/screens/editor/widgets/ai_setting_generation_panel.dart';
 import 'package:ainoval/screens/editor/widgets/ai_summary_panel.dart';
 import 'package:ainoval/screens/editor/widgets/continue_writing_form.dart';
 import 'package:ainoval/services/api_service/repositories/prompt_repository.dart';
 import 'package:ainoval/services/api_service/repositories/user_ai_model_config_repository.dart';
-import 'package:ainoval/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -108,27 +108,27 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
 
   Widget _buildDragHandle(String panelId, int index) {
     final colorScheme = Theme.of(context).colorScheme;
-    final isLastPanel = widget.layoutManager.isLastPanel(panelId);
     
     // 面板类型标题映射
     final panelTitles = {
       EditorLayoutManager.aiChatPanel: 'AI聊天',
       EditorLayoutManager.aiSummaryPanel: 'AI摘要',
-      EditorLayoutManager.aiScenePanel: 'AI生成',
+      EditorLayoutManager.aiScenePanel: 'AI场景生成',
       EditorLayoutManager.aiContinueWritingPanel: '自动续写',
+      EditorLayoutManager.aiSettingGenerationPanel: 'AI生成设定',
     };
     
-    final panelTitle = panelTitles[panelId] ?? '未知面板';
+    final panelTitle = panelTitles[panelId] ?? '未知面板 (${panelId})';
     
     return GestureDetector(
       onPanStart: (details) {
-        // 开始拖动
+        // TODO: Implement panel reordering via drag handle if needed
       },
       onPanUpdate: (details) {
-        // 拖动更新位置
+        // TODO: Implement panel reordering via drag handle if needed
       },
       onPanEnd: (details) {
-        // 结束拖动，重新排序
+        // TODO: Implement panel reordering via drag handle if needed
       },
       child: Container(
         height: 24,
@@ -145,38 +145,46 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // 面板图标和标题
-            Row(
-              children: [
-                Icon(
-                  _getPanelIcon(panelId),
-                  size: 14,
-                  color: colorScheme.onSecondaryContainer,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  panelTitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
+            // Panel icon and title
+            Flexible(
+              child: Row(
+                children: [
+                  Icon(
+                    _getPanelIcon(panelId),
+                    size: 14,
                     color: colorScheme.onSecondaryContainer,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      panelTitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: colorScheme.onSecondaryContainer,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
             
-            // 拖动和关闭按钮
+            // Drag and close buttons
             Row(
               children: [
-                // 拖动手柄图标
+                // Drag handle icon (optional, if reordering is implemented)
                 if (widget.layoutManager.visiblePanels.length > 1)
-                  Icon(
-                    Icons.drag_handle,
-                    size: 14,
-                    color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                  Tooltip(
+                    message: '拖动调整顺序 (暂未实现)',
+                    child: Icon(
+                      Icons.drag_handle,
+                      size: 14,
+                      color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                    ),
                   ),
                   
-                // 关闭按钮
+                // Close button
                 MouseRegion(
                   cursor: SystemMouseCursors.click,
                   child: GestureDetector(
@@ -212,6 +220,8 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
         return Icons.auto_awesome_outlined;
       case EditorLayoutManager.aiContinueWritingPanel:
         return Icons.auto_stories_outlined;
+      case EditorLayoutManager.aiSettingGenerationPanel:
+        return Icons.auto_fix_high_outlined;
       default:
         return Icons.dashboard_outlined;
     }
@@ -232,6 +242,9 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
       case EditorLayoutManager.aiContinueWritingPanel:
         widget.layoutManager.toggleAIContinueWritingPanel();
         break;
+      case EditorLayoutManager.aiSettingGenerationPanel:
+        widget.layoutManager.toggleAISettingGenerationPanel();
+        break;
     }
   }
   
@@ -245,8 +258,10 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
         return _buildAISceneGenerationPanel();
       case EditorLayoutManager.aiContinueWritingPanel:
         return _buildAIContinueWritingPanel();
+      case EditorLayoutManager.aiSettingGenerationPanel:
+        return _buildAISettingGenerationPanel();
       default:
-        return const Center(child: Text('未知面板类型'));
+        return Center(child: Text('未知面板类型: $panelId'));
     }
   }
   
@@ -263,7 +278,6 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
   }
   
   Widget _buildAISummaryPanel() {
-    // 使用现有的PromptRepository Provider
     final promptRepository = context.read<PromptRepository>();
     
     return Padding(
@@ -282,7 +296,6 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
   }
   
   Widget _buildAISceneGenerationPanel() {
-    // 使用现有的PromptRepository Provider
     final promptRepository = context.read<PromptRepository>();
     
     return Padding(
@@ -320,6 +333,17 @@ class _MultiAIPanelViewState extends State<MultiAIPanelView> {
         userAiModelConfigRepository: widget.userAiModelConfigRepository,
         onCancel: widget.layoutManager.toggleAIContinueWritingPanel,
         onSubmit: widget.onContinueWritingSubmit,
+      ),
+    );
+  }
+
+  Widget _buildAISettingGenerationPanel() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24), // For drag handle
+      child: AISettingGenerationPanel(
+        novelId: widget.novelId,
+        onClose: widget.layoutManager.toggleAISettingGenerationPanel,
+        isCardMode: true,
       ),
     );
   }

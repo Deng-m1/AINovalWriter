@@ -12,6 +12,8 @@ import com.ainovel.server.web.dto.SummarizeSceneRequest;
 import com.ainovel.server.web.dto.SummarizeSceneResponse;
 import com.ainovel.server.web.dto.OutlineGenerationChunk;
 import com.ainovel.server.domain.model.NextOutline;
+import com.ainovel.server.domain.model.NovelSettingItem;
+import com.ainovel.server.web.dto.request.GenerateSettingsRequest;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -283,4 +285,6 @@ public interface NovelAIService {
      * @return AI模型提供商
      */
     Mono<AIModelProvider> getAIModelProviderByConfigId(String userId, String configId);
+
+    Mono<List<NovelSettingItem>> generateNovelSettings(String novelId, String userId, GenerateSettingsRequest request);
 }
