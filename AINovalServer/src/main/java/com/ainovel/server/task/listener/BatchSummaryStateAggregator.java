@@ -53,9 +53,9 @@ public class BatchSummaryStateAggregator {
         
         // 使用响应式方式处理
         taskStateService.getTask(taskId)
-            .switchIfEmpty(Mono.defer(() -> {
+            .switchIfEmpty(Mono.<BackgroundTask>defer(() -> {
                 log.warn("找不到任务: {}", taskId);
-                return Mono.empty();
+                return Mono.<BackgroundTask>empty();
             }))
             .filter(task -> task.getParentTaskId() != null && !task.getParentTaskId().isEmpty())
             .flatMap(task -> {
@@ -63,9 +63,9 @@ public class BatchSummaryStateAggregator {
                 log.debug("处理摘要生成子任务 {} 完成事件，父任务: {}", taskId, parentTaskId);
                 
                 return taskStateService.getTask(parentTaskId)
-                    .switchIfEmpty(Mono.defer(() -> {
+                    .switchIfEmpty(Mono.<BackgroundTask>defer(() -> {
                         log.warn("找不到父任务: {}", parentTaskId);
-                        return Mono.empty();
+                        return Mono.<BackgroundTask>empty();
                     }))
                     .filter(parentTask -> "BATCH_GENERATE_SUMMARY".equals(parentTask.getTaskType()))
                     .flatMap(parentTask -> {
@@ -108,9 +108,9 @@ public class BatchSummaryStateAggregator {
         
         // 使用响应式方式处理
         taskStateService.getTask(taskId)
-            .switchIfEmpty(Mono.defer(() -> {
+            .switchIfEmpty(Mono.<BackgroundTask>defer(() -> {
                 log.warn("找不到任务: {}", taskId);
-                return Mono.empty();
+                return Mono.<BackgroundTask>empty();
             }))
             .filter(task -> task.getParentTaskId() != null && !task.getParentTaskId().isEmpty())
             .flatMap(task -> {
@@ -140,9 +140,9 @@ public class BatchSummaryStateAggregator {
                 final String finalErrorMessage = errorMessage != null ? errorMessage : "未知错误";
                 
                 return taskStateService.getTask(parentTaskId)
-                    .switchIfEmpty(Mono.defer(() -> {
+                    .switchIfEmpty(Mono.<BackgroundTask>defer(() -> {
                         log.warn("找不到父任务: {}", parentTaskId);
-                        return Mono.empty();
+                        return Mono.<BackgroundTask>empty();
                     }))
                     .filter(parentTask -> "BATCH_GENERATE_SUMMARY".equals(parentTask.getTaskType()))
                     .flatMap(parentTask -> {

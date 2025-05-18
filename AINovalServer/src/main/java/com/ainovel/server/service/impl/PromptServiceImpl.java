@@ -40,6 +40,12 @@ public class PromptServiceImpl implements PromptService {
         DEFAULT_TEMPLATES.put("plot_generation", "请根据以下描述，为我的小说创建一个详细的情节：\n\n{{description}}\n\n请提供情节的起因、发展、高潮和结局，以及可能的转折点和悬念。");
         DEFAULT_TEMPLATES.put("setting_generation", "请根据以下描述，为我的小说创建一个详细的世界设定：\n\n{{description}}\n\n请提供这个世界的地理、历史、文化、社会结构、规则和特殊元素等信息。");
         DEFAULT_TEMPLATES.put("next_outlines_generation", "你是一位专业的小说创作顾问，擅长为作者提供多样化的剧情发展选项。请根据以下信息，为作者生成 {{numberOfOptions}} 个不同的剧情大纲选项，每个选项应该是对当前故事的合理延续。\n\n小说当前进展：{{context}}\n\n{{authorGuidance}}\n\n请为每个选项提供以下内容：\n1. 一个简短但吸引人的标题\n2. 剧情概要（200-300字）\n3. 主要事件（3-5个关键点）\n4. 涉及的角色\n5. 冲突或悬念\n\n格式要求：\n选项1：[标题]\n[剧情概要]\n主要事件：\n- [事件1]\n- [事件2]\n- [事件3]\n涉及角色：[角色列表]\n冲突/悬念：[冲突或悬念描述]\n\n选项2：[标题]\n...\n\n注意事项：\n- 每个选项应该有明显的差异，提供真正不同的故事发展方向\n- 保持与已有故事的连贯性和一致性\n- 考虑角色动机和故事内在逻辑\n- 提供有创意但合理的发展方向\n- 确保每个选项都有足够的戏剧冲突和情感张力");
+        
+        // 新增设定生成相关提示词模板
+        DEFAULT_TEMPLATES.put("setting_item_generation", "你是一个专业的小说设定分析专家。你的任务是从提供的文本中提取并生成小说设定项。" +
+            "每个对象必须代表一个不同的设定项，并且必须包含'name'（字符串）、'type'（字符串，必须是提供的有效类型之一）和'description'（字符串）。" +
+            "可选字段是'attributes'（Map<String, String>）和'tags'（List<String>）。" +
+            "确保输出是有效的JSON对象列表。如果找不到某种类型的设定，请不要包含它。");
     }
 
     @Autowired
@@ -61,6 +67,76 @@ public class PromptServiceImpl implements PromptService {
                     return savePromptTemplate(suggestionType, defaultTemplate)
                             .thenReturn(defaultTemplate);
                 }));
+    }
+    
+    /**
+     * 获取结构化的设定生成提示词，用于支持JSON Schema的模型
+     * 
+     * @param settingTypes 设定类型列表（逗号分隔）
+     * @param maxSettingsPerType 每种类型最大生成数量
+     * @param additionalInstructions 用户的额外指示
+     * @return 结构化的系统和用户提示词
+     */
+    @Override
+    public Mono<Map<String, String>> getStructuredSettingPrompt(String settingTypes, int maxSettingsPerType, String additionalInstructions) {
+        Map<String, String> prompts = new HashMap<>();
+        
+        // 系统提示词
+        prompts.put("system", "你是一个专业的小说设定分析专家。你的任务是从提供的文本中提取并生成小说设定项。" +
+            "每个对象必须代表一个不同的设定项，并且必须包含'name'（字符串）、'type'（字符串，必须是提供的有效类型之一）和'description'（字符串）。" +
+            "可选字段是'attributes'（Map<String, String>）和'tags'（List<String>）。" +
+            "确保输出是有效的JSON对象列表。如果找不到某种类型的设定，请不要包含它。");
+        
+        // 用户提示词模板
+        String userPromptTemplate = "小说上下文:{{contextText}}\n\n" +
+            "请求的设定类型: {{settingTypes}}\n" +
+            "为每种请求的类型从小说上下文中生成大约 {{maxSettingsPerType}} 个项目。\n" +
+            "用户的附加说明: {{additionalInstructions}}";
+        
+        // 填充用户提示词模板
+        String userPrompt = userPromptTemplate
+            .replace("{{settingTypes}}", settingTypes)
+            .replace("{{maxSettingsPerType}}", String.valueOf(maxSettingsPerType))
+            .replace("{{additionalInstructions}}", additionalInstructions == null ? "" : additionalInstructions);
+        
+        prompts.put("user", userPrompt);
+        
+        return Mono.just(prompts);
+    }
+    
+    /**
+     * 获取常规的设定生成提示词，用于不支持JSON Schema的模型
+     * 
+     * @param contextText 小说上下文文本
+     * @param settingTypes 设定类型列表（逗号分隔）
+     * @param maxSettingsPerType 每种类型最大生成数量
+     * @param additionalInstructions 用户的额外指示
+     * @return 完整的提示词
+     */
+    @Override
+    public Mono<String> getGeneralSettingPrompt(String contextText, String settingTypes, int maxSettingsPerType, String additionalInstructions) {
+        StringBuilder promptBuilder = new StringBuilder();
+        promptBuilder.append("你是一个专业的小说设定分析专家。请从以下小说内容中提取并生成小说设定项。\n\n");
+        promptBuilder.append("小说内容:\n").append(contextText).append("\n\n");
+        promptBuilder.append("请求的设定类型: ").append(settingTypes).append("\n");
+        promptBuilder.append("为每种请求的类型生成大约 ").append(maxSettingsPerType).append(" 个项目。\n");
+        
+        if (additionalInstructions != null && !additionalInstructions.isEmpty()) {
+            promptBuilder.append("附加说明: ").append(additionalInstructions).append("\n\n");
+        }
+        
+        promptBuilder.append("请以JSON数组格式返回结果。每个对象必须包含以下字段:\n");
+        promptBuilder.append("- name: 设定项名称 (字符串)\n");
+        promptBuilder.append("- type: 设定类型 (字符串，必须是请求的类型之一)\n");
+        promptBuilder.append("- description: 详细描述 (字符串)\n");
+        promptBuilder.append("可选字段:\n");
+        promptBuilder.append("- attributes: 属性映射 (键值对)\n");
+        promptBuilder.append("- tags: 标签列表 (字符串数组)\n\n");
+        promptBuilder.append("示例输出格式:\n");
+        promptBuilder.append("[{\"name\": \"魔法剑\", \"type\": \"ITEM\", \"description\": \"一把会发光的剑\", \"attributes\": {\"color\": \"blue\"}, \"tags\": [\"magic\", \"weapon\"]}]\n\n");
+        promptBuilder.append("确保输出是有效的JSON数组。你的输出必须是纯JSON格式，不需要任何额外的说明文字。");
+        
+        return Mono.just(promptBuilder.toString());
     }
 
     @Override

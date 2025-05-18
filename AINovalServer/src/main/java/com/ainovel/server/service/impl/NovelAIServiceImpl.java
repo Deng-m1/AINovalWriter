@@ -35,7 +35,6 @@ import com.ainovel.server.domain.model.Scene;
 import com.ainovel.server.domain.model.SettingType;
 import com.ainovel.server.domain.model.UserAIModelConfig;
 import com.ainovel.server.service.AIService;
-import com.ainovel.server.service.ChapterService; // Placeholder - Assume this service exists or will be created
 import com.ainovel.server.service.KnowledgeService;
 import com.ainovel.server.service.NovelAIService;
 import com.ainovel.server.service.NovelRagAssistant;
@@ -62,15 +61,22 @@ import dev.langchain4j.rag.content.Content;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.query.Query;
 import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.model.google.gemini.GoogleAiGeminiChatModel;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.V;
-
+import dev.langchain4j.model.output.Response;
+import dev.langchain4j.model.output.TokenUsage;
+import java.util.function.Function;
+import dev.langchain4j.data.message.AiMessage;
+import java.util.Optional;
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+
+// 添加策略相关导入
+import com.ainovel.server.service.ai.strategy.SettingGenerationStrategy;
+import com.ainovel.server.service.ai.strategy.SettingGenerationStrategyFactory;
 
 /**
  * 小说AI服务实现类 专门处理与小说创作相关的AI功能
@@ -85,10 +91,8 @@ public class NovelAIServiceImpl implements NovelAIService {
     private final PromptService promptService;
     private final UserService userService;
     private final SceneService sceneService;
-    private final StringEncryptor encryptor;
-    private final ChapterService chapterService; // Added
+    private final StringEncryptor encryptor; // Added
     private final ObjectMapper objectMapper; // Added
-
 
     // 缓存用户的AI模型提供商
     private final Map<String, Map<String, AIModelProvider>> userProviders = new ConcurrentHashMap<>();
@@ -117,7 +121,6 @@ public class NovelAIServiceImpl implements NovelAIService {
             UserService userService,
             SceneService sceneService,
             StringEncryptor encryptor,
-            ChapterService chapterService, // Added
             ObjectMapper objectMapper) { // Added
         this.aiService = aiService;
         this.knowledgeService = knowledgeService;
@@ -126,196 +129,124 @@ public class NovelAIServiceImpl implements NovelAIService {
         this.userService = userService;
         this.sceneService = sceneService;
         this.encryptor = encryptor;
-        this.chapterService = chapterService; // Added
         this.objectMapper = objectMapper; // Added
     }
 
-    // Interface for LangChain4j AiServices for setting extraction
-    interface InternalSettingExtractor {
-        @dev.langchain4j.service.SystemMessage(
-            "You are an expert novel setting analyst. Your task is to extract and generate novel setting items " +
-            "from the provided text. Output a JSON array of objects. Each object must represent a distinct setting item and " +
-            "MUST include \'name\' (String), \'type\' (String, must be one of the valid provided types), and \'description\' (String). " +
-            "Optional fields are \'attributes\' (Map<String, String>) and \'tags\' (List<String>). " +
-            "Ensure the output is a valid JSON array. If no settings are found for a type, do not include it. " +
-            "Example: [{\'name\': \'Magic Sword\', \'type\': \'ITEM\', \'description\': \'A sword that glows.\', \'attributes\': {\'color\': \'blue\'}, \'tags\': [\'magic\', \'weapon\']}]"
-        )
-        @dev.langchain4j.service.UserMessage(
-            "Novel Context:\\n{{contextText}}\\n\\n" +
-            "Requested Setting Types: {{settingTypes}}\\n" + // These are the valid types AI should use
-            "Generate approximately {{maxSettingsPerType}} items for each requested type from the Novel Context.\\n" +
-            "Additional Instructions from user: {{additionalInstructions}}"
-        )
-        List<AiGeneratedSettingData> extractSettings(
-            @V("contextText") String contextText,
-            @V("settingTypes") String settingTypes, // Pass as comma-separated string of VALID types
-            @V("maxSettingsPerType") int maxSettingsPerType,
-            @V("additionalInstructions") String additionalInstructions
-        );
-    }
-
-
+    /**
+     * 生成小说设定项
+     * 
+     * 设计模式：
+     * 1. 策略模式(Strategy Pattern) - 通过SettingGenerationStrategy接口定义不同的生成策略
+     *    - StructuredOutputStrategy: 针对支持结构化输出的模型特别优化
+     *    - PromptBasedStrategy: 通用提示词策略，适用于各种模型
+     * 
+     * 2. 工厂方法(Factory Method) - 使用SettingGenerationStrategyFactory根据模型类型动态选择策略
+     * 
+     * 3. 适配器模式(Adapter Pattern) - 将不同类型的AI模型接口适配为统一的处理流程
+     * 
+     * 高可用设计：
+     * - 完善的错误处理和回退机制，确保在各种异常情况下仍能给出合理响应
+     * - 使用Reactive编程保证异步操作的高效和资源利用
+     * - 策略降级：当首选策略失败时自动回退到备选策略
+     * 
+     * 高拓展性设计：
+     * - 可以轻松添加新的生成策略以支持更多模型类型
+     * - 解耦的设计使不同部分可以独立升级和修改
+     * - 统一的数据模型转换确保输出一致性
+     * 
+     * @param novelId 小说ID
+     * @param userId 用户ID
+     * @param requestParams 生成设定的请求参数，包含范围、类型和数量等
+     * @return 生成的小说设定项列表
+     */
     @Override
     public Mono<List<NovelSettingItem>> generateNovelSettings(String novelId, String userId, GenerateSettingsRequest requestParams) {
-        log.info("AI generating novel settings for novelId: {}, userId: {}, startChapter: {}, endChapter: {}, types: {}",
+        log.info("AI生成小说设定, novelId: {}, userId: {}, startChapter: {}, endChapter: {}, types: {}",
                 novelId, userId, requestParams.getStartChapterId(), requestParams.getEndChapterId(), requestParams.getSettingTypes());
 
-        // Validate setting types and convert to string for prompt
+        // 验证设定类型并转换为字符串用于提示词
         List<String> validRequestedEnumValues = requestParams.getSettingTypes().stream()
             .map(typeStr -> {
                 try {
-                    // Attempt to convert to enum to validate, then get its string value
+                    // 尝试转换为枚举来验证，然后获取其字符串值
                     return SettingType.fromValue(typeStr).getValue();
                 } catch (IllegalArgumentException e) {
-                    log.warn("Invalid setting type requested and ignored: {}", typeStr);
-                    return null; // Will be filtered out
+                    log.warn("无效的设定类型被忽略: {}", typeStr);
+                    return null; // 将被过滤掉
                 }
             })
             .filter(Objects::nonNull)
-            .distinct() // Ensure unique types
+            .distinct() // 确保类型唯一
             .collect(Collectors.toList());
 
         if (validRequestedEnumValues.isEmpty()) {
-            log.error("No valid setting types provided for novelId: {}. Original request: {}", novelId, requestParams.getSettingTypes());
-            return Mono.error(new IllegalArgumentException("No valid setting types provided. Please check the types."));
+            log.error("未提供有效的设定类型, novelId: {}. 原始请求: {}", novelId, requestParams.getSettingTypes());
+            return Mono.error(new IllegalArgumentException("未提供有效的设定类型，请检查类型值。"));
         }
-        
-        String settingTypesForPrompt = String.join(", ", validRequestedEnumValues);
 
-        // 1. Get User's Default Google AI Gemini Provider (or any validated Gemini)
+        // 1. 获取用户的模型配置（优先使用支持结构化输出的模型）
         Mono<AIModelProvider> providerMono = userAIModelConfigService.getValidatedDefaultConfiguration(userId)
-            .filter(config -> "GEMINI".equalsIgnoreCase(config.getProvider()))
+            .filter(config -> {
+                // 优先检查是否有Gemini模型，因为它支持结构化输出
+                boolean isGemini = "GEMINI".equalsIgnoreCase(config.getProvider());
+                if (isGemini) {
+                    log.debug("找到用户默认Gemini配置");
+                }
+                return isGemini;
+            })
             .switchIfEmpty(Mono.defer(() -> userAIModelConfigService.listConfigurations(userId)
-                    .filter(c -> "GEMINI".equalsIgnoreCase(c.getProvider()) && c.getIsValidated())
-                    .next()
+                .filter(c -> "GEMINI".equalsIgnoreCase(c.getProvider()) && c.getIsValidated())
+                .next()
+                .doOnNext(c -> log.debug("未找到默认Gemini配置，但找到了其他Gemini配置"))
             ))
-            .flatMap(config -> getOrCreateAIModelProvider(userId, config)) // getOrCreate handles null config from switchIfEmpty chain
-            .switchIfEmpty(Mono.error(new RuntimeException("User does not have a configured and validated Google AI Gemini provider.")));
+            .flatMap(config -> getOrCreateAIModelProvider(userId, config))
+            .switchIfEmpty(Mono.defer(() -> {
+                // 如果没有找到Gemini模型，尝试使用任何验证过的模型
+                log.debug("未找到Gemini配置，尝试使用任何已验证配置");
+                return userAIModelConfigService.getValidatedDefaultConfiguration(userId)
+                    .flatMap(config -> getOrCreateAIModelProvider(userId, config));
+            }))
+            .switchIfEmpty(Mono.error(new RuntimeException("用户没有已配置且验证的AI模型提供商。")));
 
-
-        // 2. Get Chapter Content
-        // Assuming chapterService.getConcatenatedChapterContentInRange exists and returns Mono<String>
-        Mono<String> chapterContextMono = chapterService.getConcatenatedChapterContentInRange(
+        // 2. 获取章节内容 - 确保即使没有内容也返回空字符串而不是Empty信号
+        Mono<String> chapterContextMono = novelService.getChapterRangeSummaries(
                 novelId, requestParams.getStartChapterId(), requestParams.getEndChapterId())
+                .switchIfEmpty(Mono.just("")) // 避免Empty信号导致后续zip操作失败
                 .subscribeOn(Schedulers.boundedElastic());
+        
+        // 3. 获取策略工厂 (使用Spring的依赖注入)
+        SettingGenerationStrategyFactory strategyFactory = new SettingGenerationStrategyFactory(promptService, objectMapper);
 
+        // 4. 结合模型提供商和章节内容，生成设定
         return Mono.zip(providerMono, chapterContextMono)
             .flatMap(tuple -> {
                 AIModelProvider aiModelProvider = tuple.getT1();
                 String chapterContext = tuple.getT2();
 
                 if (chapterContext == null || chapterContext.isEmpty()) {
-                    log.warn("No content found for novelId: {} in chapter range {} to {}. Returning empty list.", novelId,
+                    log.warn("在章节范围 {} 到 {} 中未找到内容，返回空列表", 
                             requestParams.getStartChapterId(), requestParams.getEndChapterId());
-                    return Mono.just(Collections.emptyList());
+                    return Mono.just(Collections.<NovelSettingItem>emptyList());
                 }
 
-                ChatLanguageModel chatModel = aiModelProvider.getChatLanguageModel();
-                if (chatModel == null || !(chatModel instanceof GoogleAiGeminiChatModel)) {
-                     log.error("The configured provider for user {} is not a GoogleAiGeminiChatModel or is null.", userId);
-                     return Mono.error(new RuntimeException("AI provider is not a Google Gemini model or is unavailable."));
-                }
+                // 使用策略工厂获取生成策略
+                SettingGenerationStrategy strategy = strategyFactory.createStrategy(aiModelProvider);
                 
-                // The AiServices interface expects a ChatLanguageModel. JSON mode is typically handled
-                // by Langchain4j if the return type is a POJO/List of POJOs, or by specific model builders.
-                // For Gemini, make sure the model used by AIModelProvider is capable of JSON output if specified.
-                // GoogleAiGeminiChatModel.builder().responseMimeType("application/json") might be needed if not default.
-
-                InternalSettingExtractor extractor = AiServices.builder(InternalSettingExtractor.class)
-                                                               .chatLanguageModel(chatModel)
-                                                               // Add .objectMapper(objectMapper) if complex types or custom deserialization needed
-                                                               .build();
-                try {
-                    log.debug("Calling AI with context (first 500 chars): {}", chapterContext.substring(0, Math.min(500, chapterContext.length())));
-                    log.debug("Requested types for prompt: {}, Max per type: {}, Instructions: {}",
-                        settingTypesForPrompt, requestParams.getMaxSettingsPerType(), requestParams.getAdditionalInstructions());
-
-                    List<AiGeneratedSettingData> generatedDataList = extractor.extractSettings(
-                        chapterContext,
-                        settingTypesForPrompt,
-                        requestParams.getMaxSettingsPerType(),
-                        requestParams.getAdditionalInstructions() == null ? "" : requestParams.getAdditionalInstructions()
-                    );
-                    
-                    if (generatedDataList == null) { // AI might return null if it can't parse or has an issue
-                        log.warn("AI returned null list for settings generation, novelId: {}", novelId);
-                        generatedDataList = Collections.emptyList();
-                    }
-
-                    List<NovelSettingItem> novelSettingItems = generatedDataList.stream()
-                        .map(data -> convertToNovelSettingItem(data, novelId, userId, validRequestedEnumValues))
-                        .filter(Objects::nonNull)
-                        .collect(Collectors.toList());
-                    
-                    log.info("Successfully generated {} setting items for novelId: {}. Raw AI output count: {}", 
-                             novelSettingItems.size(), novelId, generatedDataList.size());
-                    return Mono.just(novelSettingItems);
-
-                } catch (Exception e) {
-                    log.error("Error calling AI service or parsing its response for novelId {}: {}", novelId, e.getMessage(), e);
-                    // It's possible the AI returns a non-JSON string or malformed JSON.
-                    // Langchain4j might throw an exception in such cases.
-                    return Mono.error(new RuntimeException("AI setting generation failed due to AI service error or response parsing: " + e.getMessage(), e));
-                }
+                // 使用策略生成设定
+                return strategy.generateSettings(
+                    novelId, 
+                    userId, 
+                    chapterContext,
+                    validRequestedEnumValues,
+                    requestParams.getMaxSettingsPerType(),
+                    requestParams.getAdditionalInstructions(),
+                    aiModelProvider
+                );
             })
             .onErrorResume(e -> {
-                log.error("Critical error in generateNovelSettings pipeline for novelId {}: {}", novelId, e.getMessage(), e);
-                // Ensure a clear error is propagated upwards.
-                return Mono.error(new RuntimeException("Failed to generate novel settings: " + e.getMessage(), e));
+                log.error("生成设定过程中出现严重错误, novelId {}: {}", novelId, e.getMessage(), e);
+                return Mono.error(new RuntimeException("生成小说设定失败: " + e.getMessage(), e));
             });
-    }
-
-    private NovelSettingItem convertToNovelSettingItem(AiGeneratedSettingData data, String novelId, String userId, List<String> validRequestedTypes) {
-        if (data.getName() == null || data.getName().trim().isEmpty() ||
-            data.getType() == null || data.getType().trim().isEmpty() ||
-            data.getDescription() == null || data.getDescription().trim().isEmpty()) {
-            log.warn("AI generated setting data is missing required fields (name, type, or description): {}. Skipping this item.", data);
-            return null; 
-        }
-
-        SettingType settingTypeEnum;
-        String aiType = data.getType().trim().toUpperCase(); // Normalize AI output
-
-        // Validate if the type returned by AI is one of the originally requested valid types
-        if (!validRequestedTypes.contains(aiType)) {
-            log.warn("AI generated a type '{}' which was not in the valid requested types list ({}) or is an invalid enum value. Attempting to map or defaulting to OTHER. Original data: {}",
-                      aiType, validRequestedTypes, data);
-            // Attempt to map to a valid enum anyway, or default to OTHER
-             try {
-                settingTypeEnum = SettingType.fromValue(aiType); // This will map to OTHER if truly unknown by enum
-            } catch (IllegalArgumentException e) {
-                log.warn("Strict enum conversion failed for AI type '{}'. Defaulting to OTHER.", aiType);
-                settingTypeEnum = SettingType.OTHER;
-            }
-        } else {
-            // Type is valid and was requested
-            settingTypeEnum = SettingType.fromValue(aiType);
-        }
-        
-        Map<String, String> attributes = data.getAttributes() != null ? data.getAttributes() : Collections.emptyMap();
-        List<String> tags = data.getTags() != null ? data.getTags() : Collections.emptyList();
-
-        return NovelSettingItem.builder()
-                .id(UUID.randomUUID().toString())
-                .novelId(novelId)
-                .userId(userId)
-                .name(data.getName().trim())
-                .type(settingTypeEnum.getValue()) 
-                .description(data.getDescription().trim())
-                .attributes(attributes)
-                .tags(tags)
-                .priority(3) 
-                .generatedBy("AI_SETTING_GENERATION")
-                .status("SUGGESTED")
-                .isAiSuggestion(true)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .relationships(Collections.emptyList())
-                .sceneIds(Collections.emptyList())
-                .imageUrl(null)
-                .vector(null)
-                .metadata(Collections.emptyMap())
-                .build();
     }
 
     @Override

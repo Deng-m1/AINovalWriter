@@ -1,12 +1,10 @@
 {
-    "java.debug.settings.onBuildFailureProceed": true,
-    "java.compile.nullAnalysis.mode": "automatic",
     "editor.lineHeight": 15,
     "editor.stickyScroll.enabled": true,
     "http.proxy": "http://127.0.0.1:6888",
     "https.proxy": "http://127.0.0.1:6888",
-    "jdk.advanced.disable.nbjavac": false
-    "jdk.advanced.disable.nbjavac": false,
     "IDX.aI.enableInlineCompletion": true,
-    "IDX.aI.enableCodebaseIndexing": true
+    "IDX.aI.enableCodebaseIndexing": true,
+    "java.dependency.syncWithFolderExplorer": false,
+    "java.compile.nullAnalysis.mode": "automatic"
 }
