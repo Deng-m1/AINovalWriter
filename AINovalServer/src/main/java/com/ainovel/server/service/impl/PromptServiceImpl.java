@@ -17,6 +17,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+// Add AIFeatureType if not already imported, assuming it's in a common location
+import com.ainovel.server.domain.model.AIFeatureType;
+
 /**
  * 提示词服务实现类 负责管理各种类型的提示词模板
  */
@@ -60,6 +63,16 @@ public class PromptServiceImpl implements PromptService {
             "\n标题：[此处填写简洁且引人入胜的标题，点明本章核心内容]" +
             "\n剧情概要：[此处填写详细的本章剧情概要，描述主要情节脉络、发展和转折，预计300-500字]" +
             "\n\n请确保你的构思独特且合理，同时忠于已有的故事设定和角色塑造。");
+
+        // 新增: "根据摘要生成场景" 的系统提示词
+        DEFAULT_TEMPLATES.put(AIFeatureType.SUMMARY_TO_SCENE.name() + "_SYSTEM",
+                "你是一位富有创意的小说家。请根据用户提供的摘要、上下文信息和风格要求，生成详细的小说场景内容。" +
+                "你的任务是只输出生成的场景内容本身，不包含任何标题、小标题、格式标记（如Markdown）、或其他解释性文字。");
+
+        // 新增: "根据摘要生成场景" 的基础用户提示词模板
+        // UserPromptService 会优先查找用户自定义版本，如果找不到，则回退到这个基础版本
+        DEFAULT_TEMPLATES.put(AIFeatureType.SUMMARY_TO_SCENE.name(),
+                "摘要:\n{{summary}}\n\n相关上下文:\n{{context}}\n\n风格要求:\n{{styleInstructions}}");
     }
 
     @Autowired
@@ -264,5 +277,16 @@ public class PromptServiceImpl implements PromptService {
                 PromptTemplate.class,
                 String.class
         ).collectList();
+    }
+
+    @Override
+    public Mono<String> getSystemMessageForFeature(AIFeatureType featureType) {
+        String key = featureType.name() + "_SYSTEM";
+        log.info("获取特性 {} 的系统提示词，键: {}", featureType, key);
+        return getPromptTemplate(key)
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("特性 {} 没有找到特定的系统提示词 (键: {})，可能需要定义默认模板。", featureType, key);
+                    return Mono.empty(); // 或者返回一个非常通用的默认系统提示
+                }));
     }
 }

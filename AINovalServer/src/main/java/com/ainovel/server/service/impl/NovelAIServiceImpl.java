@@ -1492,6 +1492,20 @@ public class NovelAIServiceImpl implements NovelAIService {
     }
 
     /**
+     * 重载 buildFinalPrompt 以适应新的参数结构
+     */
+    private String buildFinalPrompt(String userPromptTemplate, String combinedContext, String summary, String styleInstructions) {
+        Map<String, String> variables = new HashMap<>();
+        // 确保即使是空字符串，也进行纯文本提取，以保持一致性
+        variables.put("summary", com.ainovel.server.common.util.PromptUtil.extractPlainTextFromRichText(summary != null ? summary : ""));
+        variables.put("context", com.ainovel.server.common.util.PromptUtil.extractPlainTextFromRichText(combinedContext != null ? combinedContext : ""));
+        variables.put("styleInstructions", styleInstructions != null ? styleInstructions : "");
+        
+        // 使用 PromptUtil 格式化模板 (formatPromptTemplate 内部会处理 template 的富文本)
+        return com.ainovel.server.common.util.PromptUtil.formatPromptTemplate(userPromptTemplate, variables);
+    }
+
+    /**
      * 根据摘要生成场景内容 (流式)
      *
      * @param userId 用户ID
@@ -1510,24 +1524,55 @@ public class NovelAIServiceImpl implements NovelAIService {
                         return Mono.error(new AccessDeniedException("用户无权访问该小说"));
                     }
 
-                    // 并行获取RAG上下文和用户Prompt模板
-                    Mono<String> contextMono = ragService.retrieveRelevantContext(
-                            novelId, request.getChapterId(), request.getSummary(), AIFeatureType.SUMMARY_TO_SCENE);
+                    // 并行获取RAG上下文、最后一个章节内容、系统提示和用户Prompt模板
+                    Mono<String> ragContextMono = ragService.retrieveRelevantContext(
+                            novelId, request.getChapterId(), request.getSummary(), AIFeatureType.SUMMARY_TO_SCENE)
+                            .defaultIfEmpty(""); // 确保有默认值
 
-                    Mono<String> promptTemplateMono = userPromptService.getPromptTemplate(
+                    // 获取上一个章节的内容
+                    Mono<String> previousChapterContentMono;
+                    if (request.getChapterId() != null && !request.getChapterId().isBlank()) {
+                        previousChapterContentMono = novelService.getPreviousChapterId(novelId, request.getChapterId())
+                            .flatMap(previousChapterId -> 
+                                novelService.getChapterRangeContext(novelId, previousChapterId, previousChapterId)
+                            )
+                            .defaultIfEmpty(""); // 如果没有上一个章节或获取失败，默认为空
+                    } else {
+                        // 如果当前请求没有 chapterId，则无法确定上一个章节
+                        previousChapterContentMono = Mono.just("");
+                    }
+                    
+                    // 合并RAG上下文和上一个章节的内容
+                    Mono<String> combinedContextMono = Mono.zip(ragContextMono, previousChapterContentMono)
+                        .map(contextsTuple -> {
+                            String ragContext = contextsTuple.getT1();
+                            String prevChapterContent = contextsTuple.getT2();
+                            StringBuilder combined = new StringBuilder();
+                            if (ragContext != null && !ragContext.isBlank()) {
+                                combined.append("## RAG检索到的相关上下文:\n").append(ragContext).append("\n\n");
+                            }
+                            if (prevChapterContent != null && !prevChapterContent.isBlank()) {
+                                combined.append("## 上一个章节完整内容:\n").append(prevChapterContent);
+                            }
+                            return combined.toString();
+                        });
+
+                    Mono<String> systemPromptContentMono = promptService.getSystemMessageForFeature(AIFeatureType.SUMMARY_TO_SCENE);
+                    Mono<String> userPromptTemplateMono = userPromptService.getPromptTemplate(
                             userId, AIFeatureType.SUMMARY_TO_SCENE);
 
-                    // 返回包含上下文、模板的Tuple
-                    return Mono.zip(contextMono, promptTemplateMono);
+                    // 返回包含合并后上下文、系统提示、用户模板的Tuple
+                    return Mono.zip(combinedContextMono, systemPromptContentMono, userPromptTemplateMono);
                 })
                 .flatMapMany(tuple -> {
-                    String context = tuple.getT1();
-                    String promptTemplate = tuple.getT2();
+                    String combinedContext = tuple.getT1();
+                    String systemPromptContent = tuple.getT2();
+                    String userPromptTemplate = tuple.getT3();
 
                     // 构建最终Prompt，包含用户风格指令
                     String styleInstructions = request.getAdditionalInstructions() != null ? request.getAdditionalInstructions() : "";
-                    String inputWithStyle = request.getSummary() + (styleInstructions.isEmpty() ? "" : "\\n\\n风格要求: " + styleInstructions);
-                    String finalPrompt = buildFinalPrompt(promptTemplate, context, inputWithStyle);
+                    // 使用重载后的 buildFinalPrompt
+                    String finalUserPrompt = buildFinalPrompt(userPromptTemplate, combinedContext, request.getSummary(), styleInstructions);
 
                     // 获取AI配置并调用LLM (流式)
                     return userAIModelConfigService.getValidatedDefaultConfiguration(userId)
@@ -1540,14 +1585,13 @@ public class NovelAIServiceImpl implements NovelAIService {
                                 // 创建系统消息
                                 AIRequest.Message systemMessage = new AIRequest.Message();
                                 systemMessage.setRole("system");
-                                // 修改提示词：要求只输出纯场景内容
-                                systemMessage.setContent("你是一位富有创意的小说家。请根据用户提供的摘要、上下文信息和风格要求，生成详细的小说场景内容。你的任务是只输出生成的场景内容本身，不包含任何标题、小标题、格式标记（如Markdown）、或其他解释性文字。");
+                                systemMessage.setContent(systemPromptContent); // 使用从PromptService获取的系统提示
                                 aiRequest.getMessages().add(systemMessage);
 
                                 // 创建用户消息
                                 AIRequest.Message userMessage = new AIRequest.Message();
                                 userMessage.setRole("user");
-                                userMessage.setContent(finalPrompt);
+                                userMessage.setContent(finalUserPrompt); // 使用填充好的用户模板
                                 aiRequest.getMessages().add(userMessage);
 
                                 // 设置生成参数 - 场景生成可以设置稍高的温度以增加创意性
