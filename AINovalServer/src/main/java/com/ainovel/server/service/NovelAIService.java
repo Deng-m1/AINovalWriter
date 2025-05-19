@@ -81,32 +81,6 @@ public interface NovelAIService {
      */
     Flux<String> reviseContentStream(String novelId, String sceneId, String content, String instruction);
 
-    /**
-     * 生成角色
-     *
-     * @param novelId 小说ID
-     * @param description 角色描述
-     * @return 生成的角色信息
-     */
-    Mono<AIResponse> generateCharacter(String novelId, String description);
-
-    /**
-     * 生成情节
-     *
-     * @param novelId 小说ID
-     * @param description 情节描述
-     * @return 生成的情节信息
-     */
-    Mono<AIResponse> generatePlot(String novelId, String description);
-
-    /**
-     * 生成设定
-     *
-     * @param novelId 小说ID
-     * @param description 设定描述
-     * @return 生成的设定信息
-     */
-    Mono<AIResponse> generateSetting(String novelId, String description);
 
     /**
      * 设置是否使用LangChain4j实现

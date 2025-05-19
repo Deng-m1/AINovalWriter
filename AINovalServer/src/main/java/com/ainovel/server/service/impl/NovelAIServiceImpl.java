@@ -384,48 +384,6 @@ public class NovelAIServiceImpl implements NovelAIService {
     }
 
     @Override
-    public Mono<AIResponse> generateCharacter(String novelId, String description) {
-        return createCharacterGenerationRequest(novelId, description)
-                .flatMap(this::enrichRequestWithContext)
-                .flatMap(enrichedRequest -> {
-                    // 获取AI模型提供商并直接调用
-                    return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
-                            .flatMap(provider -> {
-                                // 直接使用业务请求调用提供商
-                                return provider.generateContent(enrichedRequest);
-                            });
-                });
-    }
-
-    @Override
-    public Mono<AIResponse> generatePlot(String novelId, String description) {
-        return createPlotGenerationRequest(novelId, description)
-                .flatMap(this::enrichRequestWithContext)
-                .flatMap(enrichedRequest -> {
-                    // 获取AI模型提供商并直接调用
-                    return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
-                            .flatMap(provider -> {
-                                // 直接使用业务请求调用提供商
-                                return provider.generateContent(enrichedRequest);
-                            });
-                });
-    }
-
-    @Override
-    public Mono<AIResponse> generateSetting(String novelId, String description) {
-        return createSettingGenerationRequest(novelId, description)
-                .flatMap(this::enrichRequestWithContext)
-                .flatMap(enrichedRequest -> {
-                    // 获取AI模型提供商并直接调用
-                    return getAIModelProvider(enrichedRequest.getUserId(), enrichedRequest.getModel())
-                            .flatMap(provider -> {
-                                // 直接使用业务请求调用提供商
-                                return provider.generateContent(enrichedRequest);
-                            });
-                });
-    }
-
-    @Override
     public Mono<AIResponse> generateNextOutlines(String novelId, String currentContext, Integer numberOfOptions, String authorGuidance) {
         log.info("为小说 {} 生成下一剧情大纲选项", novelId);
 
