@@ -35,7 +35,11 @@
             <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
             <version>2.6.0</version> <!-- Use a recent compatible version -->
         </dependency>
-        
+        <dependency>
+            <groupId>org.mantoux</groupId>
+            <artifactId>quill-delta</artifactId>
+            <version>1.6.3</version>
+        </dependency>
         <!-- Spring Data MongoDB Reactive -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

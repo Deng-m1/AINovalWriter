@@ -1380,30 +1380,63 @@ class EditorRepositoryImpl implements EditorRepository {
   }
   
   /// 根据摘要生成场景内容（流式）
-  @override
+   @override
   Stream<String> generateSceneFromSummaryStream(
     String novelId, 
     String summary, 
     {String? chapterId, String? styleInstructions}
   ) {
     try {
-      // 这里需要实际的SSE客户端实现，暂时用一个简单的模拟
-      final controller = StreamController<String>();
+      final request = GenerateSceneFromSummaryRequest(
+        summary: summary,
+        chapterId: chapterId,
+        styleInstructions: styleInstructions,
+      );
       
-      // 模拟响应
-      Future.delayed(Duration(milliseconds: 100), () {
-        controller.add('正在生成场景...');
-        controller.close();
-      });
+      AppLogger.i(_tag, '开始流式生成场景内容，小说ID: $novelId, 摘要长度: ${summary.length}');
       
-      return controller.stream;
+      return SseClient().streamEvents<String>(
+        path: '/novels/$novelId/scenes/generate-from-summary',
+        method: SSERequestType.POST,
+        body: request.toJson(),
+        parser: (json) {
+          // 增强解析器的错误处理
+          if (json.containsKey('error')) {
+            AppLogger.e(_tag, '服务器返回错误: ${json['error']}');
+            throw ApiException(-1, '服务器返回错误: ${json['error']}');
+          }
+          
+          if (!json.containsKey('data')) {
+            AppLogger.w(_tag, '服务器响应中缺少data字段: $json');
+            return ''; // 返回空字符串而不是抛出异常
+          }
+          
+          final data = json['data'];
+          if (data == null) {
+            AppLogger.w(_tag, '服务器响应中data字段为null');
+            return '';
+          }
+          
+          if (data is! String) {
+            AppLogger.w(_tag, '服务器响应中data字段不是字符串类型: $data');
+            return data.toString();
+          }
+          
+          if (data == '[DONE]') {
+            AppLogger.i(_tag, '收到流式生成完成标记: [DONE]');
+            return '';
+          }
+          
+          return data;
+        },
+        connectionId: 'scene_gen_${DateTime.now().millisecondsSinceEpoch}',
+      ).where((chunk) => chunk.isNotEmpty); // 过滤掉空字符串
     } catch (e) {
-      AppLogger.e('EditorRepository/generateSceneFromSummaryStream', '流式生成场景失败', e);
-      throw ApiException(-1, '流式生成场景失败: $e');
+      AppLogger.e(_tag, '流式生成场景内容失败，小说ID: $novelId', e);
+      return Stream.error(Exception('流式生成场景内容失败: ${e.toString()}'));
     }
   }
   
-  /// 根据摘要生成场景内容（非流式）
   @override
   Future<String> generateSceneFromSummary(
     String novelId, 
@@ -1411,24 +1444,26 @@ class EditorRepositoryImpl implements EditorRepository {
     {String? chapterId, String? styleInstructions}
   ) async {
     try {
-      final response = await _apiClient.post('/ai/generate-scene', 
-        data: {
-          'novelId': novelId,
-          'chapterId': chapterId,
-          'summary': summary,
-          'styleInstructions': styleInstructions
-        });
+      final request = GenerateSceneFromSummaryRequest(
+        summary: summary,
+        chapterId: chapterId,
+        styleInstructions: styleInstructions,
+      );
       
-      if (response != null && response.containsKey('content')) {
-        return response['content'];
-      }
+      final response = await _apiClient.post(
+        '/novels/$novelId/scenes/generate-from-summary-sync',
+        data: request.toJson(),
+      );
       
-      return '';
+      final sceneResponse = GenerateSceneFromSummaryResponse.fromJson(response);
+      return sceneResponse.content;
     } catch (e) {
-      AppLogger.e('EditorRepository/generateSceneFromSummary', '生成场景内容失败', e);
-      throw ApiException(-1, '生成场景内容失败: $e');
+      AppLogger.e(_tag, '生成场景内容失败，小说ID: $novelId', e);
+      throw Exception('生成场景内容失败: ${e.toString()}');
     }
   }
+
+
   
   /// 提交自动续写任务
   @override

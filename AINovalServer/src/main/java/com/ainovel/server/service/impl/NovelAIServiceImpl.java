@@ -4,9 +4,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -1472,8 +1474,12 @@ public class NovelAIServiceImpl implements NovelAIService {
         // 2. 将 RAG 返回的 context (也可能是富文本) 转换为纯文本
         String plainContext = com.ainovel.server.common.util.PromptUtil.extractPlainTextFromRichText(context);
 
-        // 3. 填充变量，只保留核心变量，并明确 context 来源
+        // 3. 填充变量，添加多种兼容性变量名
         variables.put("input", plainTextInput); // 当前需要处理的内容
+        variables.put("summary", plainTextInput); // summary 作为 input 的别名
+        variables.put("content", plainTextInput); // content 作为 input 的别名
+        variables.put("description", plainTextInput); // description 作为 input 的别名
+        
         // 如果 RAG 上下文不为空，则添加带有说明的上下文
         if (plainContext != null && !plainContext.isBlank()) {
             variables.put("context", "## 相关上下文信息:\\n" + plainContext); 
@@ -1481,14 +1487,38 @@ public class NovelAIServiceImpl implements NovelAIService {
             variables.put("context", ""); // 如果无上下文，则为空字符串
         }
 
-        // 移除冗余的兼容性变量赋值
-        // variables.put("content", plainTextInput);
-        // variables.put("description", plainTextInput);
-        // variables.put("instruction", plainTextInput);
+        // 4. 动态检测模板中的占位符
+        try {
+            // 简单的正则表达式来匹配 {{xxx}} 形式的占位符
+            Pattern placeholderPattern = Pattern.compile("\\{\\{([^}]+)\\}\\}");
+            Matcher matcher = placeholderPattern.matcher(template);
+            
+            Set<String> foundPlaceholders = new HashSet<>();
+            while (matcher.find()) {
+                foundPlaceholders.add(matcher.group(1).trim());
+            }
+            
+            // 检查是否有未处理的占位符
+            for (String placeholder : foundPlaceholders) {
+                if (!variables.containsKey(placeholder)) {
+                    log.warn("提示词模板中存在未处理的占位符: {}，将提供空值", placeholder);
+                    // 为未知占位符提供默认空值
+                    variables.put(placeholder, "");
+                }
+            }
+        } catch (Exception e) {
+            // 确保正则检测失败不会影响主流程
+            log.warn("分析提示词模板占位符时发生错误: {}", e.getMessage());
+        }
 
-        // 4. 使用 PromptUtil 格式化模板 (formatPromptTemplate 内部会处理 template 的富文本)
-        // 假设 template 主要使用 {input} 和 {context}
-        return com.ainovel.server.common.util.PromptUtil.formatPromptTemplate(template, variables);
+        // 5. 使用 PromptUtil 格式化模板 (formatPromptTemplate 内部会处理 template 的富文本)
+        try {
+            return com.ainovel.server.common.util.PromptUtil.formatPromptTemplate(template, variables);
+        } catch (Exception e) {
+            log.error("格式化提示词模板时出错: {}", e.getMessage(), e);
+            // 构建一个后备提示词确保服务不中断
+            return "输入内容:\\n" + plainTextInput + "\\n\\n上下文信息:\\n" + plainContext;
+        }
     }
 
     /**
@@ -1496,13 +1526,68 @@ public class NovelAIServiceImpl implements NovelAIService {
      */
     private String buildFinalPrompt(String userPromptTemplate, String combinedContext, String summary, String styleInstructions) {
         Map<String, String> variables = new HashMap<>();
-        // 确保即使是空字符串，也进行纯文本提取，以保持一致性
-        variables.put("summary", com.ainovel.server.common.util.PromptUtil.extractPlainTextFromRichText(summary != null ? summary : ""));
-        variables.put("context", com.ainovel.server.common.util.PromptUtil.extractPlainTextFromRichText(combinedContext != null ? combinedContext : ""));
-        variables.put("styleInstructions", styleInstructions != null ? styleInstructions : "");
         
-        // 使用 PromptUtil 格式化模板 (formatPromptTemplate 内部会处理 template 的富文本)
-        return com.ainovel.server.common.util.PromptUtil.formatPromptTemplate(userPromptTemplate, variables);
+        // 提取并清理输入数据，确保处理空值
+        String cleanSummary = com.ainovel.server.common.util.PromptUtil.extractPlainTextFromRichText(summary != null ? summary : "");
+        String cleanContext = com.ainovel.server.common.util.PromptUtil.extractPlainTextFromRichText(combinedContext != null ? combinedContext : "");
+        String cleanStyle = styleInstructions != null ? styleInstructions : "";
+        
+        // 基础变量映射
+        variables.put("summary", cleanSummary);
+        variables.put("context", cleanContext);
+        variables.put("styleInstructions", cleanStyle);
+        
+        // 兼容性变量映射 - 添加常见的替代变量名，避免占位符不匹配错误
+        variables.put("input", cleanSummary);          // 可能用input代替summary
+        variables.put("content", cleanSummary);        // 可能用content代替summary
+        variables.put("description", cleanSummary);    // 可能用description代替summary
+        variables.put("instruction", cleanStyle);      // 可能用instruction代替styleInstructions
+        variables.put("style", cleanStyle);            // 可能用style代替styleInstructions
+        
+        // 动态检测模板中的占位符，以便更好的日志和错误处理
+        try {
+            // 简单的正则表达式来匹配 {{xxx}} 形式的占位符
+            Pattern placeholderPattern = Pattern.compile("\\{\\{([^}]+)\\}\\}");
+            Matcher matcher = placeholderPattern.matcher(userPromptTemplate);
+            
+            Set<String> foundPlaceholders = new HashSet<>();
+            while (matcher.find()) {
+                foundPlaceholders.add(matcher.group(1).trim());
+            }
+            
+            // 检查是否有未处理的占位符
+            boolean allPlaceholdersHandled = true;
+            for (String placeholder : foundPlaceholders) {
+                if (!variables.containsKey(placeholder)) {
+                    log.warn("提示词模板中存在未处理的占位符: {}，将导致格式化错误", placeholder);
+                    // 为未知占位符提供一个默认的空值，避免格式化失败
+                    variables.put(placeholder, "");
+                    allPlaceholdersHandled = false;
+                }
+            }
+            
+            if (!allPlaceholdersHandled) {
+                log.warn("提示词模板中有未处理的占位符，可能影响生成质量。模板: {}", userPromptTemplate);
+            }
+        } catch (Exception e) {
+            // 确保正则检测失败不会影响主流程
+            log.warn("分析提示词模板占位符时发生错误: {}", e.getMessage());
+        }
+        
+        // 使用 PromptUtil 格式化模板，添加异常处理增强稳定性
+        try {
+            return com.ainovel.server.common.util.PromptUtil.formatPromptTemplate(userPromptTemplate, variables);
+        } catch (Exception e) {
+            log.error("格式化提示词模板时出错: {}", e.getMessage(), e);
+            // 出错时构造一个简化的模板，确保服务不中断
+            StringBuilder fallbackPrompt = new StringBuilder();
+            fallbackPrompt.append("摘要:\n").append(cleanSummary).append("\n\n");
+            fallbackPrompt.append("相关上下文:\n").append(cleanContext).append("\n\n");
+            if (!cleanStyle.isEmpty()) {
+                fallbackPrompt.append("风格要求:\n").append(cleanStyle);
+            }
+            return fallbackPrompt.toString();
+        }
     }
 
     /**
@@ -1527,18 +1612,57 @@ public class NovelAIServiceImpl implements NovelAIService {
                     // 并行获取RAG上下文、最后一个章节内容、系统提示和用户Prompt模板
                     Mono<String> ragContextMono = ragService.retrieveRelevantContext(
                             novelId, request.getChapterId(), request.getSummary(), AIFeatureType.SUMMARY_TO_SCENE)
-                            .defaultIfEmpty(""); // 确保有默认值
+                            .doOnNext(context -> {
+                                if (context == null || context.isEmpty()) {
+                                    log.info("RAG未返回相关上下文, 小说ID: {}, 章节ID: {}", 
+                                            novelId, request.getChapterId() != null ? request.getChapterId() : "无");
+                                } else {
+                                    log.info("RAG返回相关上下文, 长度: {}, 小说ID: {}", 
+                                            context.length(), novelId);
+                                }
+                            })
+                            .defaultIfEmpty("") // 确保有默认值
+                            .onErrorResume(e -> {
+                                log.error("获取RAG上下文时出错, 小说ID: {}, 错误: {}", novelId, e.getMessage());
+                                return Mono.just("");
+                            });
 
                     // 获取上一个章节的内容
                     Mono<String> previousChapterContentMono;
                     if (request.getChapterId() != null && !request.getChapterId().isBlank()) {
+                        log.info("尝试获取章节的上一章内容, 当前章节ID: {}, 小说ID: {}", request.getChapterId(), novelId);
                         previousChapterContentMono = novelService.getPreviousChapterId(novelId, request.getChapterId())
+                            .doOnNext(previousChapterId -> log.info("获取到上一章节ID: {}, 小说ID: {}", previousChapterId, novelId))
                             .flatMap(previousChapterId -> 
                                 novelService.getChapterRangeContext(novelId, previousChapterId, previousChapterId)
+                                .doOnNext(content -> {
+                                    if (content == null || content.isEmpty()) {
+                                        log.warn("上一章节内容为空, 章节ID: {}, 小说ID: {}", previousChapterId, novelId);
+                                    } else {
+                                        log.info("成功获取上一章节内容, 长度: {}, 章节ID: {}", content.length(), previousChapterId);
+                                    }
+                                })
                             )
-                            .defaultIfEmpty(""); // 如果没有上一个章节或获取失败，默认为空
+                            .onErrorResume(e -> {
+                                log.error("获取上一章节内容时出错, 章节ID: {}, 小说ID: {}, 错误: {}", 
+                                         request.getChapterId(), novelId, e.getMessage());
+                                return Mono.just("");  // 发生错误时返回空字符串而不是中断流程
+                            })
+                            .switchIfEmpty(Mono.defer(() -> {
+                                log.warn("未找到上一章节ID或内容, 章节ID: {}, 小说ID: {}", request.getChapterId(), novelId);
+                                // 尝试直接获取当前章节内容作为备选
+                                return novelService.getChapterRangeContext(novelId, request.getChapterId(), request.getChapterId())
+                                    .doOnNext(content -> {
+                                        if (content != null && !content.isEmpty()) {
+                                            log.info("使用当前章节内容作为上下文, 长度: {}, 章节ID: {}", 
+                                                   content.length(), request.getChapterId());
+                                        }
+                                    })
+                                    .defaultIfEmpty("");
+                            }));
                     } else {
                         // 如果当前请求没有 chapterId，则无法确定上一个章节
+                        log.info("请求中未提供章节ID, 无法获取上一章内容, 小说ID: {}", novelId);
                         previousChapterContentMono = Mono.just("");
                     }
                     
@@ -1548,18 +1672,44 @@ public class NovelAIServiceImpl implements NovelAIService {
                             String ragContext = contextsTuple.getT1();
                             String prevChapterContent = contextsTuple.getT2();
                             StringBuilder combined = new StringBuilder();
+                            
+                            // 记录上下文合并情况
+                            int ragContextLength = ragContext != null ? ragContext.length() : 0;
+                            int prevChapterLength = prevChapterContent != null ? prevChapterContent.length() : 0;
+                            
+                            log.info("合并上下文, RAG上下文长度: {}, 上一章内容长度: {}, 小说ID: {}",
+                                    ragContextLength, prevChapterLength, novelId);
+                            
                             if (ragContext != null && !ragContext.isBlank()) {
                                 combined.append("## RAG检索到的相关上下文:\n").append(ragContext).append("\n\n");
                             }
                             if (prevChapterContent != null && !prevChapterContent.isBlank()) {
                                 combined.append("## 上一个章节完整内容:\n").append(prevChapterContent);
                             }
-                            return combined.toString();
+                            
+                            String result = combined.toString();
+                            log.info("最终上下文长度: {}, 小说ID: {}", result.length(), novelId);
+                            return result;
+                        })
+                        .onErrorResume(e -> {
+                            log.error("合并上下文时出错, 小说ID: {}, 错误: {}", novelId, e.getMessage());
+                            return Mono.just(""); // 出错时返回空上下文而非中断流程
                         });
 
-                    Mono<String> systemPromptContentMono = promptService.getSystemMessageForFeature(AIFeatureType.SUMMARY_TO_SCENE);
+                    Mono<String> systemPromptContentMono = promptService.getSystemMessageForFeature(AIFeatureType.SUMMARY_TO_SCENE)
+                        .doOnNext(prompt -> log.info("获取到系统提示词, 长度: {}", prompt != null ? prompt.length() : 0))
+                        .switchIfEmpty(Mono.defer(() -> {
+                            log.warn("未找到SUMMARY_TO_SCENE_SYSTEM系统提示词, 将使用默认提示词");
+                            return Mono.just("你是一位富有创意的小说家。请根据用户提供的摘要、上下文信息和风格要求，生成详细的小说场景内容。");
+                        }));
+                        
                     Mono<String> userPromptTemplateMono = userPromptService.getPromptTemplate(
-                            userId, AIFeatureType.SUMMARY_TO_SCENE);
+                            userId, AIFeatureType.SUMMARY_TO_SCENE)
+                        .doOnNext(template -> log.info("获取到用户提示词模板, 长度: {}", template != null ? template.length() : 0))
+                        .switchIfEmpty(Mono.defer(() -> {
+                            log.warn("未找到用户提示词模板, 将使用默认模板");
+                            return promptService.getPromptTemplate(AIFeatureType.SUMMARY_TO_SCENE.name());
+                        }));
 
                     // 返回包含合并后上下文、系统提示、用户模板的Tuple
                     return Mono.zip(combinedContextMono, systemPromptContentMono, userPromptTemplateMono);
@@ -1571,11 +1721,33 @@ public class NovelAIServiceImpl implements NovelAIService {
 
                     // 构建最终Prompt，包含用户风格指令
                     String styleInstructions = request.getAdditionalInstructions() != null ? request.getAdditionalInstructions() : "";
-                    // 使用重载后的 buildFinalPrompt
-                    String finalUserPrompt = buildFinalPrompt(userPromptTemplate, combinedContext, request.getSummary(), styleInstructions);
+                    
+                    log.info("构建最终提示词, 摘要长度: {}, 上下文长度: {}, 风格指令长度: {}, 小说ID: {}",
+                            request.getSummary() != null ? request.getSummary().length() : 0,
+                            combinedContext.length(),
+                            styleInstructions.length(),
+                            novelId);
+                    
+                    // 使用AtomicReference来存储最终的提示词
+                    final AtomicReference<String> promptRef = new AtomicReference<>();
+                    try {
+                        String userPrompt = buildFinalPrompt(userPromptTemplate, combinedContext, request.getSummary(), styleInstructions);
+                        log.info("成功构建最终提示词, 长度: {}, 小说ID: {}", userPrompt.length(), novelId);
+                        promptRef.set(userPrompt);
+                    } catch (Exception e) {
+                        log.error("构建最终提示词时出错, 小说ID: {}, 错误: {}", novelId, e.getMessage(), e);
+                        // 构建一个简单的后备提示词
+                        String fallbackPrompt = "摘要:\n" + request.getSummary() + "\n\n相关上下文:\n" + 
+                                         (combinedContext.length() > 500 ? combinedContext.substring(0, 500) + "..." : combinedContext);
+                        log.info("使用后备提示词, 长度: {}", fallbackPrompt.length());
+                        promptRef.set(fallbackPrompt);
+                    }
 
                     // 获取AI配置并调用LLM (流式)
                     return userAIModelConfigService.getValidatedDefaultConfiguration(userId)
+                            .doOnNext(config -> log.info("获取到AI模型配置: 提供商={}, 模型={}, 小说ID: {}",
+                                                        config.getProvider(), config.getModelName(), novelId))
+                            .switchIfEmpty(Mono.error(new RuntimeException("未找到有效的AI模型配置")))
                             .flatMapMany(aiConfig -> {
                                 AIRequest aiRequest = new AIRequest();
                                 aiRequest.setUserId(userId);
@@ -1591,7 +1763,7 @@ public class NovelAIServiceImpl implements NovelAIService {
                                 // 创建用户消息
                                 AIRequest.Message userMessage = new AIRequest.Message();
                                 userMessage.setRole("user");
-                                userMessage.setContent(finalUserPrompt); // 使用填充好的用户模板
+                                userMessage.setContent(promptRef.get()); // 使用填充好的用户模板
                                 aiRequest.getMessages().add(userMessage);
 
                                 // 设置生成参数 - 场景生成可以设置稍高的温度以增加创意性
@@ -1600,7 +1772,10 @@ public class NovelAIServiceImpl implements NovelAIService {
 
                                 // 获取AI模型提供商并调用流式生成
                                 return getAIModelProvider(userId, aiConfig.getModelName())
+                                        .doOnNext(provider -> log.info("获取到AI模型提供商: {}, 小说ID: {}", 
+                                                                     provider.getClass().getSimpleName(), novelId))
                                         .flatMapMany(provider -> {
+                                            // ... 保持现有的静默检测和流处理代码不变 ...
                                             // 创建一个原子计数器跟踪最后活动时间戳
                                             final AtomicLong lastActivityTimestamp = new AtomicLong(System.currentTimeMillis());
 

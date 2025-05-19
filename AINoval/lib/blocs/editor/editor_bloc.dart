@@ -51,6 +51,12 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
     on<SetActLoadingFlags>(_onSetActLoadingFlags); // 添加新的事件处理器
     on<UpdateChapterTitle>(_onUpdateChapterTitle); // 添加Chapter标题更新事件处理
     on<UpdateActTitle>(_onUpdateActTitle); // 添加Act标题更新事件处理
+    on<GenerateSceneFromSummaryRequested>(_onGenerateSceneFromSummaryRequested); // 添加场景生成事件处理
+    on<UpdateGeneratedSceneContent>(_onUpdateGeneratedSceneContent); // 添加更新生成内容事件处理
+    on<SceneGenerationCompleted>(_onSceneGenerationCompleted); // 添加生成完成事件处理
+    on<SceneGenerationFailed>(_onSceneGenerationFailed); // 添加生成失败事件处理
+    on<StopSceneGeneration>(_onStopSceneGeneration); // 添加停止生成事件处理
+    on<SetPendingSummary>(_onSetPendingSummary); // 添加设置待处理摘要事件处理
   }
   final EditorRepositoryImpl repository;
   final String novelId;
@@ -2085,5 +2091,159 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
         ));
       }
     }
+  }
+
+  // 处理GenerateSceneFromSummaryRequested事件
+  Future<void> _onGenerateSceneFromSummaryRequested(
+      GenerateSceneFromSummaryRequested event, Emitter<EditorState> emit) async {
+    if (state is! EditorLoaded) return;
+    
+    final currentState = state as EditorLoaded;
+    
+    // 取消之前的生成订阅（如果有）
+    if (_generationStreamSubscription != null) {
+      await _generationStreamSubscription!.cancel();
+      _generationStreamSubscription = null;
+    }
+    
+    // 更新状态为正在生成
+    emit(currentState.copyWith(
+      aiSceneGenerationStatus: AIGenerationStatus.generating,
+      generatedSceneContent: '',
+      aiGenerationError: null,
+    ));
+    
+    try {
+      AppLogger.i('EditorBloc/_onGenerateSceneFromSummaryRequested', 
+        '开始从摘要生成场景，摘要长度：${event.summary.length}, 流式生成：${event.useStreamingMode}');
+      
+      if (event.useStreamingMode) {
+        // 流式生成模式
+        final stream = await repository.generateSceneFromSummaryStream(
+          event.novelId,
+          event.summary,
+          chapterId: event.chapterId,
+          styleInstructions: event.styleInstructions,
+        );
+        
+        String accumulatedContent = '';
+        
+        _generationStreamSubscription = stream.listen(
+          (chunk) {
+            // 累加接收到的内容
+            accumulatedContent += chunk;
+            // 发送更新生成内容事件
+            add(UpdateGeneratedSceneContent(accumulatedContent));
+          },
+          onDone: () {
+            // 生成完成
+            add(SceneGenerationCompleted(accumulatedContent));
+            _generationStreamSubscription = null;
+          },
+          onError: (error) {
+            // 生成出错
+            AppLogger.e('EditorBloc/_onGenerateSceneFromSummaryRequested', '流式生成场景失败', error);
+            add(SceneGenerationFailed(error.toString()));
+            _generationStreamSubscription = null;
+          },
+        );
+      } else {
+        // 非流式生成模式
+        final result = await repository.generateSceneFromSummary(
+          event.novelId,
+          event.summary,
+          chapterId: event.chapterId,
+          styleInstructions: event.styleInstructions,
+        );
+        
+        // 生成完成
+        add(SceneGenerationCompleted(result));
+      }
+    } catch (e) {
+      // 捕获并处理所有异常
+      AppLogger.e('EditorBloc/_onGenerateSceneFromSummaryRequested', '生成场景失败', e);
+      add(SceneGenerationFailed(e.toString()));
+    }
+  }
+
+  // 处理更新生成内容事件
+  void _onUpdateGeneratedSceneContent(
+      UpdateGeneratedSceneContent event, Emitter<EditorState> emit) {
+    if (state is! EditorLoaded) return;
+    
+    final currentState = state as EditorLoaded;
+    
+    // 更新生成的内容
+    emit(currentState.copyWith(
+      generatedSceneContent: event.content,
+    ));
+  }
+
+  // 处理生成完成事件
+  void _onSceneGenerationCompleted(
+      SceneGenerationCompleted event, Emitter<EditorState> emit) {
+    if (state is! EditorLoaded) return;
+    
+    final currentState = state as EditorLoaded;
+    
+    // 更新状态为生成完成
+    emit(currentState.copyWith(
+      aiSceneGenerationStatus: AIGenerationStatus.completed,
+      generatedSceneContent: event.content,
+    ));
+    
+    AppLogger.i('EditorBloc/_onSceneGenerationCompleted', '场景生成完成，生成内容长度：${event.content.length}');
+  }
+
+  // 处理生成失败事件
+  void _onSceneGenerationFailed(
+      SceneGenerationFailed event, Emitter<EditorState> emit) {
+    if (state is! EditorLoaded) return;
+    
+    final currentState = state as EditorLoaded;
+    
+    // 更新状态为生成失败
+    emit(currentState.copyWith(
+      aiSceneGenerationStatus: AIGenerationStatus.failed,
+      aiGenerationError: event.error,
+    ));
+    
+    AppLogger.e('EditorBloc/_onSceneGenerationFailed', '场景生成失败，错误：${event.error}');
+  }
+
+  // 处理停止生成事件
+  Future<void> _onStopSceneGeneration(
+      StopSceneGeneration event, Emitter<EditorState> emit) async {
+    // 取消订阅
+    if (_generationStreamSubscription != null) {
+      await _generationStreamSubscription!.cancel();
+      _generationStreamSubscription = null;
+    }
+    
+    if (state is! EditorLoaded) return;
+    
+    final currentState = state as EditorLoaded;
+    
+    // 更新状态为初始状态
+    emit(currentState.copyWith(
+      aiSceneGenerationStatus: AIGenerationStatus.initial,
+    ));
+    
+    AppLogger.i('EditorBloc/_onStopSceneGeneration', '场景生成已取消');
+  }
+
+  // 处理设置待处理摘要事件
+  void _onSetPendingSummary(
+      SetPendingSummary event, Emitter<EditorState> emit) {
+    if (state is! EditorLoaded) return;
+    
+    final currentState = state as EditorLoaded;
+    
+    // 设置待处理的摘要
+    emit(currentState.copyWith(
+      pendingSummary: event.summary,
+    ));
+    
+    AppLogger.d('EditorBloc/_onSetPendingSummary', '已设置待处理摘要，长度：${event.summary.length}');
   }
 }

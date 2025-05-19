@@ -1978,4 +1978,39 @@ public class NovelServiceImpl implements NovelService {
         return updatedSceneIds;
     }
 
+    /**
+     * 获取指定章节的前一个章节ID
+     *
+     * @param novelId 小说ID
+     * @param chapterId 当前章节ID
+     * @return 前一个章节的ID
+     */
+    @Override
+    public Mono<String> getPreviousChapterId(String novelId, String chapterId) {
+        return findNovelById(novelId)
+            .flatMap(novel -> {
+                // 获取所有章节的有序列表
+                List<String> chapterIds = new ArrayList<>();
+                if (novel.getStructure() != null && novel.getStructure().getActs() != null) {
+                    for (Act act : novel.getStructure().getActs()) {
+                        if (act.getChapters() != null) {
+                            for (Chapter chapter : act.getChapters()) {
+                                chapterIds.add(chapter.getId());
+                            }
+                        }
+                    }
+                }
+                
+                // 找到当前章节的索引
+                int currentIndex = chapterIds.indexOf(chapterId);
+                if (currentIndex <= 0) {
+                    // 如果是第一章或未找到，则返回空
+                    return Mono.empty();
+                }
+                
+                // 否则返回前一章的ID
+                return Mono.just(chapterIds.get(currentIndex - 1));
+            });
+    }
+
 }

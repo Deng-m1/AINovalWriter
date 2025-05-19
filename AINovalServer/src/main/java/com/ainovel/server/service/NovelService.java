@@ -377,4 +377,13 @@ public interface NovelService {
      * @return 操作是否成功
      */
     Mono<Boolean> deleteChapterFine(String novelId, String actId, String chapterId);
+
+    /**
+     * 获取指定章节的前一个章节ID
+     *
+     * @param novelId 小说ID
+     * @param chapterId 当前章节ID
+     * @return 前一个章节的ID
+     */
+    Mono<String> getPreviousChapterId(String novelId, String chapterId);
 }

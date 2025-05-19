@@ -5,6 +5,8 @@ import java.util.Map;
 
 import reactor.core.publisher.Mono;
 
+import com.ainovel.server.domain.model.AIFeatureType;
+
 /**
  * 提示词服务接口
  */
@@ -100,4 +102,11 @@ public interface PromptService {
      * @return 类型列表
      */
     Mono<List<String>> getAllPromptTypes();
+    
+    /**
+     * 获取特定功能的系统消息提示词
+     * @param featureType 功能类型
+     * @return 系统消息提示词
+     */
+    Mono<String> getSystemMessageForFeature(AIFeatureType featureType);
 } 
