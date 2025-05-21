@@ -28,6 +28,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
+import com.ainovel.server.common.util.RichTextUtil;
 import com.ainovel.server.domain.model.AIFeatureType;
 import com.ainovel.server.domain.model.AIRequest;
 import com.ainovel.server.domain.model.AIResponse;
@@ -1528,8 +1529,8 @@ public class NovelAIServiceImpl implements NovelAIService {
         Map<String, String> variables = new HashMap<>();
         
         // 提取并清理输入数据，确保处理空值
-        String cleanSummary = com.ainovel.server.common.util.PromptUtil.extractPlainTextFromRichText(summary != null ? summary : "");
-        String cleanContext = com.ainovel.server.common.util.PromptUtil.extractPlainTextFromRichText(combinedContext != null ? combinedContext : "");
+        String cleanSummary = RichTextUtil.deltaJsonToPlainText(summary != null ? summary : "");
+        String cleanContext = RichTextUtil.deltaJsonToPlainText(combinedContext != null ? combinedContext : "");
         String cleanStyle = styleInstructions != null ? styleInstructions : "";
         
         // 基础变量映射
@@ -1544,6 +1545,10 @@ public class NovelAIServiceImpl implements NovelAIService {
         variables.put("instruction", cleanStyle);      // 可能用instruction代替styleInstructions
         variables.put("style", cleanStyle);            // 可能用style代替styleInstructions
         
+        // 标记是否模板中包含风格相关的占位符
+        boolean hasStylePlaceholder = false;
+        Set<String> styleRelatedKeys = Set.of("styleInstructions", "instruction", "style");
+        
         // 动态检测模板中的占位符，以便更好的日志和错误处理
         try {
             // 简单的正则表达式来匹配 {{xxx}} 形式的占位符
@@ -1552,7 +1557,13 @@ public class NovelAIServiceImpl implements NovelAIService {
             
             Set<String> foundPlaceholders = new HashSet<>();
             while (matcher.find()) {
-                foundPlaceholders.add(matcher.group(1).trim());
+                String placeholder = matcher.group(1).trim();
+                foundPlaceholders.add(placeholder);
+                
+                // 检查是否包含风格相关的占位符
+                if (styleRelatedKeys.contains(placeholder)) {
+                    hasStylePlaceholder = true;
+                }
             }
             
             // 检查是否有未处理的占位符
@@ -1576,16 +1587,25 @@ public class NovelAIServiceImpl implements NovelAIService {
         
         // 使用 PromptUtil 格式化模板，添加异常处理增强稳定性
         try {
-            return com.ainovel.server.common.util.PromptUtil.formatPromptTemplate(userPromptTemplate, variables);
+            String formattedPrompt = com.ainovel.server.common.util.PromptUtil.formatPromptTemplate(userPromptTemplate, variables);
+            
+            // 如果没有风格相关占位符且风格指示不为空，则将风格指示添加到提示词前面
+            if (!hasStylePlaceholder && !cleanStyle.isEmpty()) {
+                log.info("模板中没有风格指示占位符，但提供了风格指示，将其添加到提示词前面");
+                formattedPrompt = "风格要求:\n" + cleanStyle + "\n\n" + formattedPrompt;
+            }
+            
+            return formattedPrompt;
         } catch (Exception e) {
             log.error("格式化提示词模板时出错: {}", e.getMessage(), e);
             // 出错时构造一个简化的模板，确保服务不中断
             StringBuilder fallbackPrompt = new StringBuilder();
-            fallbackPrompt.append("摘要:\n").append(cleanSummary).append("\n\n");
-            fallbackPrompt.append("相关上下文:\n").append(cleanContext).append("\n\n");
+            // 如果风格指示不为空，始终添加到前面
             if (!cleanStyle.isEmpty()) {
-                fallbackPrompt.append("风格要求:\n").append(cleanStyle);
+                fallbackPrompt.append("风格要求:\n").append(cleanStyle).append("\n\n");
             }
+            fallbackPrompt.append("摘要:\n").append(cleanSummary).append("\n\n");
+            fallbackPrompt.append("相关上下文:\n").append(cleanContext);
             return fallbackPrompt.toString();
         }
     }
@@ -1684,7 +1704,7 @@ public class NovelAIServiceImpl implements NovelAIService {
                                 combined.append("## RAG检索到的相关上下文:\n").append(ragContext).append("\n\n");
                             }
                             if (prevChapterContent != null && !prevChapterContent.isBlank()) {
-                                combined.append("## 上一个章节完整内容:\n").append(prevChapterContent);
+                                combined.append("## 上一个章节完整内容:\n").append(RichTextUtil.deltaJsonToPlainText(prevChapterContent));
                             }
                             
                             String result = combined.toString();

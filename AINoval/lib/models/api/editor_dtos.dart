@@ -2,15 +2,15 @@ import 'package:json_annotation/json_annotation.dart';
 
 /// 场景摘要生成请求 DTO
 class SummarizeSceneRequest {
-  final String? styleInstructions;
+  final String? additionalInstructions;
 
   SummarizeSceneRequest({
-    this.styleInstructions,
+    this.additionalInstructions,
   });
 
   Map<String, dynamic> toJson() {
     return {
-      if (styleInstructions != null) 'styleInstructions': styleInstructions,
+      if (additionalInstructions != null) 'additionalInstructions': additionalInstructions,
     };
   }
 }
@@ -34,19 +34,19 @@ class SummarizeSceneResponse {
 class GenerateSceneFromSummaryRequest {
   final String summary;
   final String? chapterId;
-  final String? styleInstructions;
+  final String? additionalInstructions;
 
   GenerateSceneFromSummaryRequest({
     required this.summary,
     this.chapterId,
-    this.styleInstructions,
+    this.additionalInstructions,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'summary': summary,
       if (chapterId != null) 'chapterId': chapterId,
-      if (styleInstructions != null) 'styleInstructions': styleInstructions,
+      if (additionalInstructions != null) 'additionalInstructions': additionalInstructions,
     };
   }
 }

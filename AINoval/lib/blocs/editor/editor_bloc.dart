@@ -2123,7 +2123,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           event.novelId,
           event.summary,
           chapterId: event.chapterId,
-          styleInstructions: event.styleInstructions,
+          additionalInstructions: event.styleInstructions,
         );
         
         String accumulatedContent = '';
@@ -2153,7 +2153,7 @@ class EditorBloc extends Bloc<EditorEvent, EditorState> {
           event.novelId,
           event.summary,
           chapterId: event.chapterId,
-          styleInstructions: event.styleInstructions,
+          additionalInstructions: event.styleInstructions,
         );
         
         // 生成完成

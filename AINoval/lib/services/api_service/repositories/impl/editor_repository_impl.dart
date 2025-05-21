@@ -1360,12 +1360,12 @@ class EditorRepositoryImpl implements EditorRepository {
   
   /// 为指定场景生成摘要
   @override
-  Future<String> summarizeScene(String sceneId, {String? styleInstructions}) async {
+  Future<String> summarizeScene(String sceneId, {String? additionalInstructions}) async {
     try {
       final response = await _apiClient.post('/ai/summarize-scene', 
         data: {
           'sceneId': sceneId,
-          'styleInstructions': styleInstructions
+          'additionalInstructions': additionalInstructions
         });
       
       if (response != null && response.containsKey('summary')) {
@@ -1384,13 +1384,13 @@ class EditorRepositoryImpl implements EditorRepository {
   Stream<String> generateSceneFromSummaryStream(
     String novelId, 
     String summary, 
-    {String? chapterId, String? styleInstructions}
+    {String? chapterId, String? additionalInstructions}
   ) {
     try {
       final request = GenerateSceneFromSummaryRequest(
         summary: summary,
         chapterId: chapterId,
-        styleInstructions: styleInstructions,
+        additionalInstructions: additionalInstructions,
       );
       
       AppLogger.i(_tag, '开始流式生成场景内容，小说ID: $novelId, 摘要长度: ${summary.length}');
@@ -1441,13 +1441,13 @@ class EditorRepositoryImpl implements EditorRepository {
   Future<String> generateSceneFromSummary(
     String novelId, 
     String summary, 
-    {String? chapterId, String? styleInstructions}
+    {String? chapterId, String? additionalInstructions}
   ) async {
     try {
       final request = GenerateSceneFromSummaryRequest(
         summary: summary,
         chapterId: chapterId,
-        styleInstructions: styleInstructions,
+        additionalInstructions: additionalInstructions,
       );
       
       final response = await _apiClient.post(

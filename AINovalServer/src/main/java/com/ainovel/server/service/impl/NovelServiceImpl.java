@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import com.ainovel.server.common.util.PromptUtil;
+import com.ainovel.server.common.util.RichTextUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -1223,7 +1224,9 @@ public class NovelServiceImpl implements NovelService {
                             .map(scene -> {
                                 // 获取场景标题和内容
                                 String sceneTitle = scene.getTitle() != null ? scene.getTitle() : "场景";
-                                String sceneContent = scene.getContent() != null ? scene.getContent() : "";
+                                String sceneContent = RichTextUtil.deltaJsonToPlainText(scene.getContent() != null ? scene.getContent() : "");
+
+
                                 
                                 // 返回格式化的场景内容
                                 return String.format("【场景：%s】\n%s", sceneTitle, sceneContent);
@@ -1231,7 +1234,7 @@ public class NovelServiceImpl implements NovelService {
                             .collect(Collectors.joining("\n\n")) // 拼接同一章节中的所有场景
                             .map(scenesContent -> {
                                 // 添加章节标题作为前缀
-                                return String.format("## %s\n\n%s", chapterTitle, scenesContent);
+                                return String.format("%s\n\n%s", chapterTitle, scenesContent);
                             })
                             .defaultIfEmpty(String.format("## %s\n\n(无内容)", chapterTitle)); // 如果章节没有场景，添加默认提示
                     })

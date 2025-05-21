@@ -67,11 +67,7 @@ public class PromptServiceImpl implements PromptService {
         // 新增: "根据摘要生成场景" 的系统提示词
         DEFAULT_TEMPLATES.put(AIFeatureType.SUMMARY_TO_SCENE.name() + "_SYSTEM",
                 "你是一位富有创意的小说家。请根据用户提供的摘要、上下文信息和风格要求，生成详细的小说场景内容。" +
-                "你的任务是只输出生成的场景内容本身，不包含任何标题、小标题、格式标记（如Markdown）、或其他解释性文字。" +
-                "\n\n可用的占位符说明：\n" +
-                "- {{summary}}/{{input}}/{{content}}: 章节摘要内容，是生成场景的主要依据\n" +
-                "- {{context}}: 相关的上下文信息，包括RAG检索结果和前序章节内容\n" +
-                "- {{styleInstructions}}/{{style}}/{{instruction}}: 用户提供的风格和特殊要求");
+                "你的任务是只输出生成的场景内容本身，不包含任何标题、小标题、格式标记（如Markdown）、或其他解释性文字。" );
 
         // 新增: "根据摘要生成场景" 的基础用户提示词模板
         // UserPromptService 会优先查找用户自定义版本，如果找不到，则回退到这个基础版本

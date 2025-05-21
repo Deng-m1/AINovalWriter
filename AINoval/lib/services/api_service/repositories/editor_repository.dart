@@ -109,20 +109,20 @@ abstract class EditorRepository {
   });
   
   /// 为指定场景生成摘要
-  Future<String> summarizeScene(String sceneId, {String? styleInstructions});
+  Future<String> summarizeScene(String sceneId, {String? additionalInstructions});
   
   /// 根据摘要生成场景内容（流式）
   Stream<String> generateSceneFromSummaryStream(
     String novelId, 
     String summary, 
-    {String? chapterId, String? styleInstructions}
+    {String? chapterId, String? additionalInstructions}
   );
   
   /// 根据摘要生成场景内容（非流式）
   Future<String> generateSceneFromSummary(
     String novelId, 
     String summary, 
-    {String? chapterId, String? styleInstructions}
+    {String? chapterId, String? additionalInstructions}
   );
 
   /// 获取小说详情，包含场景摘要（适用于Plan视图）
