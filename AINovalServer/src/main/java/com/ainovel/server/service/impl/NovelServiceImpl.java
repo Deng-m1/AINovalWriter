@@ -1046,7 +1046,7 @@ public class NovelServiceImpl implements NovelService {
                                 }
                                 novel.getMetadata().setWordCount(totalWordCount);
                                 novel.getMetadata().setReadTime(readTime);
-                                novel.setUpdatedAt(LocalDateTime.now());
+                                novel.setUpdatedAt(novel.getUpdatedAt());
                                 return novelRepository.save(novel);
                             });
                 })

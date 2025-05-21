@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.ainovel.server.common.util.RichTextUtil;
 import com.ainovel.server.domain.model.Novel;
 import com.ainovel.server.domain.model.Scene;
 import com.ainovel.server.repository.SceneRepository;
@@ -405,7 +406,7 @@ public class IndexingServiceImpl implements IndexingService {
         // 构建文档内容
         StringBuilder content = new StringBuilder();
         content.append("标题: ").append(scene.getTitle()).append("\n\n");
-        content.append(scene.getContent());
+        content.append(RichTextUtil.deltaJsonToPlainText(scene.getContent()));
 
         // 创建文档
         return Mono.just(Document.from(content.toString(), metadata));

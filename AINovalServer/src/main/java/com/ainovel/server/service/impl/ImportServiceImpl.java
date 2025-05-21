@@ -219,8 +219,10 @@ public class ImportServiceImpl implements ImportService {
                 }
 
                 // 首先尝试 UTF-8
-                try (Stream<String> lines = Files.lines(tempFilePath, StandardCharsets.UTF_8)) {
-                    parsedData = parser.parseStream(lines);
+                try {
+                    // 使用 Files.readAllLines 读取所有行，包括空行
+                    List<String> allFileLines = Files.readAllLines(tempFilePath, StandardCharsets.UTF_8);
+                    parsedData = parser.parseStream(allFileLines.stream());
                 } catch (java.nio.charset.MalformedInputException e) {
                     // 检查是否已取消
                     if (isCancelled(jobId)) {
@@ -235,9 +237,13 @@ public class ImportServiceImpl implements ImportService {
                             new java.io.InputStreamReader(
                                     new java.io.FileInputStream(tempFilePath.toFile()),
                                     "GBK"))) {
-
-                        Stream<String> lines = reader.lines();
-                        parsedData = parser.parseStream(lines);
+                        
+                        List<String> allFileLines = new ArrayList<>();
+                        String currentLine;
+                        while ((currentLine = reader.readLine()) != null) {
+                            allFileLines.add(currentLine);
+                        }
+                        parsedData = parser.parseStream(allFileLines.stream());
                     } catch (Exception e2) {
                         // 检查是否已取消
                         if (isCancelled(jobId)) {
@@ -253,8 +259,12 @@ public class ImportServiceImpl implements ImportService {
                                         new java.io.FileInputStream(tempFilePath.toFile()),
                                         "GB18030"))) {
 
-                            Stream<String> lines = reader.lines();
-                            parsedData = parser.parseStream(lines);
+                            List<String> allFileLines = new ArrayList<>();
+                            String currentLine;
+                            while ((currentLine = reader.readLine()) != null) {
+                                allFileLines.add(currentLine);
+                            }
+                            parsedData = parser.parseStream(allFileLines.stream());
                         }
                     }
                 }
