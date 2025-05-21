@@ -10,6 +10,8 @@ import 'package:ainoval/screens/novel_list/widgets/loading_view.dart';
 import 'package:ainoval/screens/novel_list/widgets/novel_card.dart';
 import 'package:ainoval/screens/novel_list/widgets/novel_list_error_view.dart';
 import 'package:ainoval/screens/novel_list/widgets/search_filter_bar.dart';
+import 'package:ainoval/screens/novel_list/widgets/sort_novels_dialog.dart';
+import 'package:ainoval/screens/novel_list/widgets/filter_novels_dialog.dart';
 import 'package:ainoval/services/api_service/repositories/novel_repository.dart';
 import 'package:ainoval/utils/date_formatter.dart';
 import 'package:flutter/material.dart';
@@ -298,8 +300,12 @@ class MainCard extends StatelessWidget {
                   onViewTypeChanged: onViewTypeChanged,
                   onFilterPressed: () => _showFilterOptions(context),
                   onSortPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('排序功能将在下一个迭代中实现')),
+                    showDialog(
+                      context: context,
+                      builder: (_) => BlocProvider.value(
+                        value: context.read<NovelListBloc>(),
+                        child: const SortNovelsDialog(),
+                      ),
                     );
                   },
                   onGroupPressed: () {
@@ -365,49 +371,9 @@ class MainCard extends StatelessWidget {
   void _showFilterOptions(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('过滤选项'),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('根据系列:'),
-            SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                Chip(label: Text('全部')),
-                Chip(label: Text('无系列')),
-                Chip(label: Text('武侠系列')),
-                Chip(label: Text('科幻系列')),
-              ],
-            ),
-            SizedBox(height: 16),
-            Text('根据状态:'),
-            SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                Chip(label: Text('所有状态')),
-                Chip(label: Text('进行中')),
-                Chip(label: Text('已完成')),
-                Chip(label: Text('草稿')),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('应用'),
-          ),
-        ],
+      builder: (_) => BlocProvider.value(
+        value: context.read<NovelListBloc>(),
+        child: const FilterNovelsDialog(),
       ),
     );
   }

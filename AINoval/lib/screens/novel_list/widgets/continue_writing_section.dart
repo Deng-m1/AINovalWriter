@@ -47,13 +47,13 @@ class ContinueWritingSection extends StatelessWidget {
                   int visibleCards;
 
                   if (constraints.maxWidth < 450) {
-                    cardHeight = 90.0; // 非常窄的屏幕更小的高度
+                    cardHeight = 120.0; // 进一步增加高度
                     visibleCards = 1; // 只显示一张卡片
                   } else if (constraints.maxWidth < 600) {
-                    cardHeight = 110.0; // 窄屏幕稍小的高度
+                    cardHeight = 140.0; // 进一步增加高度
                     visibleCards = 2; // 显示两张卡片
                   } else {
-                    cardHeight = 130.0; // 宽屏幕标准高度
+                    cardHeight = 160.0; // 进一步增加高度
                     visibleCards = 3; // 显示所有卡片
                   }
 
@@ -552,110 +552,175 @@ class RecentNovelInfo extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Padding(
-      padding: EdgeInsets.all(isCompact ? 8 : 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            novel.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: isCompact ? 13 : 16,
-            ),
-          ),
-          SizedBox(height: isCompact ? 3 : 6),
-
-          // 在紧凑模式下，只显示时间或系列（优先显示系列）
-          if (isCompact) ...[
-            if (novel.seriesName.isNotEmpty)
-              _buildSeriesInfo(theme)
-            else
-              _buildTimeInfo(theme),
-
-            const SizedBox(height: 3),
-
-            // 显示进度条
-            ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value: novel.completionPercentage,
-                backgroundColor: Colors.grey.shade200,
-                color: theme.colorScheme.primary,
-                minHeight: 2,
-              ),
-            ),
-          ] else ...[
-            // 标准模式下显示更多信息
-            _buildTimeInfo(theme),
-            const SizedBox(height: 4),
-
-            Row(
+    // 使用 LayoutBuilder 来获取可用空间
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 根据可用高度决定显示哪些信息
+        final availableHeight = constraints.maxHeight;
+        
+        if (isCompact) {
+          // 超紧凑模式 - 只显示最重要的信息
+          return Padding(
+            padding: const EdgeInsets.all(6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.text_fields,
-                  size: 12,
-                  color: Colors.grey.shade600,
-                ),
-                const SizedBox(width: 4),
+                // 标题始终显示
                 Text(
-                  '${novel.wordCount} 字',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade600,
+                  novel.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
                   ),
                 ),
-                if (novel.seriesName.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Icon(
-                    Icons.bookmark_border,
-                    size: 12,
-                    color: Colors.grey.shade600,
+                const SizedBox(height: 2),
+                
+                // 时间或系列名（二选一）
+                if (novel.seriesName.isNotEmpty)
+                  _buildSeriesInfo(theme)
+                else
+                  _buildTimeInfo(theme),
+                
+                // 进度条始终显示
+                const SizedBox(height: 3),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: novel.completionPercentage,
+                    backgroundColor: Colors.grey.shade200,
+                    color: theme.colorScheme.primary,
+                    minHeight: 2,
                   ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      novel.seriesName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
+                ),
+                
+                // 如果空间足够，显示字数
+                if (availableHeight > 70) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.text_fields,
+                        size: 10,
                         color: Colors.grey.shade600,
                       ),
-                    ),
+                      const SizedBox(width: 3),
+                      Text(
+                        '${_formatNumber(novel.wordCount)}字',
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ],
             ),
-
-            const SizedBox(height: 6),
-
-            // 标准模式下的进度条
-            ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value: novel.completionPercentage,
-                backgroundColor: Colors.grey.shade200,
-                color: theme.colorScheme.primary,
-                minHeight: 3,
-              ),
+          );
+        } else {
+          // 标准模式 - 使用 Flexible 控制子组件大小
+          return Padding(
+            padding: const EdgeInsets.all(10), // 稍微减小内边距
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 标题
+                Text(
+                  novel.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                
+                // 时间信息
+                _buildTimeInfo(theme),
+                
+                // 使用 Flexible 包装可能溢出的内容
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: 3),
+                      
+                      // 字数和系列信息
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.text_fields,
+                                  size: 12,
+                                  color: theme.colorScheme.primary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${_formatNumber(novel.wordCount)}字',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (novel.seriesName.isNotEmpty && availableHeight > 100) ...[
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                novel.seriesName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontStyle: FontStyle.italic,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      
+                      // 结构信息（如果空间足够）
+                      if (availableHeight > 90) ...[
+                        const SizedBox(height: 3),
+                        _buildStructureInfo(theme),
+                      ],
+                    ],
+                  ),
+                ),
+                
+                // 进度条
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: novel.completionPercentage,
+                    backgroundColor: Colors.grey.shade200,
+                    color: theme.colorScheme.primary,
+                    minHeight: 3,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 2),
-
-            // 只在标准模式下显示完成度文本
-            Text(
-              '完成度: ${(novel.completionPercentage * 100).toInt()}%',
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey.shade600,
-              ),
-            ),
-          ],
-        ],
-      ),
+          );
+        }
+      },
     );
   }
 
@@ -730,6 +795,42 @@ class RecentNovelInfo extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  // 构建卷、章节、场景数量信息组件
+  Widget _buildStructureInfo(ThemeData theme) {
+    return Row(
+      children: [
+        Icon(
+          Icons.library_books_outlined,
+          size: isCompact ? 9 : 10,
+          color: Colors.grey.shade600,
+        ),
+        const SizedBox(width: 3),
+        Expanded(
+          child: Text(
+            '${novel.actCount}卷 / ${novel.chapterCount}章 / ${novel.sceneCount}场景',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: isCompact ? 8 : 9,
+              color: Colors.grey.shade600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 格式化数字显示
+  String _formatNumber(int number) {
+    if (number < 1000) {
+      return number.toString();
+    } else if (number < 10000) {
+      return '${(number / 1000).toStringAsFixed(1)}K';
+    } else {
+      return '${(number / 10000).toStringAsFixed(1)}万';
+    }
   }
 }
 

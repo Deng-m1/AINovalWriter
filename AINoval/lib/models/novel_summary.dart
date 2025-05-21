@@ -15,6 +15,9 @@ class NovelSummary extends Equatable {
     this.lastEditedChapterId,
     this.author,
     this.contributors = const [],
+    this.actCount = 0,
+    this.chapterCount = 0,
+    this.sceneCount = 0,
   });
   
   // 从JSON转换方法
@@ -32,6 +35,9 @@ class NovelSummary extends Equatable {
       lastEditedChapterId: json['lastEditedChapterId'],
       author: json['author'],
       contributors: (json['contributors'] as List?)?.cast<String>() ?? const [],
+      actCount: json['actCount'] ?? 0,
+      chapterCount: json['chapterCount'] ?? 0,
+      sceneCount: json['sceneCount'] ?? 0,
     );
   }
   final String id;
@@ -46,6 +52,9 @@ class NovelSummary extends Equatable {
   final String? lastEditedChapterId;
   final String? author;
   final List<String> contributors; // 贡献者列表
+  final int actCount;
+  final int chapterCount;
+  final int sceneCount;
   
   @override
   List<Object?> get props => [
@@ -61,6 +70,9 @@ class NovelSummary extends Equatable {
     lastEditedChapterId,
     author,
     contributors,
+    actCount,
+    chapterCount,
+    sceneCount,
   ];
   
   // 转换为JSON方法
@@ -78,6 +90,9 @@ class NovelSummary extends Equatable {
       'lastEditedChapterId': lastEditedChapterId,
       'author': author,
       'contributors': contributors,
+      'actCount': actCount,
+      'chapterCount': chapterCount,
+      'sceneCount': sceneCount,
     };
   }
 } 

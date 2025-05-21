@@ -611,6 +611,25 @@ class NovelInfoWidget extends StatelessWidget {
               ),
             ],
           ),
+          // 添加卷、章节、场景数量信息
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Icon(
+                Icons.library_books_outlined, 
+                size: 11, 
+                color: Colors.grey.shade600,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '${novel.actCount}卷 / ${novel.chapterCount}章 / ${novel.sceneCount}场景',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
           if (novel.seriesName.isNotEmpty) ...[
             const SizedBox(height: 4),
             Row(
@@ -643,7 +662,7 @@ class NovelInfoWidget extends StatelessWidget {
         children: [
           Text(
             novel.title,
-            maxLines: 1,
+            maxLines: 2, // 允许多行显示标题
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
@@ -700,6 +719,33 @@ class NovelInfoWidget extends StatelessWidget {
                         fontSize: 11,
                         fontWeight: FontWeight.w500,
                         color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // 添加卷、章节、场景数量信息
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.library_books_outlined,
+                      size: 12,
+                      color: theme.colorScheme.secondary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${novel.actCount}卷 / ${novel.chapterCount}章 / ${novel.sceneCount}场景',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: theme.colorScheme.secondary,
                       ),
                     ),
                   ],
