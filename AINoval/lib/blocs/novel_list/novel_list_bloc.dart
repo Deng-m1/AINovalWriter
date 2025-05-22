@@ -264,13 +264,9 @@ class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
         lastEditedChapterId: novel.lastEditedChapterId,
         author: novel.author?.username,
         contributors: novel.contributors,
-        actCount: novel.acts.length,
-        chapterCount: novel.acts.fold(0, (sum, act) => sum + act.chapters.length),
-        sceneCount: novel.acts.fold(0, (sum, act) => 
-          sum + act.chapters.fold(0, (sumChapter, chapter) => 
-            sumChapter + chapter.scenes.length
-          )
-        ),
+        actCount: novel.getActCount(),
+        chapterCount: novel.getChapterCount(),
+        sceneCount: novel.getSceneCount(),
       )).toList();
       emit(NovelListLoaded(allNovels: novelSummaries));
     } catch (e) {
@@ -339,13 +335,9 @@ class NovelListBloc extends Bloc<NovelListEvent, NovelListState> {
         completionPercentage: 0.0,
         author: newNovel.author?.username,
         contributors: newNovel.contributors,
-        actCount: newNovel.acts.length,
-        chapterCount: newNovel.acts.fold(0, (sum, act) => sum + act.chapters.length),
-        sceneCount: newNovel.acts.fold(0, (sum, act) => 
-          sum + act.chapters.fold(0, (sumChapter, chapter) => 
-            sumChapter + chapter.scenes.length
-          )
-        ),
+        actCount: newNovel.getActCount(),
+        chapterCount: newNovel.getChapterCount(),
+        sceneCount: newNovel.getSceneCount(),
       );
       
       // 直接更新状态，添加新创建的小说

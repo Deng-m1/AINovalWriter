@@ -187,6 +187,32 @@ class Novel {
     return totalWordCount;
   }
 
+  /// 计算小说总场景数（考虑 sceneIds 字段）
+  int getSceneCount() {
+    int totalSceneCount = 0;
+    for (final act in acts) {
+      for (final chapter in act.chapters) {
+        // 使用 sceneCount 属性，它会返回 scenes 和 sceneIds 中的较大值
+        totalSceneCount += chapter.sceneCount;
+      }
+    }
+    return totalSceneCount;
+  }
+
+  /// 计算小说总章节数
+  int getChapterCount() {
+    int totalChapterCount = 0;
+    for (final act in acts) {
+      totalChapterCount += act.chapters.length;
+    }
+    return totalChapterCount;
+  }
+
+  /// 计算小说总卷数
+  int getActCount() {
+    return acts.length;
+  }
+
   /// 转换为JSON
   Map<String, dynamic> toJson() {
     return {
@@ -448,31 +474,50 @@ class Chapter {
     required this.title,
     required this.order,
     this.scenes = const [],
+    this.sceneIds = const [], // 添加 sceneIds 字段
   });
 
   /// 从JSON创建Chapter实例
   factory Chapter.fromJson(Map<String, dynamic> json) {
     List<Scene> parsedScenes = [];
+    List<String> parsedSceneIds = [];
+    
+    // 解析场景列表
     if (json['scenes'] != null && json['scenes'] is List) {
       parsedScenes = (json['scenes'] as List<dynamic>)
           .map((sceneJson) => Scene.fromJson(sceneJson as Map<String, dynamic>))
           .toList();
     }
+    
+    // 解析场景ID列表
+    if (json['sceneIds'] != null && json['sceneIds'] is List) {
+      parsedSceneIds = (json['sceneIds'] as List<dynamic>)
+          .map((id) => id.toString())
+          .toList();
+    }
+    
     return Chapter(
       id: json['id'] as String,
       title: json['title'] as String,
       order: json['order'] as int,
-      scenes: parsedScenes, // 使用解析后的列表
+      scenes: parsedScenes,
+      sceneIds: parsedSceneIds, // 保存场景ID列表
     );
   }
   final String id;
   final String title;
   final int order;
   final List<Scene> scenes;
+  final List<String> sceneIds; // 保存从后端返回的场景ID列表
 
   /// 计算章节的总字数
   int get wordCount {
     return scenes.fold(0, (sum, scene) => sum + scene.wordCount);
+  }
+  
+  /// 获取场景总数（scenes列表或sceneIds列表中的较大值）
+  int get sceneCount {
+    return scenes.length > sceneIds.length ? scenes.length : sceneIds.length;
   }
 
   /// 转换为JSON
@@ -482,6 +527,7 @@ class Chapter {
       'title': title,
       'order': order,
       'scenes': scenes.map((scene) => scene.toJson()).toList(),
+      'sceneIds': sceneIds, // 添加场景ID列表
     };
   }
 
@@ -491,12 +537,14 @@ class Chapter {
     String? title,
     int? order,
     List<Scene>? scenes,
+    List<String>? sceneIds, // 添加sceneIds参数
   }) {
     return Chapter(
       id: id ?? this.id,
       title: title ?? this.title,
       order: order ?? this.order,
       scenes: scenes ?? this.scenes,
+      sceneIds: sceneIds ?? this.sceneIds, // 设置sceneIds
     );
   }
 

@@ -567,13 +567,17 @@ class RecentNovelInfo extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 // 标题始终显示
-                Text(
-                  novel.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
+                Tooltip(
+                  message: novel.title, // 显示完整标题
+                  preferBelow: false,
+                  child: Text(
+                    novel.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -628,13 +632,17 @@ class RecentNovelInfo extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 标题
-                Text(
-                  novel.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
+                Tooltip(
+                  message: novel.title, // 显示完整标题
+                  preferBelow: false,
+                  child: Text(
+                    novel.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 4),

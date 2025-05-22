@@ -561,13 +561,17 @@ class NovelInfoWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            novel.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
+          Tooltip(
+            message: novel.title,
+            preferBelow: false,
+            child: Text(
+              novel.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
             ),
           ),
           const SizedBox(height: 4),
@@ -660,13 +664,17 @@ class NovelInfoWidget extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            novel.title,
-            maxLines: 2, // 允许多行显示标题
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
+          Tooltip(
+            message: novel.title,
+            preferBelow: false,
+            child: Text(
+              novel.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
             ),
           ),
           if (novel.seriesName.isNotEmpty) ...[
